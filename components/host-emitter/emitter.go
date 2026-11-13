@@ -285,12 +285,11 @@ func translate(e *event) plog.LogRecord {
 	switch e.Type {
 	case evExec:
 		attrs.PutStr("audit.syscall", "execve")
-		// sched_process_exec fires post-exec; a failed exec comes from its
-		// sys_exit (spec 057 OD-13)
+		// sched_process_exec fires post-exec (result success); a failed exec
+		// comes from its sys_exit (spec 057 OD-13), and a held execve whose
+		// return was never seen carries no result, as connect and openat.
 		if r := auditResult(e); r != "" {
 			attrs.PutStr("audit.result", r)
-		} else {
-			attrs.PutStr("audit.result", "success")
 		}
 		pathIncomplete := e.FilenameIncomplete || len(e.Filename) >= 239
 		if e.Filename != "" && !pathIncomplete {

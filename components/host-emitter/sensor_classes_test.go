@@ -33,15 +33,17 @@ func TestHostEventSyscallResults(t *testing.T) {
 		e             event
 		result, errno string
 	}{
-		"exec success":          {event{Type: evExec, Pid: 7, Result: resultSuccess}, "success", ""},
-		"exec failed EACCES":    {event{Type: evExec, Pid: 7, Result: resultFailed, Errno: 13}, "failed", "EACCES"},
-		"connect without pairs": {event{Type: evConnect, Pid: 7}, "unknown", ""},
-		"connect ok":            {event{Type: evConnect, Pid: 7, Result: resultSuccess}, "success", ""},
-		"connect EPERM":         {event{Type: evConnect, Pid: 7, Result: resultFailed, Errno: 1}, "failed", "EPERM"},
-		"connect refused":       {event{Type: evConnect, Pid: 7, Result: resultFailed, Errno: 111}, "failed", "ECONNREFUSED"},
-		"open ENOENT":           {event{Type: evOpenat, Pid: 7, Filename: "/x", Result: resultFailed, Errno: 2}, "failed", "ENOENT"},
-		"open other errno":      {event{Type: evOpenat, Pid: 7, Filename: "/x", Result: resultFailed, Errno: 40}, "failed", "40"},
-		"open without pairs":    {event{Type: evOpenat, Pid: 7, Filename: "/x"}, "unknown", ""},
+		"exec success":       {event{Type: evExec, Pid: 7, Result: resultSuccess}, "success", ""},
+		"exec failed EACCES": {event{Type: evExec, Pid: 7, Result: resultFailed, Errno: 13}, "failed", "EACCES"},
+		// a held execve whose sys_exit was never seen (stop drain, thread exit)
+		"exec not seen to return": {event{Type: evExec, Pid: 7, Result: resultUnknown}, "unknown", ""},
+		"connect without pairs":   {event{Type: evConnect, Pid: 7}, "unknown", ""},
+		"connect ok":              {event{Type: evConnect, Pid: 7, Result: resultSuccess}, "success", ""},
+		"connect EPERM":           {event{Type: evConnect, Pid: 7, Result: resultFailed, Errno: 1}, "failed", "EPERM"},
+		"connect refused":         {event{Type: evConnect, Pid: 7, Result: resultFailed, Errno: 111}, "failed", "ECONNREFUSED"},
+		"open ENOENT":             {event{Type: evOpenat, Pid: 7, Filename: "/x", Result: resultFailed, Errno: 2}, "failed", "ENOENT"},
+		"open other errno":        {event{Type: evOpenat, Pid: 7, Filename: "/x", Result: resultFailed, Errno: 40}, "failed", "40"},
+		"open without pairs":      {event{Type: evOpenat, Pid: 7, Filename: "/x"}, "unknown", ""},
 	} {
 		ev, ok := hostEvent(&tc.e, watch)
 		if !ok || ev.Result != tc.result || ev.Errno != tc.errno {
@@ -131,7 +133,8 @@ func TestLocalAuditResult(t *testing.T) {
 		"open denied":     {event{Type: evOpenat, Filename: "/x", Result: resultFailed, Errno: 13}, "failed:EACCES"},
 		"open ok":         {event{Type: evOpenat, Filename: "/x", Result: resultSuccess}, "success"},
 		"exec failed":     {event{Type: evExec, Result: resultFailed, Errno: 2}, "failed:ENOENT"},
-		"exec":            {event{Type: evExec}, "success"},
+		"exec":            {event{Type: evExec, Result: resultSuccess}, "success"},
+		"exec not seen":   {event{Type: evExec}, ""},
 		"connect unknown": {event{Type: evConnect}, ""},
 	} {
 		lr := translate(&tc.e)

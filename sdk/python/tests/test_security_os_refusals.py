@@ -519,6 +519,31 @@ def test_the_sensors_exit_record_gives_a_hook_program_its_exit_code(tmp_path: Pa
         assert ("derivation" in hook) == (outcome != "unknown")
 
 
+def test_an_exec_whose_return_was_not_seen_is_never_a_hook_run(tmp_path: Path) -> None:
+    """A held execve the sensor sent with result ``unknown`` (its stop drain, WP7-11) is an
+    attempt: it never makes a hook row, even when its path digest is a listed hook's."""
+    import hashlib  # noqa: PLC0415
+
+    hook_path = "/opt/agent/hooks/pre-tool-check.sh"
+    digest = hashlib.sha256(hook_path.encode()).hexdigest()
+    section = {"hook_programs": [{"path": hook_path, "label": "pre-tool-check"}]}
+    policy = MANIFEST_VECTOR["cases"][0]["manifest"]["capture_policy"]["policy_digest"]
+
+    def events(inp: Mapping[str, Any]) -> list[HostEvent]:
+        first = min(tool_calls(inp), key=lambda c: c.open_ns)
+        at = first.open_ns + 1_000
+        attempt = HostEvent("host-" + "2" * 32, "host.ebpf", "exec", at, pid=4122,
+                            ppid=AGENT_PID, result="unknown", exe_sha256=digest)  # fmt: skip
+        return [attempt]
+
+    capture = ExecCapture(tmp_path)
+    three_calls(capture, third="none")
+    reader = ActionReader(host_joiner=EventsJoiner(events), keep_runs=True,
+                          classification=_classify.load(section), policy_digest=policy)  # fmt: skip
+    project(capture, actions=reader)
+    assert [r for r in action_rows(reader.runs[0])["rows"] if r["kind"] == "hook"] == []
+
+
 def test_a_hook_program_in_two_open_windows_keeps_the_report_valid(tmp_path: Path) -> None:
     """Regression (P2a): a hook program only a sensor saw, while two parallel calls were
     open, is ``ambiguous`` and gates neither. §6.4 and the capture validator reserve

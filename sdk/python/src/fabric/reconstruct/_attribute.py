@@ -1178,7 +1178,9 @@ class ActionReader:
                 "sequence": event.sequence or 0, "start_ns": event.time_ns, "via": event.source,
             }  # fmt: skip
             if event.event_class == "exec" and event.exe_sha256 in digests:
-                if event.event_id in anchored:
+                # Only an exec that succeeded ran the program: one whose return was not
+                # seen (the sensor's stop drain, WP7-11) is an attempt, never a hook run.
+                if event.event_id in anchored or event.result != "success":
                     continue
                 row["hook_program"] = digests[event.exe_sha256].label
                 self._sensor_exit(row, event, digests[event.exe_sha256])

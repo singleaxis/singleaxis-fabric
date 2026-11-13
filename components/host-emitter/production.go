@@ -121,12 +121,11 @@ func hostEvent(e *event, watch *hostrecords.WatchTable) (hostrecords.Event, bool
 	switch e.Type {
 	case evExec:
 		ev.Class, ev.Syscall = "exec", "execve"
-		// sched_process_exec fires after a successful exec; a failed one
-		// comes from the held execve's sys_exit (spec 057 OD-13).
-		ev.Result = "success"
-		if e.Result == resultFailed {
-			ev.Result, ev.Errno = "failed", errnoName(e.Errno)
-		}
+		// sched_process_exec fires after a successful exec (result success);
+		// a failed one comes from the held execve's sys_exit (spec 057
+		// OD-13), and a held execve whose return was never seen (the stop
+		// drain, a thread exit, a restart code) stays unknown, never success.
+		ev.Result, ev.Errno = syscallResult(e)
 		pathIncomplete := e.FilenameIncomplete || len(e.Filename) >= 239
 		switch {
 		case pathIncomplete && e.ArgvIncomplete:

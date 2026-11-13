@@ -388,12 +388,12 @@ func TestProductionTranslateGolden(t *testing.T) {
 		// keys the eBPF sensor reports differently from the fixture
 		differ map[string]any
 	}{
-		{"valid/record-exec-ebpf.json", i64(1791271080), event{Type: evExec, TsNs: 1791331201210600000, Pid: 4121, Ppid: 4100,
+		{"valid/record-exec-ebpf.json", i64(1791271080), event{Type: evExec, Result: resultSuccess, TsNs: 1791331201210600000, Pid: 4121, Ppid: 4100,
 			NsPid: 41, NsPpid: 7, PidNS: 4026532481, StartBoottime: 60123217448, CgroupID: 9123, Scope: scopeAgent,
 			Comm: "python3", Filename: "/usr/bin/python3", Argv: []byte("python3\x00-c\x00secret")}, nil},
-		{"valid/record-exec-thread-spawned.json", i64(1791271080), event{Type: evExec, TsNs: 1791331201300200000, Pid: 4140, Ppid: 4100,
+		{"valid/record-exec-thread-spawned.json", i64(1791271080), event{Type: evExec, Result: resultSuccess, TsNs: 1791331201300200000, Pid: 4140, Ppid: 4100,
 			NsPid: 44, NsPpid: 7, PidNS: 4026532481, StartBoottime: 60213000000, CgroupID: 9123, Scope: scopeAgent}, nil},
-		{"valid/record-sandbox-scope.json", nil, event{Type: evExec, TsNs: 1791331201400000000, Pid: 4180, Ppid: 4170,
+		{"valid/record-sandbox-scope.json", nil, event{Type: evExec, Result: resultSuccess, TsNs: 1791331201400000000, Pid: 4180, Ppid: 4170,
 			NsPid: 1, NsPpid: 0, PidNS: 4026532612, StartBoottime: 60313000000, CgroupID: 10442, Scope: scopeSandbox,
 			CgroupNamesRead: true, CgroupParentName: "kubepods-burstable-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice",
 			CgroupName: "cri-containerd-" + hex64 + ".scope"}, nil},
