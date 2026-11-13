@@ -121,6 +121,17 @@ def test_the_release_workflow_publishes_signs_and_qualifies_the_image() -> None:
         "--image fabric-cli" in qualify
         and "components/fabric-cli/Dockerfile" in qualify
     )
+    # The published image itself (by its pushed digest) passes the content check before
+    # it is signed, not only the pull-request build of recorder CI.
+    steps = release["jobs"]["publish-image"]["steps"]
+    names = [step.get("name", "") for step in steps]
+    (check,) = [step for step in steps if "check_cli_image.py" in json.dumps(step)]
+    assert check["if"] == "matrix.image == 'fabric-cli'"
+    assert "steps.build.outputs.digest" in check["env"]["REF"]
+    assert '--image "${REF}"' in check["run"] and "--version" in check["run"]
+    built = names.index("Build and push (multi-arch)")
+    signed = names.index("Sign image (keyless via Fulcio)")
+    assert built < steps.index(check) < signed
 
 
 def test_ci_builds_and_checks_the_image() -> None:
