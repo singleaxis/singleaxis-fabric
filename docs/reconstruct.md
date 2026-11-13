@@ -30,12 +30,13 @@ Source: `sdk/python/src/fabric/reconstruct/`. Report schema:
 
 | Option | Meaning |
 |---|---|
-| `--spans PATH` (repeatable, required) | Span files: the example sink's JSONL, OTLP/JSON (one request per file or per line), or raw OTLP protobuf `*.otlp` files as `make export-spans` copies them. A directory stands for its `*.otlp`, `*.json` and `*.jsonl` files (an OpenTelemetry Collector file exporter writes `.jsonl`), not recursively. |
+| `--spans PATH` (repeatable, required) | Span files: the example sink's JSONL, OTLP/JSON (one request per file or per line), or raw OTLP protobuf `*.otlp` files as `make export-spans` copies them. A directory stands for its `*.otlp`, `*.json` and `*.jsonl` files (an OpenTelemetry Collector file exporter writes `.jsonl`), not recursively; a directory with none of its own but a `spans/` directory (the `./fabric-data` that `fabric up` prints) stands for that. |
 | `--store-root DIR` | A local content store (`file://` mode, or the Node's file backend). |
 | `--content-key-file PATH` | The Node file backend's content key, to open its sealed objects under `--store-root`. Never logged. |
 | `--store-uri s3://BUCKET/PREFIX` | An S3 or S3-compatible store. Needs `pip install "singleaxis-fabric[s3]"` (boto3). Credentials come from the default AWS chain. With `--s3-endpoint-url`, `--s3-region`, `--s3-path-style`. |
 | `--tenant ID` | Tenant of the store; required with a store. |
 | `--run RUN_ID` (repeatable) | Report only this run: the id given to `fabric.wire.run()` in the clear, its `r-` pseudonym, or a `source:`/`trace:` fallback id. |
+| `--latest` | Report only the run that started last (by its first model exchange). Use it instead of `--run`, not with it; `fabric verify` and `fabric show` select a `fabric run` by its label without it. |
 | `--id-key-env NAME` | Variable holding the id key (default `FABRIC_WIRE_ID_KEY`). Needed to match clear run ids against keyed pseudonyms. |
 | `--wait-for-objects SECONDS` | Re-read missing objects for up to this long (max 3600) before reporting them missing; content can still be in flight just after a run. |
 | `--trusted-source` | The span files are the Node's own export or destination, read from a location you trust. Only then do the Node's `fabric.source.authenticated` stamps count. |

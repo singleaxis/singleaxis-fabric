@@ -106,13 +106,49 @@ it never makes, applies, waits for or returns one.
   does not fail. The manifest carries each list's state, count and digest
   (`fabric.manifest.classifications`), never its contents. See
   [docs/action-reconstruction.md](docs/action-reconstruction.md).
+- **Host sensors see syscall results, process exits and watched files
+  (spec 057 P2, WP7-11).** The eBPF emitter can now pair `connect`, `openat`
+  and `execve` with their return (`EMIT_SYSCALL_RESULTS=true`): records
+  carry `fabric.sensor.result` (`success` or `failed`) and the errno, and a
+  failed `execve` is recorded for the first time. The syscall is never
+  delayed; an event whose return was not seen or is not its outcome (a
+  non-blocking connect, a call a signal interrupted, a call still running
+  at shutdown) keeps result `unknown`. A syscall a seccomp filter refuses
+  with an errno never reaches the tracepoints and is not recorded. `EMIT_EXIT=true`
+  (production) records every process exit in scope as event class `exit`
+  with its exit code or the signal that ended it; the manifest gains the
+  `host.ebpf.exit` and `host.ebpf.syscall_result` rows. Both are off by
+  default. Your `watched_paths` list (`EMIT_WATCHED_PATHS_FILE` for the
+  emitter, `production.watched_paths_file` for the auditd receiver, both
+  needing file access) labels an open of a listed file or folder with your
+  label, class and a keyed `pth-` id; the path itself never leaves the
+  sensor, and the sensor never opens or reads the file. A hook program seen
+  only by the eBPF sensor now gets its exit code, and its `exit_map`
+  outcome, from the exit record.
+- **Kernel refusals in the action view (spec 057 P2, WP7-12).** An
+  `execve`, `openat` or `connect` that failed with `EACCES` or `EPERM`, and
+  a process killed by `SIGSYS` (the seccomp kill action), are shown as
+  control rows `os_access · effect · deny  kernel  errno.eacces` (or
+  `errno.eperm`, `signal.sigsys`), linked to the tool call their process
+  belongs to with the grade spec 056 gives that evidence, and counted in
+  fact F13 by syscall, reason and link. They come from host-sensor records
+  or from the in-process exec hook (a refused spawn, a child killed by
+  `SIGSYS`); one refusal seen by both is one row. Every other failure
+  (`ENOENT`, `ECONNREFUSED`, a nonzero exit, `SIGKILL`) stays a field and is
+  never a row. A row says the kernel refused, not which mechanism did, and
+  is not a policy statement. A failed `execve` (a `PATH` search, a refused
+  exec) is an event of the process that tried it, so it never makes the
+  `corroboration` chain partial as unexplained; a report may list `exit`
+  host events (the reconstruction schema's `event_class` gains `exit`); a
+  local-profile record's `failed:EACCES` or `failed:EPERM` is a refusal
+  too.
 - **Spawn errors carry the errno name.** When `subprocess` raises an
   `OSError` (for example on a non-executable file), the exec record now has
   `errno` (`EACCES`, `EPERM`, `ENOENT`, ...) beside `error_class`.
 - **The `fabric` command (spec 058, first part).** `pip install
   "singleaxis-fabric[cli]"` installs `fabric` and its alias `singleaxis-fabric`
-  (also `python -m fabric.cli`). `plan`, `run`, `verify`, `doctor` and `show` say they are not built yet and
-  point at the quickstart. Underneath:
+  (also `python -m fabric.cli`). `plan` says it is not built yet and points at
+  the quickstart. Underneath:
   `fabric.yaml` (`contracts/cli-config/v1`) with strict validation that names
   the nearest valid key, discovery (`--config`, `FABRIC_CONFIG`, the current
   directory, then parents up to the git root or home), and one precedence rule
@@ -172,12 +208,10 @@ it never makes, applies, waits for or returns one.
     pseudonym key. A referenced key or CA file that is missing or unreadable
     is named (`FC-031`). A secrets directory inside the project is added to
     `.gitignore`, and a symlinked `.fabric` is refused (`down --purge` deletes
-    nothing through it). Until `fabric run` ships, `fabric up` ends with the
-    command that works today (the compiled environment plus autoload); it
-    exports every value exactly, including the JSON of a `--provider`
-    endpoint, and keeps an existing `PYTHONPATH`. The sensor-running
-    finding (`FC-040`) says how to start an agent in the sensor's scope by
-    hand. `fabric up` and `fabric down` refuse a `--project` that is not the
+    nothing through it). `fabric up` ends with the next command,
+    `fabric run -- <your agent command>`. The sensor-running finding
+    (`FC-040`) says that `fabric run` puts the agent in the sensor's scope.
+    `fabric up` and `fabric down` refuse a `--project` that is not the
     one `fabric.yaml` names (`FC-032`); a refused `fabric init` leaves
     `fabric.yaml` unchanged; `down --purge` also removes an agent cgroup
     made by an `up` that failed or by one before a later `up --no-sensor`.
@@ -190,6 +224,59 @@ it never makes, applies, waits for or returns one.
   - Not in this release: `--profile production`, `--kubernetes`, `--render`,
     `--from-env-file`, `--from-values`, the other destination presets and
     `up --verify-images`. Each says so (`FC-011`) and names the manual route.
+- **`fabric run`, `fabric verify`, `fabric show` and `fabric doctor` (spec
+  058).** With `fabric up` running, the local path is three commands and no
+  hand-made file, secret or variable: `fabric up`, `fabric run -- python
+  agent.py`, `fabric verify`.
+  - `fabric run -- CMD` turns on zero-code capture for one agent command and
+    replaces itself with it, so the agent keeps its PID, signals, terminal,
+    arguments, input and exit code. It adds only `FABRIC_*` variables and
+    the autoload directory first on `PYTHONPATH`; it never sets or changes an
+    `OTEL_*` variable, never overrides a variable you already set, and opens
+    no network connection. If anything is wrong before the agent starts (no
+    or a broken `fabric.yaml`, missing secrets, an interpreter without the
+    SDK, even a mistyped `fabric run` flag) the agent runs exactly as
+    without Fabric and the reason is recorded; messages appear on stderr
+    only when it is a terminal. When the agent's interpreter lacks the SDK
+    you get the exact install line for that interpreter (`FC-050`). A model
+    host in your `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `ANTHROPIC_BASE_URL`
+    or `AZURE_OPENAI_ENDPOINT` that the built-in table does not cover is
+    recorded with no `--provider` flag. Node.js agents get the variables the
+    explicit API reads and other programs the run label; zero-code capture
+    is Python-only in this release. On Linux the agent joins the host
+    sensor's cgroup when `fabric up` started one (fail-open). `--run NAME`
+    labels the run, `--no-exec` waits for the agent as a child,
+    `--no-capture` runs it unchanged, and `--print-env --format
+    sh|dotenv|docker|systemd|k8s` prints the environment for a launcher
+    `fabric run` cannot wrap (file paths, never secret values).
+  - `fabric verify` checks the configuration and the Node, sends a canary
+    model exchange through capture, the Node and the destination and reads
+    it back, then reads your last `fabric run` (or `fabric verify LABEL`)
+    and prints the coverage report: what was recorded, what is off and the
+    one command that turns it on, and every reader gap in words with its
+    fix. It exits 0 only when the reader's own verdict is complete and the
+    model decisions were recorded; a model host no endpoint matched is
+    named with the `fabric init --provider` line that fixes it.
+  - `fabric show` prints a run as a timeline: the user's message, each tool
+    call with its arguments, the results fed back and the answer, from the
+    content store (on a terminal, or with `--content`), the effects and host
+    evidence, with repeated host lines collapsed. `--list` lists recent runs
+    with their verdicts; `--actions` is the reader's action view;
+    `--transcript` is the conversation only. Text Fabric did not write (model
+    answers, tool arguments and results, hosts and labels) is printed with
+    terminal control characters escaped, so a tool result cannot retitle or
+    clear your terminal.
+  - `fabric doctor` checks which `fabric` is first on `PATH`, `fabric.yaml`,
+    the compiled environment, shell variables that override the file (by
+    name), the secrets, the SDK in the agent's interpreter
+    (`python -m fabric.wire status` with the project's settings), the last
+    run's record and status file, the Node and the host sensor. It works on a
+    manual setup with no `fabric.yaml` too, and changes nothing.
+  - The `[cli]` extra also installs `httpx`, which the canary sends through.
+- **The reader takes `--latest`** (`python -m fabric.reconstruct --latest`,
+  also for `actions`): only the run that started last is reported. `--spans
+  ./fabric-data` (the directory `fabric up` prints) reads its `spans/`
+  directory.
 - **A diagnostics catalogue** (`contracts/diagnostics/v1`,
   [docs/diagnostics.md](docs/diagnostics.md)): every message the CLI and the
   Python SDK print now ends with a stable id such as `[FW-012]`, each with a
@@ -483,6 +570,16 @@ it never makes, applies, waits for or returns one.
   may prune the namespace.
 
 ### Fixed
+
+- **eBPF host emitter: file access and failed execs were missing on Linux
+  6.19+ kernels such as Ubuntu's 7.0.** On those kernels, an eBPF program
+  attached to the `openat` or `execve` syscall tracepoint was never run, so
+  `EMIT_FILE_ACCESS` produced no records and a failed exec was not seen, with
+  no error or loss count. The emitter now sees connect, openat and execve at
+  the generic raw syscall tracepoints (`sys_enter`, `sys_exit`), which work on
+  every supported kernel. Nothing to change in your configuration; records,
+  loss accounting and the stop drain are unchanged. A 32-bit (compat)
+  process's syscalls are still not recorded, as before.
 
 - **A declared hook program no longer counts as a tool call's effect.**
   In an agent whose tools run remotely and whose pre-tool hook runs locally,

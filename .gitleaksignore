@@ -85,3 +85,12 @@ e7f51825264e116a36e00ce4b29d26e8fbb4f975:components/otel-collector-fabric/proces
 # Spec 058 E1a feature-branch test id keys (PR #291); see triage document.
 1f740709ce2085fe5367f521d96ef82dfee9d02c:sdk/python/tests/test_wire_status_file.py:generic-api-key:164
 1f740709ce2085fe5367f521d96ef82dfee9d02c:sdk/python/tests/test_wire_status_file.py:generic-api-key:171
+# Spec 055 T2 TypeScript wire configuration test vectors (feature branch of PR #305); see triage document.
+9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:294
+9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:555
+9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:592
+9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:630
+9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:668
+9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:681
+9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:705
+9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:1084

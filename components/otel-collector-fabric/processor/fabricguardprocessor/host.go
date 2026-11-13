@@ -173,7 +173,8 @@ func classifyHostSpan(span ptrace.Span) hostClass {
 
 // hostSpanBound is step 5 for one span, beyond the tenant and source keys
 // checkTraceBatch compares in every container: the capture point id equals
-// source_kind, and a manifest's rows name only source_kind.
+// source_kind, and a manifest's rows name only source_kind (its first row) and
+// that kind's spec 057 sensor classes.
 func (g *guard) hostSpanBound(span ptrace.Span, class hostClass) bool {
 	attrs := span.Attributes()
 	if point, ok := attrs.Get("fabric.capture.point"); ok {
@@ -188,13 +189,22 @@ func (g *guard) hostSpanBound(span ptrace.Span, class hostClass) bool {
 	if !ok || rows.Type() != pcommon.ValueTypeSlice || rows.Slice().Len() == 0 {
 		return false
 	}
+	own := false
 	for i := 0; i < rows.Slice().Len(); i++ {
 		row := rows.Slice().At(i)
-		if row.Type() != pcommon.ValueTypeStr || !strings.HasPrefix(row.Str(), g.cfg.SourceKind+"@") {
+		if row.Type() != pcommon.ValueTypeStr {
+			return false
+		}
+		switch pointID(row.Str()) {
+		case g.cfg.SourceKind:
+			own = true
+		case g.cfg.SourceKind + ".exit", g.cfg.SourceKind + ".syscall_result":
+			// spec 057 §6.4: the source's own sensor classes, never another source
+		default:
 			return false
 		}
 	}
-	return true
+	return own
 }
 
 // pointID is the id part of "id@version" (the whole value without '@').

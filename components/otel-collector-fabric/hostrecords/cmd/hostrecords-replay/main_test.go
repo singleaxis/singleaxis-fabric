@@ -143,7 +143,7 @@ func newReplayEnv(t *testing.T, events []json.RawMessage) *replayEnv {
 	cfg, _ := json.Marshal(map[string]any{
 		"Kind": g.Sources[0].Kind, "Version": g.Version, "TenantID": g.Tenant,
 		"SourceLabel": g.Sources[0].Label, "HostLabel": g.HostLabel, "Digests": true,
-		"Classes": []string{"exec", "connect", "file"},
+		"Classes": []string{"exec", "connect", "file", "exit"},
 	})
 	var lines bytes.Buffer
 	for _, e := range events {
@@ -221,7 +221,7 @@ func TestReplayCommandGolden(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, stderr)
 	}
-	if stdout != "records=5 batches_acknowledged=4 spans_acknowledged=8 batches_refused=0\n" {
+	if stdout != "records=7 batches_acknowledged=4 spans_acknowledged=10 batches_refused=0\n" {
 		t.Errorf("stdout %q", stdout)
 	}
 	var got []span
@@ -233,7 +233,8 @@ func TestReplayCommandGolden(t *testing.T) {
 		names[i] = s.name
 	}
 	want := []string{"fabric.capture_manifest", "fabric.sensor_event", "fabric.sensor_event", "fabric.sensor_event",
-		"fabric.sensor_event", "fabric.sensor_event", "fabric.capture_heartbeat", "fabric.capture_heartbeat"}
+		"fabric.sensor_event", "fabric.sensor_event", "fabric.sensor_event", "fabric.sensor_event",
+		"fabric.capture_heartbeat", "fabric.capture_heartbeat"}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("spans %v", names)
 	}
@@ -259,12 +260,13 @@ func TestReplayCommandGolden(t *testing.T) {
 			t.Errorf("%s: source id", ge.Fixture)
 		}
 	}
-	heartbeat, final := got[6].attrs, got[7].attrs
-	if heartbeat["fabric.heartbeat.kind"] != "periodic" || heartbeat["fabric.heartbeat.last_sequence"] != int64(4) ||
+	last := int64(len(env.golden.Sources[0].Events) - 1)
+	heartbeat, final := got[len(got)-2].attrs, got[len(got)-1].attrs
+	if heartbeat["fabric.heartbeat.kind"] != "periodic" || heartbeat["fabric.heartbeat.last_sequence"] != last ||
 		heartbeat["fabric.sensor.upstream_lost"] != int64(0) {
 		t.Errorf("heartbeat %v", heartbeat)
 	}
-	if final["fabric.heartbeat.kind"] != "final" || final["fabric.heartbeat.last_sequence"] != int64(4) {
+	if final["fabric.heartbeat.kind"] != "final" || final["fabric.heartbeat.last_sequence"] != last {
 		t.Errorf("final %v", final)
 	}
 	for _, secret := range []string{testToken, testKey, env.golden.Sources[0].Label, env.golden.HostLabel, sourceID} {

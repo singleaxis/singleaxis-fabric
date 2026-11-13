@@ -863,6 +863,32 @@
       "input": "records"
     },
     {
+      "id": "host.ebpf.exit",
+      "kind": "S",
+      "runtime": "Linux nodes",
+      "process_global": "n/a (separate component)",
+      "activation": "customer-deployed (EMIT_EXIT=true, production mode)",
+      "state": "spec 057 P2 (WP7-11): a manifest row of the host.ebpf source when its exit class is enabled; never a record's capture point",
+      "observes": "process exits (sched_process_exit, the thread group's last thread): exit code or terminating signal, as host records of event class exit",
+      "cannot_observe": "why a process exited; exits outside the sensor's scope",
+      "passivity_gate": "spec 057 B1-B4; 053 §6.2 (read-only tracepoint)",
+      "supplies": [],
+      "input": "records"
+    },
+    {
+      "id": "host.ebpf.syscall_result",
+      "kind": "S",
+      "runtime": "Linux nodes",
+      "process_global": "n/a (separate component)",
+      "activation": "customer-deployed (EMIT_SYSCALL_RESULTS=true, production mode)",
+      "state": "spec 057 P2 (WP7-11): a manifest row of the host.ebpf source when its syscall results are enabled; never a record's capture point",
+      "observes": "the return of each connect, openat and execve the sensor records (sys_exit tracepoints paired with their enter events): result and errno, and failed execs",
+      "cannot_observe": "which mechanism refused a call (file permissions, an LSM and a seccomp ERRNO action give the same errno)",
+      "passivity_gate": "spec 057 B1-B4; 053 §6.2 (read-only tracepoints)",
+      "supplies": [],
+      "input": "records"
+    },
+    {
       "id": "host.auditd",
       "kind": "S",
       "runtime": "Linux nodes",

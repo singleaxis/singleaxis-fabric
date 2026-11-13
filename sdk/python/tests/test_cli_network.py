@@ -1,6 +1,7 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Spec 058 I4: no phone-home, for ``fabric init``, ``up`` and ``down``.
+"""Spec 058 I4: no phone-home, for every E1 command (``init``, ``up``, ``run``, ``verify``,
+``show``, ``doctor``, ``down``).
 
 The commands contact only what the operator configured: the local Docker daemon (through
 the ``docker`` command) and the project's own Node on loopback. Two tests run the same
@@ -32,7 +33,9 @@ def _drive(prefix: list[str], work: Path, *extra: str) -> dict[str, Any]:
 
 
 def _assert_only_configured_endpoints(outcome: dict[str, Any]) -> None:
-    assert outcome["codes"] == {"init": 0, "up": 0, "up again": 0, "down": 0, "down --purge": 0}
+    assert outcome["codes"] == {"init": 0, "up": 0, "up again": 0, "run": 0,
+                                "verify --canary-only": 0, "show --list": 0, "doctor": 0,
+                                "down": 0, "down --purge": 0}  # fmt: skip
     attempts = outcome["attempts"]
     # The only connection any command opens is the health probe of the project's own Node.
     assert attempts["connect"], "the Node probe did not run"
@@ -48,7 +51,7 @@ def _assert_only_configured_endpoints(outcome: dict[str, Any]) -> None:
         assert "login" not in command and "push" not in command and "pull" not in command
 
 
-def test_init_up_and_down_open_no_connection_but_the_configured_node(tmp_path: Path) -> None:
+def test_e1_commands_open_no_connection_but_the_configured_node(tmp_path: Path) -> None:
     """I4 on every platform: every socket use of the three commands is recorded."""
     _assert_only_configured_endpoints(_drive([], tmp_path / "work"))
 
@@ -69,7 +72,7 @@ def _netns_prefix() -> tuple[list[str], list[str]] | None:
     return None
 
 
-def test_init_up_and_down_work_in_a_network_namespace_with_only_loopback(tmp_path: Path) -> None:
+def test_e1_commands_work_in_a_network_namespace_with_only_loopback(tmp_path: Path) -> None:
     """I4, the network-namespace test: with no route to anything but loopback, `init`,
     `up` and `down` still succeed and attempt no other connection."""
     prefix = _netns_prefix()

@@ -73,10 +73,22 @@ func digest(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// syscallResult is a paired syscall's host-record result and errno name.
+func syscallResult(e *event) (string, string) {
+	switch e.Result {
+	case resultSuccess:
+		return "success", ""
+	case resultFailed:
+		return "failed", errnoName(e.Errno)
+	}
+	return "unknown", ""
+}
+
 // hostEvent translates one kernel event into the library's host event
 // (053 §6.2.3). The library keys every id, drops digests unless the sensor
 // policy permits them, and emits no raw path, argv, command or address.
-func hostEvent(e *event) (hostrecords.Event, bool) {
+// watch is the customer's watched_paths table (nil: none).
+func hostEvent(e *event, watch *hostrecords.WatchTable) (hostrecords.Event, bool) {
 	ev := hostrecords.Event{
 		TimeUnixNano: uint64(sensorClock.wallNs(e.TsNs)),
 		Pid:          int64(e.Pid),
@@ -109,8 +121,11 @@ func hostEvent(e *event) (hostrecords.Event, bool) {
 	switch e.Type {
 	case evExec:
 		ev.Class, ev.Syscall = "exec", "execve"
-		// sched_process_exec fires after a successful exec.
-		ev.Result = "success"
+		// sched_process_exec fires after a successful exec (result success);
+		// a failed one comes from the held execve's sys_exit (spec 057
+		// OD-13), and a held execve whose return was never seen (the stop
+		// drain, a thread exit, a restart code) stays unknown, never success.
+		ev.Result, ev.Errno = syscallResult(e)
 		pathIncomplete := e.FilenameIncomplete || len(e.Filename) >= 239
 		switch {
 		case pathIncomplete && e.ArgvIncomplete:
@@ -128,19 +143,34 @@ func hostEvent(e *event) (hostrecords.Event, bool) {
 		}
 	case evConnect:
 		ev.Class, ev.Syscall = "connect", "connect"
-		// The tracepoint is sys_enter: the outcome is not observed.
-		ev.Result = "unknown"
+		// Without syscall results the tracepoint is sys_enter only: the
+		// outcome is not observed (unknown).
+		ev.Result, ev.Errno = syscallResult(e)
 		ev.Peer, ev.PeerFamily = peerAddr(e.Family, e.Addr)
 		if ev.Peer.IsValid() {
 			ev.PeerPort = i64(int64(e.Port))
 		}
 	case evOpenat:
 		ev.Class, ev.Syscall = "file", "openat"
-		ev.Result = "unknown"
+		ev.Result, ev.Errno = syscallResult(e)
 		if e.FilenameIncomplete || len(e.Filename) >= 239 {
 			ev.Incomplete = "path"
 		} else if e.Filename != "" {
 			ev.PathSHA256 = sha256String(e.Filename)
+			// Spec 057 §4.3: the customer's label for a watched path, applied
+			// here in user space; the record carries the label, the class and
+			// the entry's keyed id, never the path (an incomplete path is
+			// never labelled).
+			ev.Watch = watch.Match(e.Filename)
+		}
+	case evExit:
+		// Spec 057 OD-13: a process exit names no syscall; its result is
+		// unknown and its status is the exit code or the signal.
+		ev.Class, ev.Result = "exit", "unknown"
+		if e.ExitSignal != 0 {
+			ev.Signal = i64(int64(e.ExitSignal))
+		} else {
+			ev.ExitCode = i64(int64(e.ExitCode))
 		}
 	default:
 		return ev, false

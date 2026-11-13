@@ -168,6 +168,8 @@ MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
         "S15",
     ),
     "host.ebpf": (),
+    "host.ebpf.exit": (),
+    "host.ebpf.syscall_result": (),
     "host.auditd": (),
     "feed.independent": (),
     "delivery.receipts": (),
