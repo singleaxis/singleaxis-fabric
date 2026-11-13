@@ -45,7 +45,7 @@ from contracts import (
 )
 
 ROOT = Path("contracts/capture/v1")
-IDENTITY = ("singleaxis.fabric.capture", "1.10.0")
+IDENTITY = ("singleaxis.fabric.capture", "1.11.0")
 SCHEMAS = {
     "fabric.llm-exchange/v1": "schema/llm-exchange-v1.schema.json",
     "fabric.loss-record/v1": "schema/loss-record-v1.schema.json",
@@ -1429,6 +1429,11 @@ def validate_vector_fixture(document: Mapping[str, Any], path: Path) -> None:
 
         ingress_groups.validate_index(document, path.parent, _host_fail)
         return  # spec 056 M2: the ingress-group configuration goldens
+    if kind == "fabric.spool-bytes-vectors/v1":
+        from contracts import spool_bytes  # noqa: PLC0415
+
+        spool_bytes.validate(document, _host_fail)
+        return  # spec 055 §6.2: the Python writer's spool, ledger and registration bytes
     if kind == "fabric.model-exposure-vectors/v1":
         shape, fields = (
             _MODEL_VECTOR_KEYS,

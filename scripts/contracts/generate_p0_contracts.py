@@ -5708,7 +5708,7 @@ HOST_VECTORS = {
 }
 # Spec 057 WP7-0: coverage 1.4.0, capture 1.9.0, content 2.4.0 (three roles).
 # Spec 055 §8 (unit 055-t1): coverage 1.5.0, capture 1.10.0 (the TypeScript wire points).
-VERSIONS = {COVERAGE: "1.5.0", CAPTURE: "1.10.0", CONTENT: "2.4.0"}
+VERSIONS = {COVERAGE: "1.5.0", CAPTURE: "1.11.0", CONTENT: "2.4.0"}
 
 
 def _expectation(family: Path, rel: str) -> tuple[str, str | None]:

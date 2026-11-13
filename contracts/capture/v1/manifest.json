@@ -1,6 +1,6 @@
 {
   "contract": "singleaxis.fabric.capture",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "digest_scope": "exact_file_bytes",
   "artifacts": [
     {"path": "schema/content-log-record-v1.schema.json", "sha256": "b8ce9af20eb9499b418698792e67fa9447b1f1d57369ff28af24e15aa3fb178b", "expectation": "schema", "expected_error": null},
@@ -175,6 +175,7 @@
     {"path": "fixtures/invalid/spool-record-exchange-typescript-unregistered-point.json", "sha256": "13a37fb0f93a495304f77eee62826a9ec0adcbc1ffc537e9bf2f9459edc51f4d", "expectation": "invalid", "expected_error": "capture.capture_point"},
     {"path": "fixtures/valid/spool-record-exchange-typescript-split-redacted.json", "sha256": "b0c7325e9b37a85eeb48a6752a494d809040d43c231a9d54bcadb9cdacf581ae", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/spool-record-exchange-typescript.json", "sha256": "c78d96ce0d8b294f56dfc133cb972e3b418ab077f5e3a46aeb80c3df68a9684d", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/valid/spool-record-record-typescript.json", "sha256": "52ba2f42ff134f3f3d2641580b25e43934face4514510aef3a2e480e6e710b87", "expectation": "valid", "expected_error": null}
+    {"path": "fixtures/valid/spool-record-record-typescript.json", "sha256": "52ba2f42ff134f3f3d2641580b25e43934face4514510aef3a2e480e6e710b87", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/vectors/spool-bytes-v1.json", "sha256": "7c3539cad01513dad3e46bbc9f50fed0371929b0ecd48bddbb441e008c24be64", "expectation": "vectors", "expected_error": null}
   ]
 }

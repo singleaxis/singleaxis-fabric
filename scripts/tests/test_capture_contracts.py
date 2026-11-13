@@ -63,7 +63,8 @@ def test_all_pinned_capture_artifacts_validate() -> None:
     #   a records-input record of one source, a split exchange with a redacted review
     #   copy) and three refusals (an unregistered point, an agent-stamped authentication
     #   flag, a review copy that keeps the original's digest)
-    assert len(validated) == 173
+    # + 1.11.0 (spec 055 §6.2, unit 055-t2): the spool-bytes-v1 vectors
+    assert len(validated) == 174
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
@@ -648,11 +649,76 @@ def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> Non
 
 
 # ------------------------------------------------------------------ capture/v1 1.3.0 (spec 050 §4.2)
-def test_capture_family_is_version_1_10_0() -> None:
+def test_capture_family_is_version_1_11_0() -> None:
     # 1.5.0: spec 056 M1 (WP6-01); 1.6.0: spec 056 M2 (WP6-11); 1.7.0: spec 056 rev 7;
     # 1.8.0: the Node's destination_rejected loss reason; 1.9.0: spec 057 WP7-0;
-    # 1.10.0: spec 055 §8 (the TypeScript wire points, unit 055-t1)
-    assert _json("manifest.json")["version"] == "1.10.0"
+    # 1.10.0: spec 055 §8 (the TypeScript wire points, unit 055-t1);
+    # 1.11.0: spec 055 §6.2 (the spool-bytes-v1 vectors, unit 055-t2)
+    assert _json("manifest.json")["version"] == "1.11.0"
+
+
+# ------------------------------------------------------------------ spec 055 §6.1-§6.2 (055-t2)
+def test_ts_wire_vectors_regenerate_from_the_python_writer_with_no_diff() -> None:
+    """spool-bytes-v1.json, and the TypeScript matcher and environment fixtures, are what
+    the Python writer, ``wire/_match.py`` and ``python -m fabric.wire status`` produce
+    today: regenerating them changes no byte."""
+    from contracts import generate_ts_wire_vectors as gen
+
+    for path, text in gen.outputs().items():
+        assert path.read_text(encoding="utf-8") == text, (
+            f"{path.relative_to(REPO_ROOT)} is stale: run "
+            "python scripts/contracts/generate_ts_wire_vectors.py"
+        )
+
+
+def _spool_bytes_refusal(mutate: Any) -> str:
+    from contracts import spool_bytes
+
+    doc = _json("fixtures/vectors/spool-bytes-v1.json")
+    mutate(doc)
+    with pytest.raises(CaptureContractError) as caught:
+        spool_bytes.validate(doc, _raise)
+    return caught.value.message
+
+
+def _raise(code: str, where: str, message: str) -> None:
+    raise CaptureContractError(code, where, message)
+
+
+def _flip(hex_text: str, at: int) -> str:
+    data = bytearray(bytes.fromhex(hex_text))
+    data[at] ^= 1
+    return data.hex()
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "at", "message"),
+    [
+        ("records", "frame_hex", 20, "frame does not parse"),
+        ("batches", "batch_hex", 9, "batch does not hold its frames"),
+        ("sealed", "sealed_hex", 40, "envelope does not open to its plaintext"),
+        ("registrations", "file_hex", 13, "registration file disagrees"),
+        ("json", "output_hex", 0, "encoding disagrees"),
+    ],
+)
+def test_spool_bytes_validator_refuses_a_moved_byte(
+    section: str, field: str, at: int, message: str
+) -> None:
+    def mutate(doc: dict[str, Any]) -> None:
+        doc[section][0][field] = _flip(doc[section][0][field], at)
+
+    assert _spool_bytes_refusal(mutate) == message
+
+
+def test_spool_bytes_validator_refuses_a_ledger_slot_and_a_wrong_refusal() -> None:
+    def slot(doc: dict[str, Any]) -> None:
+        doc["ledger"]["slot"]["slot_hex"] = _flip(doc["ledger"]["slot"]["slot_hex"], 30)
+
+    def refusal(doc: dict[str, Any]) -> None:
+        doc["refused"][0]["opened_as"] = doc["sealed"][0]["basename"]
+
+    assert _spool_bytes_refusal(slot) == "slot disagrees"
+    assert _spool_bytes_refusal(refusal) == "envelope opened where it must be refused"
 
 
 def test_destination_rejected_is_a_loss_reason_of_records_and_reports() -> None:
