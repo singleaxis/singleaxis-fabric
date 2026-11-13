@@ -1636,3 +1636,53 @@ def test_056_m2_peer_address_and_sandbox_id_vectors() -> None:
     assert docker in {
         c["ids"].get("fabric.execution.sandbox_id") for c in sandbox["cgroups"]
     }
+
+
+# --------------------------------------------- spec 055 §8: projection capture-point ids
+def _strip_point_versions(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: (
+                item.split("@", 1)[0]
+                if key == "capture_point" and isinstance(item, str)
+                else _strip_point_versions(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_strip_point_versions(item) for item in value]
+    return value
+
+
+def test_a_projection_may_cite_a_bare_registered_capture_point() -> None:
+    """step-projection-v1 allows ``id`` or ``id@version``; the reader writes bare ids."""
+    from contracts.validate_coverage_contracts import validate_projection
+
+    reg = load_registries(REPO_ROOT)
+    schema = json.loads(
+        (REPO_ROOT / FAMILY / "schema/step-projection-v1.schema.json").read_text()
+    )
+    document = json.loads(
+        (REPO_ROOT / FAMILY / "valid/projection-typescript-model-call.json").read_text()
+    )
+    bare = _strip_point_versions(document)
+    assert "wire.ts.undici" in json.dumps(bare)
+    validate_projection(bare, reg, schema)
+
+
+def test_a_bare_unregistered_capture_point_is_still_refused() -> None:
+    from contracts.validate_coverage_contracts import validate_projection
+
+    reg = load_registries(REPO_ROOT)
+    schema = json.loads(
+        (REPO_ROOT / FAMILY / "schema/step-projection-v1.schema.json").read_text()
+    )
+    document = json.loads(
+        (
+            REPO_ROOT / FAMILY / "invalid/projection-typescript-unregistered-point.json"
+        ).read_text()
+    )
+    with pytest.raises(CoverageContractError) as caught:
+        validate_projection(_strip_point_versions(document), reg, schema)
+    assert caught.value.code == "coverage.projection.capture_point"
+    assert "'wire.ts.fetch'" in str(caught.value)

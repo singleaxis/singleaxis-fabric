@@ -50,6 +50,10 @@ NODE_FLOOR = 24  # spec 055 §3.1: the owner-approved major-version floor
 POINT_VALUE = re.compile(
     r"^(?P<id>[a-z][a-z0-9_.]{0,63})@(?P<version>[0-9A-Za-z.+-]{1,32})$"
 )
+# step-projection-v1.schema.json lets a projection cite a bare id or ``id@version``.
+PROJECTION_POINT = re.compile(
+    r"^(?P<id>[a-z][a-z0-9_.]{0,63})(@(?P<version>[0-9A-Za-z.+-]{1,32}))?$"
+)
 Fail = Callable[[str, str, str], Any]
 
 INVALID_COVERAGE = {
@@ -72,15 +76,20 @@ INVALID_CAPTURE = {
 
 
 # ===================================================================== checks
-def point_id(value: Any) -> str | None:
-    """The id of an ``<id>@<version>`` capture-point value, or ``None`` when malformed."""
-    match = POINT_VALUE.fullmatch(value) if isinstance(value, str) else None
+def point_id(value: Any, *, version_required: bool = True) -> str | None:
+    """The id of an ``<id>@<version>`` capture-point value (or of a bare ``<id>`` when
+    ``version_required`` is false), or ``None`` when malformed."""
+    pattern = POINT_VALUE if version_required else PROJECTION_POINT
+    match = pattern.fullmatch(value) if isinstance(value, str) else None
     return match["id"] if match else None
 
 
-def registered(value: Any, reg: Mapping[str, Any]) -> bool:
-    """Whether ``value`` (``<id>@<version>``) names a row of capture-points-v1.json."""
-    pid = point_id(value)
+def registered(
+    value: Any, reg: Mapping[str, Any], *, version_required: bool = True
+) -> bool:
+    """Whether ``value`` (``<id>@<version>``, or a bare ``<id>`` when ``version_required``
+    is false) names a row of capture-points-v1.json."""
+    pid = point_id(value, version_required=version_required)
     return pid is not None and any(
         p["id"] == pid for p in reg["points"]["capture_points"]
     )

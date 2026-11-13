@@ -1522,7 +1522,7 @@ def _projection_points(value: Any, reg: Mapping[str, Any], where: str = "$") -> 
             if (
                 key == "capture_point"
                 and isinstance(item, str)
-                and not tsw.registered(item, reg)
+                and not tsw.registered(item, reg, version_required=False)
             ):
                 _fail(
                     "coverage.projection.capture_point",
