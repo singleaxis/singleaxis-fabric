@@ -152,3 +152,18 @@ def test_the_image_installs_only_locked_packages() -> None:
     ignore = (ROOT / "components/fabric-cli/Dockerfile.dockerignore").read_text()
     assert ignore.splitlines()[2] == "*", "the build context must start from nothing"
     assert copy.deepcopy(POLICY["ghcr_packages"]).count("fabric-cli") == 1
+
+
+def test_every_ignored_vulnerability_expires() -> None:
+    """The image scan ignores only named CVEs, each with an expiry date, so a fixed
+    upstream release is picked up instead of the ignore staying forever."""
+    ci = yaml.safe_load((ROOT / ".github/workflows/recorder-ci.yml").read_text())
+    (scan,) = [s for s in ci["jobs"]["fabric-cli-image"]["steps"]
+               if "trivy-action" in s.get("uses", "")]  # fmt: skip
+    ignore = ROOT / scan["with"]["trivyignores"]
+    entries = [line.split() for line in ignore.read_text().splitlines()
+               if line.strip() and not line.startswith("#")]  # fmt: skip
+    assert entries
+    for entry in entries:
+        assert len(entry) == 2 and entry[0].startswith("CVE-"), entry
+        assert entry[1].startswith("exp:2026-") or entry[1].startswith("exp:2027-"), entry

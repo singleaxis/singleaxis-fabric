@@ -289,6 +289,9 @@ jobs:
           format: sarif
           output: trivy-fabric-cli.sarif
           limit-severities-for-sarif: "true"
+          # Expiring, per-CVE entries for vendored modules of the newest Helm and
+          # Compose releases (components/fabric-cli/.trivyignore says which and why).
+          trivyignores: components/fabric-cli/.trivyignore
       - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: always()
         with:
