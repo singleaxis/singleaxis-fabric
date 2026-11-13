@@ -15,6 +15,14 @@
 // exactly once; when the map is full, a stale entry is found or the thread
 // exits mid-call, the event goes out with result unknown, as without
 // results. The only loss stays the ring-buffer reservation counter.
+//
+// connect, openat and execve are seen through the generic raw syscall
+// tracepoints (raw_syscalls sys_enter and sys_exit), dispatched by syscall
+// number, not through their per-syscall tracepoints: from Linux 6.19 the
+// per-syscall perf path of a syscall that takes a user path (openat, execve)
+// first copies that path for perf, and on some kernels (Ubuntu 7.0) it then
+// returns before it runs an attached BPF program, so those events were never
+// seen. The raw tracepoints run before that code on every kernel.
 
 //go:build ignore
 
@@ -131,15 +139,20 @@ static __always_inline void note_ring_loss(void) {
 // the production scope of an event under no root: SCOPE_AGENT with
 // EMIT_ALL_HOST, else SCOPE_NONE (not emitted). cfg[3] = 1 holds connect,
 // openat and execve for their sys_exit (EMIT_SYSCALL_RESULTS); cfg[4] = 1
-// emits process exits (EMIT_EXIT).
+// emits process exits (EMIT_EXIT). cfg[5..7] are the syscall numbers of
+// connect, openat and execve on this architecture plus one, set by user space
+// for each enabled class; 0 leaves that syscall alone.
 #define CFG_LOCAL_CGROUP 0
 #define CFG_MODE 1
 #define CFG_DEFAULT_SCOPE 2
 #define CFG_RESULTS 3
 #define CFG_EXIT 4
+#define CFG_NR_CONNECT 5
+#define CFG_NR_OPENAT 6
+#define CFG_NR_EXECVE 7
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(max_entries, 5);
+    __uint(max_entries, 8);
     __type(key, __u32);
     __type(value, __u64);
 } cfg SEC(".maps");
@@ -371,13 +384,20 @@ static __always_inline void finish(struct held h) {
         bpf_ringbuf_submit(h.e, 0);
 }
 
-// complete emits the thread's pending event of the given type with the
-// syscall's return value and forgets it. Another type's entry is left alone.
-static __always_inline void complete(__u32 type, long ret) {
+// complete emits the thread's pending event with the syscall's return value
+// and forgets it. It runs at every sys_exit: a thread makes one syscall at a
+// time, so an entry it holds is the one this sys_exit ends. A successful
+// execve's entry was already forgotten by sched_process_exec.
+static __always_inline void complete(long ret) {
     __u64 key = bpf_get_current_pid_tgid();
     struct event *e = bpf_map_lookup_elem(&pending, &key);
-    if (!e || e->type != type)
+    if (!e)
         return;
+    __u32 type = e->type;
+    if (type == EV_EXEC && ret == 0) {
+        bpf_map_delete_elem(&pending, &key);
+        return;
+    }
     if (e->filename_incomplete && e->uptr) {
         // The sys_enter read failed; the kernel has read the path by now.
         long n = bpf_probe_read_user_str(&e->filename, sizeof(e->filename), (const void *)e->uptr);
@@ -449,95 +469,139 @@ int tp_exec(struct trace_event_raw_sched_process_exec *ctx) {
     return 0;
 }
 
-SEC("tracepoint/syscalls/sys_enter_connect")
-int tp_connect(struct trace_event_raw_sys_enter *ctx) {
-    struct sockaddr *uservaddr = (struct sockaddr *)ctx->args[1];
-    __u16 fam = 0;
-    bpf_probe_read(&fam, sizeof(fam), uservaddr);
-    if (fam != AF_INET && fam != AF_INET6)
+// Syscall arguments from the user registers the raw tracepoints pass, and
+// whether the syscall is a 32-bit compat one (its numbers are another table;
+// the per-syscall tracepoints never fired for those either). The object is
+// built per architecture (gen.sh sets __TARGET_ARCH_*); field offsets are
+// CO-RE relocated against the running kernel.
+#if defined(__TARGET_ARCH_x86)
+struct pt_regs___x86 {
+    unsigned long di;
+    unsigned long si;
+} __attribute__((preserve_access_index));
+struct thread_info___x86 {
+    __u32 status;
+} __attribute__((preserve_access_index));
+#define TS_COMPAT 0x0002
+static __always_inline __u64 sc_arg(struct pt_regs *regs, int n) {
+    struct pt_regs___x86 *r = (void *)regs;
+    return n == 0 ? BPF_CORE_READ(r, di) : BPF_CORE_READ(r, si);
+}
+static __always_inline int sc_compat(struct pt_regs *regs) {
+    struct task_struct *task = (void *)bpf_get_current_task();
+    struct thread_info___x86 *ti = (void *)__builtin_preserve_access_index(&task->thread_info);
+    if (!bpf_core_field_exists(ti->status))
         return 0;
+    return (BPF_CORE_READ(ti, status) & TS_COMPAT) != 0;
+}
+#elif defined(__TARGET_ARCH_arm64)
+struct user_pt_regs___arm64 {
+    __u64 regs[31];
+    __u64 sp;
+    __u64 pc;
+    __u64 pstate;
+} __attribute__((preserve_access_index));
+#define PSR_MODE32_BIT 0x00000010
+static __always_inline __u64 sc_arg(struct pt_regs *regs, int n) {
+    struct user_pt_regs___arm64 *r = (void *)regs;
+    return n == 0 ? BPF_CORE_READ(r, regs[0]) : BPF_CORE_READ(r, regs[1]);
+}
+static __always_inline int sc_compat(struct pt_regs *regs) {
+    struct user_pt_regs___arm64 *r = (void *)regs;
+    return (BPF_CORE_READ(r, pstate) & PSR_MODE32_BIT) != 0;
+}
+#else
+#error "unsupported __TARGET_ARCH (gen.sh sets x86 or arm64)"
+#endif
+
+static __always_inline void on_connect(struct sockaddr *uservaddr) {
+    __u16 fam = 0;
+    bpf_probe_read_user(&fam, sizeof(fam), uservaddr);
+    if (fam != AF_INET && fam != AF_INET6)
+        return;
     struct held h = hold(EV_CONNECT);
     struct event *e = h.e;
     if (!e)
-        return 0;
+        return;
     e->family = fam;
     if (fam == AF_INET) {
         struct sockaddr_in sa4;
-        bpf_probe_read(&sa4, sizeof(sa4), uservaddr);
+        bpf_probe_read_user(&sa4, sizeof(sa4), uservaddr);
         e->port = __builtin_bswap16(sa4.sin_port);
         __builtin_memcpy(&e->addr, &sa4.sin_addr, 4);
     } else {
         struct sockaddr_in6 sa6;
-        bpf_probe_read(&sa6, sizeof(sa6), uservaddr);
+        bpf_probe_read_user(&sa6, sizeof(sa6), uservaddr);
         e->port = __builtin_bswap16(sa6.sin6_port);
         __builtin_memcpy(&e->addr, &sa6.sin6_addr, 16);
     }
     finish(h);
-    return 0;
 }
 
-SEC("tracepoint/syscalls/sys_exit_connect")
-int tp_connect_exit(struct trace_event_raw_sys_exit *ctx) {
-    complete(EV_CONNECT, ctx->ret);
-    return 0;
-}
-
-SEC("tracepoint/syscalls/sys_enter_openat")
-int tp_openat(struct trace_event_raw_sys_enter *ctx) {
+static __always_inline void on_openat(const char *fname) {
     struct held h = hold(EV_OPENAT);
     struct event *e = h.e;
     if (!e)
-        return 0;
-    const char *fname = (const char *)ctx->args[1];
-    long path_read = bpf_probe_read_str(&e->filename, sizeof(e->filename), fname);
+        return;
+    long path_read = bpf_probe_read_user_str(&e->filename, sizeof(e->filename), fname);
     if (path_read <= 0 || path_read >= sizeof(e->filename))
         e->filename_incomplete = 1;
     if (h.held && path_read <= 0)
         e->uptr = (__u64)fname;
     finish(h);
-    return 0;
-}
-
-SEC("tracepoint/syscalls/sys_exit_openat")
-int tp_openat_exit(struct trace_event_raw_sys_exit *ctx) {
-    complete(EV_OPENAT, ctx->ret);
-    return 0;
 }
 
 // execve is held at sys_enter only to see a failed exec (spec 057 OD-13):
 // a successful one is recorded by sched_process_exec, which forgets this.
 // argv is not read here, so a failed exec carries no argv digest.
-SEC("tracepoint/syscalls/sys_enter_execve")
-int tp_execve_enter(struct trace_event_raw_sys_enter *ctx) {
-    if (!cfg_get(CFG_RESULTS))
-        return 0;
+static __always_inline void on_execve(const char *fname) {
     struct held h = hold(EV_EXEC);
     struct event *e = h.e;
     if (!e)
-        return 0;
+        return;
     if (!h.held) {
         // The map is full: a failed exec cannot be paired, and a successful
         // one is recorded by sched_process_exec anyway.
         bpf_ringbuf_discard(e, 0);
-        return 0;
+        return;
     }
-    const char *fname = (const char *)ctx->args[0];
     long path_read = bpf_probe_read_user_str(&e->filename, sizeof(e->filename), fname);
     if (path_read <= 0 || path_read >= sizeof(e->filename))
         e->filename_incomplete = 1;
     if (path_read <= 0)
         e->uptr = (__u64)fname;
     e->argv_incomplete = 1;
+}
+
+// raw_syscalls sys_enter: (struct pt_regs *regs, long id). A syscall that is
+// not one of the enabled three returns after three array lookups.
+SEC("raw_tracepoint/sys_enter")
+int raw_sys_enter(struct bpf_raw_tracepoint_args *ctx) {
+    __u64 nr = (__u64)ctx->args[1] + 1;
+    if (nr == 0)
+        return 0; // id -1: no syscall (a disabled class is 0 too)
+    __u64 nr_connect = cfg_get(CFG_NR_CONNECT);
+    __u64 nr_openat = cfg_get(CFG_NR_OPENAT);
+    __u64 nr_execve = cfg_get(CFG_NR_EXECVE);
+    if (nr != nr_connect && nr != nr_openat && nr != nr_execve)
+        return 0;
+    struct pt_regs *regs = (struct pt_regs *)ctx->args[0];
+    if (sc_compat(regs))
+        return 0;
+    if (nr == nr_connect)
+        on_connect((struct sockaddr *)sc_arg(regs, 1));
+    else if (nr == nr_openat)
+        on_openat((const char *)sc_arg(regs, 1));
+    else
+        on_execve((const char *)sc_arg(regs, 0));
     return 0;
 }
 
-SEC("tracepoint/syscalls/sys_exit_execve")
-int tp_execve_exit(struct trace_event_raw_sys_exit *ctx) {
-    if (ctx->ret == 0) {
-        forget_exec(bpf_get_current_pid_tgid());
-        return 0;
-    }
-    complete(EV_EXEC, ctx->ret);
+// raw_syscalls sys_exit: (struct pt_regs *regs, long ret). Attached only
+// with syscall results on.
+SEC("raw_tracepoint/sys_exit")
+int raw_sys_exit(struct bpf_raw_tracepoint_args *ctx) {
+    complete((long)ctx->args[1]);
     return 0;
 }
 

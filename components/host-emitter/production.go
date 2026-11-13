@@ -122,7 +122,7 @@ func hostEvent(e *event, watch *hostrecords.WatchTable) (hostrecords.Event, bool
 	case evExec:
 		ev.Class, ev.Syscall = "exec", "execve"
 		// sched_process_exec fires after a successful exec; a failed one
-		// comes from sys_exit_execve (spec 057 OD-13).
+		// comes from the held execve's sys_exit (spec 057 OD-13).
 		ev.Result = "success"
 		if e.Result == resultFailed {
 			ev.Result, ev.Errno = "failed", errnoName(e.Errno)

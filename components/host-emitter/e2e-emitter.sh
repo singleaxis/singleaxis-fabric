@@ -36,6 +36,8 @@
 #                               (EPERM) and a seccomp kill (signal 31)
 #   TestPathReadRetriedAtExit   a path the sys_enter read could not see is
 #                               read again at sys_exit
+#   TestFileAccessWithoutResults  openat and connect with results off, seen
+#                               through the raw syscall tracepoints
 set -euo pipefail
 
 if [ "${1:-}" = "--production" ]; then
@@ -52,7 +54,7 @@ if [ "${1:-}" = "--production" ]; then
     -v /sys/kernel/debug:/sys/kernel/debug \
     -w /src/host-emitter "$BUILD_IMG" \
     go test -tags e2e -count=1 -v \
-      -run '^(TestNamespacePidsMatchProc|TestAgentRootPodShape|TestSandboxRootScope|TestSyscallResultsAndExits|TestHeldSyscallEmittedAtStop|TestKernelRefusals|TestPathReadRetriedAtExit)$' .
+      -run '^(TestNamespacePidsMatchProc|TestAgentRootPodShape|TestSandboxRootScope|TestSyscallResultsAndExits|TestHeldSyscallEmittedAtStop|TestKernelRefusals|TestPathReadRetriedAtExit|TestFileAccessWithoutResults)$' .
 fi
 
 EMIT_IMG="${EMIT_IMG:-fabric-host-emitter:local}"

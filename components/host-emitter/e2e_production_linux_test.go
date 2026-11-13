@@ -64,6 +64,8 @@ func TestMain(m *testing.M) {
 		os.Exit(seccompKillHelper())
 	case "unmapped-path":
 		os.Exit(unmappedPathHelper())
+	case "plain-connect":
+		os.Exit(plainConnectHelper())
 	}
 	os.Exit(m.Run())
 }
@@ -245,6 +247,20 @@ func unmappedPathHelper() int {
 		return 55
 	}
 	return 5
+}
+
+// plainConnectHelper connects once to 127.0.0.1:FABRIC_E2E_OPEN_PORT.
+func plainConnectHelper() int {
+	p, _ := strconv.Atoi(os.Getenv("FABRIC_E2E_OPEN_PORT"))
+	s, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
+	if err != nil {
+		return 60
+	}
+	defer unix.Close(s)
+	if err := unix.Connect(s, &unix.SockaddrInet4{Port: p, Addr: [4]byte{127, 0, 0, 1}}); err != nil {
+		return 61
+	}
+	return 0
 }
 
 // heldConnectHelper connects twice to a listener that accepts nothing and
@@ -944,6 +960,66 @@ func TestKernelRefusals(t *testing.T) {
 	ev, ok := hostEvent(exit, nil)
 	if !ok || ev.Class != "exit" || ev.Signal == nil || *ev.Signal != 31 || ev.ExitCode != nil {
 		t.Errorf("seccomp kill: %+v, want class exit, signal 31, no exit code", ev)
+	}
+	if lost, err := rt.lossCount(); err != nil || lost != 0 {
+		t.Errorf("ring loss %d (%v): loss accounting must stay zero for this load", lost, err)
+	}
+}
+
+// TestFileAccessWithoutResults (kernel matrix): with syscall results off,
+// an openat and a connect in the agent root are each emitted once at
+// sys_enter, result unknown. On Ubuntu's 7.0 kernel the per-syscall openat
+// tracepoint never ran an attached BPF program, so file access was silently
+// empty; the raw syscall dispatch sees it on every kernel.
+func TestFileAccessWithoutResults(t *testing.T) {
+	base := testBase(t)
+	agent := mkCgroup(t, filepath.Join(base, "agent"))
+	cfg := &Config{Production: true, Exec: true, Connect: true, FileAccess: true, AgentCgroupRoots: []string{agent}}
+	rt, err := loadBPF(cfg)
+	if err != nil {
+		t.Fatalf("load BPF: %v", err)
+	}
+	t.Cleanup(rt.close)
+	events := collect(t, rt)
+
+	marker := filepath.Join("/tmp", "fabric-e2e-"+randomHex(t, 4))
+	if err := os.WriteFile(marker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(marker) })
+	open, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer open.Close()
+	port := open.Addr().(*net.TCPAddr).Port
+	runIn(t, agent, "/bin/cat", marker)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run=^$")
+	cmd.Env = append(os.Environ(), helperEnv+"=plain-connect", "FABRIC_E2E_OPEN_PORT="+strconv.Itoa(port))
+	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: openCgroup(t, agent)}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("the plain-connect helper: %v %s", err, out)
+	}
+	defer func() {
+		if t.Failed() {
+			t.Logf("kernel %s", kernelRelease())
+		}
+	}()
+	opened := waitFor(t, events, "the openat of the marker", func(e *event) bool {
+		return e.Type == evOpenat && e.Filename == marker
+	})
+	if opened.Result != resultUnknown || opened.FilenameIncomplete {
+		t.Errorf("openat: result %d incomplete %v, want unknown and complete", opened.Result, opened.FilenameIncomplete)
+	}
+	connect := waitFor(t, events, "the connect", func(e *event) bool {
+		return e.Type == evConnect && e.Pid == uint32(cmd.Process.Pid) && e.Port == uint32(port)
+	})
+	if connect.Result != resultUnknown {
+		t.Errorf("connect: result %d, want unknown", connect.Result)
 	}
 	if lost, err := rt.lossCount(); err != nil || lost != 0 {
 		t.Errorf("ring loss %d (%v): loss accounting must stay zero for this load", lost, err)
