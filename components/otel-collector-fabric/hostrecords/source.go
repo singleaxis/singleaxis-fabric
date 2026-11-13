@@ -40,12 +40,20 @@ type Config struct {
 	StateDir    string   // 0700, owned by the sensor; refused if shared
 	Digests     bool     // sensor policy digests: permitted
 	Classes     []string // enabled event classes for the manifest row
+	// SyscallResults says the sensor pairs each syscall with its return
+	// (spec 057 OD-13): the manifest gains the <kind>.syscall_result row.
+	// An enabled exit class gains the <kind>.exit row (spec 057 §6.4).
+	SyscallResults bool
 }
 
 var (
 	versionPattern = regexp.MustCompile(`^[0-9A-Za-z.+-]{1,32}$`)
 	tenantPattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 	allClasses     = []string{"exec", "connect", "file"}
+	// knownClasses adds the process exit class (spec 057 OD-13). It is not in
+	// allClasses: capture-manifest-v1 has no sensor_exit uncaptured class, so
+	// a source without it publishes the same manifest as before.
+	knownClasses = []string{"exec", "connect", "file", classExit}
 )
 
 const maxLabelBytes = 1024
@@ -79,7 +87,7 @@ func (cfg Config) normalized() (Config, error) {
 	}
 	seen := map[string]bool{}
 	for _, c := range cfg.Classes {
-		if !slices.Contains(allClasses, c) || seen[c] {
+		if !slices.Contains(knownClasses, c) || seen[c] {
 			return out, errors.New("hostrecords: Classes holds an unknown or repeated event class")
 		}
 		seen[c] = true
@@ -92,7 +100,7 @@ func (cfg Config) normalized() (Config, error) {
 	out.IDKey = slices.Clone(cfg.IDKey)
 	out.StateKey = slices.Clone(cfg.StateKey)
 	out.Classes = nil
-	for _, c := range allClasses {
+	for _, c := range knownClasses {
 		if seen[c] {
 			out.Classes = append(out.Classes, c)
 		}

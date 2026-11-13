@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+import unicodedata
 from dataclasses import dataclass, field
 from typing import IO, Any, Literal
 
@@ -55,6 +56,23 @@ class Finding:
         return f"{entry['severity']} {self.id}: {entry['text']}{detail}. Fix: {entry['fix']}"
 
 
+def printable(text: str) -> str:
+    """``text`` safe to print on a terminal: control and format characters (an ANSI or OSC
+    escape, a bidirectional override) are shown as ``\\xNN``/``\\uNNNN``, newlines and
+    tabs kept. Human output carries values Fabric did not write (model answers and tool
+    results in ``fabric show``, hosts and labels from status files), which must never
+    drive the operator's terminal."""
+    if text.isprintable():
+        return text
+    out = []
+    for ch in text:
+        if ch in "\n\t" or unicodedata.category(ch) not in ("Cc", "Cf"):
+            out.append(ch)
+        else:
+            out.append(f"\\x{ord(ch):02x}" if ord(ch) <= 0xFF else f"\\u{ord(ch):04x}")  # noqa: PLR2004
+    return "".join(out)
+
+
 class CliError(Exception):
     """A command cannot continue: its findings and exit code."""
 
@@ -91,10 +109,10 @@ def emit(report: Report, lines: list[str], *, as_json: bool, quiet: bool,
         return report.exit_code
     if not quiet:
         for line in lines:
-            out.write(line + "\n")
+            out.write(printable(line) + "\n")
     for finding in report.findings:
         if quiet and finding.severity != "error":
             continue
         stream = err if finding.severity == "error" else out
-        stream.write(finding.line() + "\n")
+        stream.write(printable(finding.line()) + "\n")
     return report.exit_code

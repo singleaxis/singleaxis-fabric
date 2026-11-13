@@ -1,0 +1,226 @@
+{
+  "schema_version": "fabric.host-record-fixture/v1",
+  "name": "record-file-watched",
+  "description": "An open of a watched path that the kernel refused with EACCES (spec 057 §4.3, WP7-11): the customer's label and class and the pth- v2 id of the watched entry's configured path, labelled in the sensor's user space; the path never appears.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "guard": {
+    "source_kind": "host.ebpf",
+    "profile": "production",
+    "tenant_id": "tenant-a",
+    "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+    "host_digests": "omitted"
+  },
+  "batches": [
+    {
+      "resourceSpans": [
+        {
+          "resource": {
+            "attributes": []
+          },
+          "scopeSpans": [
+            {
+              "scope": {
+                "name": "fabric.host-records"
+              },
+              "spans": [
+                {
+                  "traceId": "2dd5324f8310f446cff1cfd895484a86",
+                  "spanId": "d979278e336448b1",
+                  "name": "fabric.sensor_event",
+                  "kind": 1,
+                  "startTimeUnixNano": "1791331201218000000",
+                  "endTimeUnixNano": "1791331201218000000",
+                  "attributes": [
+                    {
+                      "key": "fabric.tenant_id",
+                      "value": {
+                        "stringValue": "tenant-a"
+                      }
+                    },
+                    {
+                      "key": "fabric.source_id",
+                      "value": {
+                        "stringValue": "s-2c6c641009e36ee2e6587ef29bc3a782"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.epoch",
+                      "value": {
+                        "intValue": "6917529027641081857"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.sequence",
+                      "value": {
+                        "intValue": "6"
+                      }
+                    },
+                    {
+                      "key": "fabric.event_id",
+                      "value": {
+                        "stringValue": "9aabd3c7-abe9-4db4-a201-7aa06f6a4704"
+                      }
+                    },
+                    {
+                      "key": "fabric.attempt.uid",
+                      "value": {
+                        "stringValue": "d300c684-0186-4c1c-a2c7-2500818a2cb6"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.input",
+                      "value": {
+                        "stringValue": "records"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.source",
+                      "value": {
+                        "stringValue": "observed"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.point",
+                      "value": {
+                        "stringValue": "host.ebpf@0.11.0"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.event_class",
+                      "value": {
+                        "stringValue": "file"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.syscall",
+                      "value": {
+                        "stringValue": "openat"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.result",
+                      "value": {
+                        "stringValue": "failed"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.errno",
+                      "value": {
+                        "stringValue": "EACCES"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.pid",
+                      "value": {
+                        "intValue": "4121"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.ppid",
+                      "value": {
+                        "intValue": "4100"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.ns_pid",
+                      "value": {
+                        "intValue": "41"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.ns_ppid",
+                      "value": {
+                        "intValue": "7"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.pid_ns",
+                      "value": {
+                        "stringValue": "4026532481"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.cgroup_id",
+                      "value": {
+                        "stringValue": "9123"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.scope",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.watch_label",
+                      "value": {
+                        "stringValue": "agent-acl"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.watch_class",
+                      "value": {
+                        "stringValue": "permission_config"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.watch_id",
+                      "value": {
+                        "stringValue": "pth-f6b01d607b66e4abf9757513eac828df"
+                      }
+                    },
+                    {
+                      "key": "fabric.execution.host_id",
+                      "value": {
+                        "stringValue": "hst-96164cc6e2bd169f1beee83173bb7293"
+                      }
+                    }
+                  ],
+                  "status": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": [
+    {
+      "spans": [
+        {
+          "name": "fabric.sensor_event",
+          "attributes": {
+            "fabric.tenant_id": "tenant-a",
+            "fabric.source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+            "fabric.source.epoch": 6917529027641081857,
+            "fabric.source.sequence": 6,
+            "fabric.event_id": "9aabd3c7-abe9-4db4-a201-7aa06f6a4704",
+            "fabric.attempt.uid": "d300c684-0186-4c1c-a2c7-2500818a2cb6",
+            "fabric.capture.input": "records",
+            "fabric.capture.source": "observed",
+            "fabric.capture.point": "host.ebpf@0.11.0",
+            "fabric.sensor.event_class": "file",
+            "fabric.sensor.syscall": "openat",
+            "fabric.sensor.result": "failed",
+            "fabric.sensor.errno": "EACCES",
+            "fabric.sensor.pid": 4121,
+            "fabric.sensor.ppid": 4100,
+            "fabric.sensor.ns_pid": 41,
+            "fabric.sensor.ns_ppid": 7,
+            "fabric.sensor.pid_ns": "4026532481",
+            "fabric.sensor.cgroup_id": "9123",
+            "fabric.sensor.scope": "agent",
+            "fabric.sensor.watch_label": "agent-acl",
+            "fabric.sensor.watch_class": "permission_config",
+            "fabric.sensor.watch_id": "pth-f6b01d607b66e4abf9757513eac828df",
+            "fabric.execution.host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+            "fabric.source.authenticated": true
+          }
+        }
+      ],
+      "stripped": {},
+      "dropped": 0
+    }
+  ]
+}

@@ -791,6 +791,7 @@ def security_context_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "fabric.sensor.exit_code": int32,
         "fabric.sensor.signal": {"type": "int", "min": 1},
         "fabric.sensor.watch_label": string(PUBLIC_LABEL, "agent-acl", "skills-dir"),
+        "fabric.sensor.watch_id": pseudonym("pth"),
         "fabric.sensor.watch_class": enum_of(
             [r["value"] for r in vocab["watch_class"]], "validator"
         ),

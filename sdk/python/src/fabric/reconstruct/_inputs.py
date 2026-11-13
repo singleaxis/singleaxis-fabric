@@ -358,15 +358,19 @@ def _otlp_proto_spans(data: bytes, label: str) -> list[SpanRecord]:
 #: as a collector file exporter or the test sink writes them).
 SPAN_FILE_SUFFIXES = (OTLP_PROTO_SUFFIX, ".json", ".jsonl")
 ACCEPTED_INPUTS = (
-    "a sink JSONL, OTLP/JSON (.json, .jsonl) or OTLP protobuf (.otlp) span file, or a "
-    "directory holding such files"
+    "a sink JSONL, OTLP/JSON (.json, .jsonl) or OTLP protobuf (.otlp) span file, a "
+    "directory holding such files, or a `fabric up` data directory (its spans/ directory)"
 )
+#: Spec 058 §13.4: the data directory of the local-dir destination (``./fabric-data``)
+#: stands for its ``spans`` directory, so a user passes the directory `fabric up` printed.
+DATA_DIR_SPANS = "spans"
 
 
 def list_span_inputs(paths: Sequence[str | os.PathLike[str]]) -> list[Path]:
     """Span files in argument order; a directory stands for its ``*.otlp``, ``*.json`` and
-    ``*.jsonl`` files (sorted by name, not recursive, hidden files skipped). Errors name an
-    input by position only, never by path."""
+    ``*.jsonl`` files (sorted by name, not recursive, hidden files skipped), or, when it
+    holds none but has a ``spans`` directory (``fabric up``'s data directory), for that
+    directory's. Errors name an input by position only, never by path."""
 
     files: list[Path] = []
     for index, path in enumerate(paths, start=1):
@@ -374,6 +378,8 @@ def list_span_inputs(paths: Sequence[str | os.PathLike[str]]) -> list[Path]:
         if not location.is_dir():
             files.append(location)
             continue
+        if not _span_entries(location) and (location / DATA_DIR_SPANS).is_dir():
+            location = location / DATA_DIR_SPANS
         try:
             found = sorted(
                 entry
@@ -391,6 +397,16 @@ def list_span_inputs(paths: Sequence[str | os.PathLike[str]]) -> list[Path]:
             )
         files.extend(found)
     return files
+
+
+def _span_entries(directory: Path) -> bool:
+    """Whether ``directory`` itself holds a span file (unreadable: treated as holding one,
+    so the error below names it)."""
+    try:
+        return any(entry.suffix.lower() in SPAN_FILE_SUFFIXES and not entry.name.startswith(".")
+                   for entry in directory.iterdir())  # fmt: skip
+    except OSError:
+        return True
 
 
 def _parse_line(line: str, where: str) -> tuple[SpanFormat, list[SpanRecord]]:

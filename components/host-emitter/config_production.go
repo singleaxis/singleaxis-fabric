@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/hostrecords"
 )
 
 // version is the capture point version (host.ebpf@<version>); release
@@ -65,6 +68,9 @@ func (c *Config) eventClasses() []string {
 	}
 	if c.FileAccess {
 		classes = append(classes, "file")
+	}
+	if c.ProcessExit {
+		classes = append(classes, "exit") // spec 057 OD-13
 	}
 	return classes
 }
@@ -129,6 +135,53 @@ func (c *Config) loadProductionConfig() {
 	}
 	if c.CgroupRoot == "" {
 		c.CgroupRoot = "/sys/fs/cgroup"
+	}
+}
+
+// maxWatchedPathsFile bounds the watched paths file the emitter reads.
+const maxWatchedPathsFile = 4 << 20
+
+// loadSensorClassConfig reads the spec 057 OD-13 settings (WP7-11), strictly
+// like the production switches: EMIT_SYSCALL_RESULTS, EMIT_EXIT and the
+// customer's watched_paths list (EMIT_WATCHED_PATHS_FILE: the JSON list, or a
+// deployment policy in JSON whose security_context holds it). Errors name
+// the setting and the fix, never a listed path.
+func (c *Config) loadSensorClassConfig() {
+	fail := func(err error) { c.loadErrs = append(c.loadErrs, err) }
+	for _, sw := range []struct {
+		name string
+		dst  *bool
+	}{{"EMIT_SYSCALL_RESULTS", &c.SyscallResults}, {"EMIT_EXIT", &c.ProcessExit}} {
+		if v := os.Getenv(sw.name); v != "" {
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				fail(fmt.Errorf("%s must be true or false", sw.name))
+				continue
+			}
+			*sw.dst = b
+		}
+	}
+	c.WatchedPathsFile = os.Getenv("EMIT_WATCHED_PATHS_FILE")
+	if c.WatchedPathsFile == "" {
+		return
+	}
+	f, err := os.Open(c.WatchedPathsFile)
+	if err != nil {
+		fail(fmt.Errorf("EMIT_WATCHED_PATHS_FILE cannot be opened: check that the file exists and the emitter's user can read it"))
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxWatchedPathsFile+1))
+	if err != nil || len(data) > maxWatchedPathsFile {
+		fail(fmt.Errorf("EMIT_WATCHED_PATHS_FILE is unreadable or larger than 4 MiB: give the watched_paths list alone"))
+		return
+	}
+	entries, err := hostrecords.ParseWatchedPaths(data)
+	if err == nil {
+		c.watch, err = hostrecords.NewWatchTable(entries)
+	}
+	if err != nil {
+		fail(fmt.Errorf("EMIT_WATCHED_PATHS_FILE: %w", err))
 	}
 }
 

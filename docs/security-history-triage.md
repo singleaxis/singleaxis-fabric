@@ -177,3 +177,16 @@ lines 164 and 171. They are the same minimum-length test vector classified
 above, never a deployment or service key. A later commit on the branch replaced
 them with the low-entropy `b"k" * 20`, so the squash merge does not carry them.
 Only these exact commit/path/rule/line fingerprints are baselined.
+
+## Spec 055 T2 TypeScript wire configuration vectors (2026-11-14)
+
+The spec 055 T2 feature branch (PR #305) added
+`sdk/typescript/test/wire/fixtures/config-env.json`, the configuration vectors
+the TypeScript wire SDK shares with the Python writer. The scan flags eight of
+its lines (rule `generic-api-key`) in the feature-branch commit `9ee23b2…`:
+the literal test pseudonym key `…id-key-not-a-secret`, the test spool key that
+is the base64 of the bytes 0x00–0x1f, a deliberately wrong-length key, and the
+SHA-256 digests of those test keys that the vectors expect. They are
+cross-language test vectors, never a deployment or service key. Only these exact
+commit/path/rule/line fingerprints are baselined; the squash merge of PR #305
+gets its own entry when it lands.

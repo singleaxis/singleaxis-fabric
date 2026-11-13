@@ -93,6 +93,7 @@ func loadConfig() *Config {
 	cfg.endpointSet = cfg.Endpoint != ""
 	cfg.loadClockConfig()
 	cfg.loadProductionConfig()
+	cfg.loadSensorClassConfig()
 	// Local mode keeps its historical default endpoint.
 	if !cfg.Production && !cfg.endpointSet && cfg.EndpointFile == "" {
 		cfg.Endpoint = "localhost:4317"
