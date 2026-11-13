@@ -1512,3 +1512,26 @@ def test_a_process_exit_is_a_valid_listed_host_event() -> None:
         "events": [{**{k: entry[k] for k in ("event_id", "source", "event_class", "pid",
                                              "time_ns")}, "reason": "no_run"}],
     })  # fmt: skip
+
+
+def test_a_local_record_keeps_the_errno_name_of_a_failed_call() -> None:
+    """Spec 057 WP7-12: a local-profile record says ``failed:NAME`` (the auditd receiver,
+    the eBPF emitter with syscall results); the errno name is kept, so a local sensor's
+    EACCES or EPERM is a refusal like a production record's. A number, ``other`` or a
+    bare ``failed`` names no errno."""
+    from fabric.reconstruct import _os_access  # noqa: PLC0415
+
+    def read(result: str, syscall: str = "openat") -> HostEvent:
+        attrs = _exec_attrs(4121, 4100, **{"audit.syscall": syscall, "audit.result": result,
+                                           "log.record.uid": "host-" + "a" * 32})  # fmt: skip
+        event = normalize_local_record(T0, attrs, id_key=KEY)
+        assert isinstance(event, HostEvent)
+        return event
+
+    denied = read("failed:EACCES")
+    assert denied.result == "failed" and denied.errno == "EACCES"
+    assert _os_access.event_refusal(denied) == ("errno.eacces", "openat")
+    assert _os_access.event_refusal(read("failed:EPERM", "connect")) == ("errno.eperm", "connect")
+    for result in ("failed:13", "failed:other", "failed", "success"):
+        assert read(result).errno is None
+    assert _os_access.event_refusal(read("failed:ENOENT")) is None

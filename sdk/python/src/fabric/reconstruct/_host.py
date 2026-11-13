@@ -818,7 +818,18 @@ def normalize_local_record(
         cgroup_id=cgroup,
         syscall=syscall,
         exe_sha256=_bare_digest(attrs.get(L_EXE_SHA256)),
+        errno=_local_errno(attrs.get(L_RESULT)),
     )
+
+
+def _local_errno(value: Any) -> str | None:
+    """The errno name of a local record's ``audit.result`` ``failed:NAME`` (the auditd
+    receiver and the eBPF emitter write it so; spec 057 WP7-12 reads EACCES and EPERM as
+    refusals), or ``None``: a number, ``other`` or a bare ``failed`` names no errno."""
+    if not isinstance(value, str) or not value.startswith("failed:"):
+        return None
+    name = value.removeprefix("failed:")
+    return name if _ERRNO_RE.fullmatch(name) and name != "other" else None
 
 
 def _add_local(
