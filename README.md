@@ -209,9 +209,11 @@ More: [architecture](docs/architecture.md).
   (`no runs reconstructed`).
 - Model calls through `requests`/`urllib3` are reported as losses, and
   `boto3`, gRPC and model endpoints beyond the five above are not captured.
-- Host sensors run with a local-profile Node; production ingress is
-  specified ([spec 053](specs/053-execution-channels-p4.md) §6).
-- A production Node serves one agent source.
+- With the single workload credential (`shadow-production`,
+  `make up-prod`), a production Node serves one agent source. Ingress
+  groups (`shadow-production-host-ingress`, `make up-prod-groups`) give
+  each agent and each host sensor its own source, token and listener on one
+  Node ([host sensors](docs/host-sensors.md#production-mode)).
 
 The full list, with measurements: [limitations](docs/limitations-and-roadmap.md).
 

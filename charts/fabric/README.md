@@ -15,6 +15,22 @@ the customer. It requires no SingleAxis-only backend.
 Fabric Node is asynchronous to the monitored AI system. A Collector or
 destination outage must not become a production request-path dependency.
 
+## Install from the published chart
+
+The chart is published at `oci://ghcr.io/singleaxis/charts/fabric`, with the
+profiles inside it. Pull it once to have the profile files:
+
+```bash
+helm pull oci://ghcr.io/singleaxis/charts/fabric --version 0.12.1 --untar
+helm upgrade --install fabric-node ./fabric \
+  --namespace fabric-system --create-namespace \
+  --values ./fabric/profiles/shadow-dev.yaml
+```
+
+The commands below use `charts/fabric`, the chart's path in a clone of this
+repository. With the pulled chart, use `./fabric` and
+`./fabric/profiles/<profile>.yaml` instead.
+
 ## Profiles
 
 ### `shadow-dev`
@@ -71,10 +87,12 @@ Fails closed at render time unless the recorder has:
   names another tenant or source is refused, and admitted spans carry
   `fabric.source.authenticated=true`. A span that names no source is
   dropped on its own.
-  **Deployment limit:** one production Node serves exactly one agent
-  source. A Node shared by many pods, such as a DaemonSet, works only if
-  every pod runs with the same `FABRIC_SOURCE_ID`. Otherwise run one Node
-  per source.
+  **Deployment limit:** with this single workload credential, one
+  production Node serves exactly one agent source. A Node shared by many
+  pods, such as a DaemonSet, works only if every pod runs with the same
+  `FABRIC_SOURCE_ID`. To serve several sources from one Node (agents and
+  host sensors), use [ingress groups](#ingress-groups-and-host-sensors-shadow-production-host-ingress),
+  one source per group; otherwise run one Node per source.
 - with content, the Node key Secret `content.encryption.keySecret` (default
   `fabric-node-content-key`; 32 random bytes or their base64), which seals
   the persistent content queue with AES-256-GCM. `fabric-gate` refuses a
