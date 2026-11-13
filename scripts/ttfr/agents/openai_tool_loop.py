@@ -40,7 +40,9 @@ def main() -> int:
     for _ in range(4):
         reply = (
             client.chat.completions.create(
-                model="fixture-model", messages=messages, tools=TOOLS
+                model=os.environ.get("AGENT_MODEL", "fixture-model"),
+                messages=messages,
+                tools=TOOLS,
             )
             .choices[0]
             .message

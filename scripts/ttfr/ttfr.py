@@ -308,16 +308,24 @@ def run_host(options: argparse.Namespace, work: Path) -> dict[str, Any]:
     _sh([python, "-m", "venv", str(venv)])
     _sh([str(venv / "bin/pip"), "install", "--quiet", "--require-hashes", "--no-deps",
          "--only-binary", ":all:", "-r", str(HERE / "agents" / f"requirements-{options.agent}.txt")])  # fmt: skip
-    with background([sys.executable, "-I", str(HERE / "model_server.py"), "--api-key", API_KEY,
-                     "--ready-file", str(work / "model.json")]):  # fmt: skip
-        port = wait_file(work / "model.json")["port"]
+    real = options.real_model_url
+    fixture = [sys.executable, "-I", str(HERE / "model_server.py"), "--api-key", API_KEY,
+               "--ready-file", str(work / "model.json")]  # fmt: skip
+    with background(fixture) if not real else contextlib.nullcontext():
+        model_url = (
+            real or f"http://127.0.0.1:{wait_file(work / 'model.json')['port']}/v1"
+        )
         env = {
             "PATH": f"{venv}/bin:{os.environ.get('PATH', '')}", "HOME": os.environ["HOME"],
             "VIRTUAL_ENV": str(venv), "XDG_STATE_HOME": str(work / "state"),
             "PIP_DISABLE_PIP_VERSION_CHECK": "1",
             **{k: v for k, v in os.environ.items() if k.startswith("DOCKER_")},
-            **agent_environment(options.path, f"http://127.0.0.1:{port}/v1", None),
+            **agent_environment(options.path, model_url, None),
         }  # fmt: skip
+        if real:
+            # A real provider (informative, never a gate): its key from this shell, by name.
+            env["OPENAI_API_KEY"] = os.environ["TTFR_MODEL_API_KEY"]
+            env["AGENT_MODEL"] = options.real_model
         source = "pypi (published)"
         index: contextlib.AbstractContextManager[None] = contextlib.nullcontext()
         if not options.published:
@@ -353,6 +361,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--published", action="store_true",
                         help="install the published package from PyPI (release candidates)")  # fmt: skip
     parser.add_argument("--image", default=PYTHON_IMAGE)
+    parser.add_argument("--real-model-url", help="host mode: a real provider's base URL "
+                        "(its key in TTFR_MODEL_API_KEY); informative, never a gate")  # fmt: skip
+    parser.add_argument("--real-model", default="fixture-model", help="its model name")
     parser.add_argument(
         "--python", default="python3.12", help="host mode's interpreter"
     )

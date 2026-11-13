@@ -43,7 +43,7 @@ def main() -> int:
                 f"{base_url}/chat/completions",
                 headers=headers,
                 json={
-                    "model": "fixture-model",
+                    "model": os.environ.get("AGENT_MODEL", "fixture-model"),
                     "messages": messages,
                     "tools": TOOLS,
                 },
