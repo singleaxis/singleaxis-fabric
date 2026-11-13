@@ -442,6 +442,17 @@ it never makes, applies, waits for or returns one.
 
 ### Fixed
 
+- **A malformed hook variable now names itself and its fix.** When
+  `FABRIC_WIRE_EXEC`, `FABRIC_WIRE_MCP`, `FABRIC_HOST_LABEL`,
+  `FABRIC_WIRE_HTTP_HOSTS` or `FABRIC_WIRE_SANDBOX_HOSTS` could not be read,
+  every hook stayed off and the only warning was "invalid hook configuration
+  (ValueError)". Setting `FABRIC_WIRE_HTTP_HOSTS=http://mcp.internal:8080` (a
+  host, not a JSON array) silently turned off the exec and MCP hooks too. The
+  warning, in the log and in `python -m fabric.wire status`, now names the
+  variable and the format it needs, for example `FABRIC_WIRE_HTTP_HOSTS is
+  malformed, so every hook is disabled; use a JSON array of hosts, for example
+  ["mcp.internal:8443"] ...`. It never shows the value. Found by SC-RA-1.
+
 - **A declared hook program no longer counts as a tool call's effect.**
   In an agent whose tools run remotely and whose pre-tool hook runs locally,
   the hook process was linked to each tool call, so the report showed no

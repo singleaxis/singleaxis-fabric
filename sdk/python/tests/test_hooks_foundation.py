@@ -405,7 +405,8 @@ def test_environment_activation_with_a_malformed_value_disables_every_hook(
     assert hooks.current_handle() is None
     warnings = [r for r in caplog.records if r.name == "fabric.hooks"]
     assert len(warnings) == 1 and "secret-ish-value" not in caplog.text
-    assert "ValueError" in warnings[0].getMessage()
+    assert warnings[0].getMessage() == ("fabric.hooks: FABRIC_WIRE_EXEC is malformed, so every "
+                                        "hook is disabled; set it to 1 or 0")  # fmt: skip
 
 
 @pytest.mark.parametrize(
@@ -420,8 +421,38 @@ def test_a_malformed_m2_switch_disables_every_hook(
         handle = hooks.install_from_env({"FABRIC_WIRE_EXEC": "1", **env})
     assert handle is not None and handle.status()["state"] == "invalid_configuration"
     assert fake.installed == [] and hooks.current_handle() is None
-    assert len([r for r in caplog.records if r.name == "fabric.hooks"]) == 1
+    (warning,) = [r.getMessage() for r in caplog.records if r.name == "fabric.hooks"]
     assert not any(value in caplog.text for value in env.values())
+    # the warning names the variable and the format it must have (cause and fix)
+    (name,) = env
+    assert warning.startswith(f"fabric.hooks: {name} is malformed, so every hook is disabled; ")
+    assert "use a JSON array of hosts" in warning
+
+
+def test_a_hosts_list_given_as_a_plain_string_names_the_variable_and_the_fix(
+    fake: FakeModule, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """SC-RA-1 regression (spec 057 §10.2): ``FABRIC_WIRE_HTTP_HOSTS=http://127.0.0.1:5555``
+    (a host, not a JSON array) disabled every hook, the MCP and exec hooks included, and
+    the only warning was "invalid hook configuration (ValueError)": it named neither the
+    variable nor the format. The warning and ``python -m fabric.wire status`` now name
+    both, never the value."""
+    _capture(tmp_path)
+    env = {"FABRIC_WIRE_EXEC": "1", "FABRIC_WIRE_MCP": "1",
+           "FABRIC_WIRE_HTTP_HOSTS": "http://127.0.0.1:5555"}  # fmt: skip
+    with caplog.at_level(logging.WARNING, logger="fabric.hooks"):
+        handle = hooks.install_from_env(env)
+    assert handle is not None and handle.status()["state"] == "invalid_configuration"
+    expected = ("fabric.hooks: FABRIC_WIRE_HTTP_HOSTS is malformed, so every hook is disabled; "
+                'use a JSON array of hosts, for example ["mcp.internal:8443"] or '
+                '["http://127.0.0.1:8080"], each host or host:port with an optional http:// or '
+                "https:// and no path")  # fmt: skip
+    assert [r.getMessage() for r in caplog.records if r.name == "fabric.hooks"] == [expected]
+    assert hooks.env_status(env)["warnings"] == [expected]
+    assert "5555" not in caplog.text
+    # the same hosts as a JSON array are accepted
+    fixed = hooks.env_status({**env, "FABRIC_WIRE_HTTP_HOSTS": '["http://127.0.0.1:5555"]'})
+    assert fixed["configuration"] == "valid" and fixed["warnings"] == []
 
 
 @pytest.mark.parametrize("value", ["modal", "Modal, daytona"])

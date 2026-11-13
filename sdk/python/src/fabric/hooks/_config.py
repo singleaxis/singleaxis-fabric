@@ -43,7 +43,7 @@ __all__ = [
     "EXEC_ENV", "HOOK_ENV_NAMES", "HOST_LABEL_ENV", "HTTP_HOSTS_ENV", "MAX_HOSTS", "MCP_ENV",
     "NOT_IN_BUILD_ENV", "REMOTE_SANDBOX_ENV", "SANDBOX_HOSTS_ENV", "SANDBOX_PROVIDERS",
     "HooksConfig", "HostRule", "canonical_host", "config_from_args", "config_from_env",
-    "ipv6_text", "parse_host",
+    "ipv6_text", "malformed_env", "parse_host",
 ]  # fmt: skip
 
 EXEC_ENV = "FABRIC_WIRE_EXEC"
@@ -318,6 +318,39 @@ def _env_providers(environ: Mapping[str, str]) -> tuple[tuple[str, ...], bool]:
     names = [part.strip().lower() for part in text.split(",") if part.strip()]
     supported = tuple(dict.fromkeys(n for n in names if n in SANDBOX_PROVIDERS))
     return supported, len(supported) != len(set(names))
+
+
+# What each hook variable must hold: the fix a malformed-configuration warning names
+# (never the value it was given).
+_ENV_FORMATS: tuple[tuple[str, str], ...] = (
+    (EXEC_ENV, "set it to 1 or 0"),
+    (MCP_ENV, "set it to 1 or 0"),
+    (HOST_LABEL_ENV, "use 1-128 letters, digits and ._:/-, starting with a letter or digit"),
+    (HTTP_HOSTS_ENV, 'use a JSON array of hosts, for example ["mcp.internal:8443"] or '
+                     '["http://127.0.0.1:8080"], each host or host:port with an optional '
+                     "http:// or https:// and no path"),
+    (SANDBOX_HOSTS_ENV, 'use a JSON array of hosts, for example ["api.e2b.app"], each host '
+                        "or host:port with an optional http:// or https:// and no path"),
+)  # fmt: skip
+
+
+def malformed_env(environ: Mapping[str, str]) -> tuple[str, str] | None:
+    """The first hook variable :func:`config_from_env` refuses, with the format it must
+    have (``None`` when every one parses on its own); never raises, never the value."""
+
+    def parse(name: str) -> object:
+        if name in (EXEC_ENV, MCP_ENV):
+            return _flag(environ, name)
+        if name == HOST_LABEL_ENV:
+            return _label((environ.get(HOST_LABEL_ENV) or "").strip() or None)
+        return _json_hosts(environ, name)
+
+    for name, fix in _ENV_FORMATS:
+        try:
+            parse(name)
+        except Exception:
+            return name, fix
+    return None
 
 
 def config_from_env(
