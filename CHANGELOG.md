@@ -26,7 +26,9 @@ it never makes, applies, waits for or returns one.
   unchanged. A malformed setting is reported with the same diagnostics id
   Python gives it, its fix, and the variable's name, never its value; a
   shared fixture generated from `python -m fabric.wire status` checks this
-  for 75 environments. The built-in model endpoints come from the same table
+  for 78 environments. Keys, the redaction service's bearer token and OTLP
+  header values are held where printing or logging the settings never shows
+  them. The built-in model endpoints come from the same table
   as Python's, and TypeScript matches requests exactly as Python does. Digests,
   resume tokens and run ids are computed byte for byte as Python computes
   them. A new vector file, `spool-bytes-v1.json`, pins the exact bytes the
