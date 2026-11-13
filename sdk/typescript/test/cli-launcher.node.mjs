@@ -41,6 +41,7 @@ const BIN = join(ROOT, "bin", "fabric.mjs");
 const GOLDENS = JSON.parse(
     readFileSync(resolve(ROOT, "..", "goldens", "cli-launcher", "launcher-v1.json"), "utf-8"),
 );
+const VERSION = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")).version;
 const STDIN = Buffer.from("the agent's own input\n\u0000ÿ", "latin1");
 const work = realpathSync(mkdtempSync(join(tmpdir(), "fabric-launcher-")));
 after(() => rmSync(work, { recursive: true, force: true }));
@@ -232,7 +233,10 @@ describe("the other commands", () => {
             assert.equal(result.status, 2);
             assert.match(result.stderr, /FC-098/);
             assert.match(result.stderr, /pipx install "singleaxis-fabric\[cli\]"/);
-            assert.match(result.stderr, /ghcr\.io\/singleaxis\/fabric-cli:[0-9]+\.[0-9]+\.[0-9]+/);
+            assert.ok(
+                result.stderr.includes(`ghcr.io/singleaxis/fabric-cli:${VERSION} `),
+                result.stderr,
+            );
         });
     }
 

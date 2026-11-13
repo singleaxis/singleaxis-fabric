@@ -14,6 +14,7 @@ the dependencies are the ones a user downloads. Release candidates run without i
 from __future__ import annotations
 
 import argparse
+import contextlib
 import html
 import json
 import re
@@ -24,6 +25,8 @@ from urllib.parse import quote
 
 PROJECT = "singleaxis-fabric"
 PYPI = "https://pypi.org/simple/"
+#: A project name as a simple index names it (PEP 503): nothing else is redirected.
+_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def normalize(name: str) -> str:
@@ -51,7 +54,7 @@ def handler(wheels: Path) -> type[BaseHTTPRequestHandler]:
                     "text/html",
                     f"<!DOCTYPE html><html><body>\n{links}</body></html>",
                 )
-            elif len(parts) == 2 and parts[0] == "simple":
+            elif len(parts) == 2 and parts[0] == "simple" and _NAME.match(parts[1]):
                 self.send_response(302)
                 self.send_header("Location", f"{PYPI}{normalize(parts[1])}/")
                 self.send_header("Content-Length", "0")
@@ -94,10 +97,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler(options.wheel_dir))
     options.ready_file.write_text(json.dumps({"port": server.server_address[1]}))
-    try:
+    with contextlib.suppress(KeyboardInterrupt):  # the harness stops it: a clean exit
         server.serve_forever()
-    except KeyboardInterrupt:
-        pass
     return 0
 
 

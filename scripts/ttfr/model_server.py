@@ -13,6 +13,7 @@ name that is in no endpoint table (``my-llm.example.com``). Standard library onl
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import ssl
 import sys
@@ -94,13 +95,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     if options.cert:
         context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(options.cert, options.key)
         server.socket = context.wrap_socket(server.socket, server_side=True)
     options.ready_file.write_text(json.dumps({"port": server.server_address[1]}))
-    try:
+    with contextlib.suppress(KeyboardInterrupt):  # the harness stops it: a clean exit
         server.serve_forever()
-    except KeyboardInterrupt:
-        pass
     return 0
 
 
