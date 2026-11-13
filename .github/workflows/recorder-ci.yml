@@ -224,7 +224,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build exact recorder image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
@@ -300,7 +300,7 @@ jobs:
         # container's id (spec 056 §7.3.2 WP4-07c).
         run: bash components/host-emitter/e2e-emitter.sh --production
       - name: Build emitter image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           # Context components/: the emitter links the host-records library.
           context: components
