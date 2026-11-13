@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 
 from sc_ra1 import check, model
-from sc_ra1.harness import Harness, Options, Result
+from sc_ra1.harness import Canaries, Harness, Options, Result
 
 
 @pytest.fixture(scope="module")
@@ -194,3 +194,12 @@ def test_a_canary_in_the_spool_or_the_export_fails(
     leaked = replace(on, view=on.view + harness.canaries.system)
     failed = {c.name for c in check.check_canaries(leaked, harness.canaries) if not c.ok}
     assert failed == {"canaries.system_prompt"}
+
+
+def test_the_root_canary_is_the_secret_directory_not_a_generic_segment() -> None:
+    """CI regression: the root needle was ``root.split("/")[3]``, which is ``home``; every
+    Linux path (``/home/runner``) then matched it and the secret itself was never searched."""
+    canaries = Canaries.fresh()
+    needle = canaries.needles()["mcp_root"]
+    assert needle.startswith("scra1-secret-") and len(needle) > len("scra1-secret-")
+    assert needle in canaries.root and needle not in "/home/runner/work/_temp/sc-ra1"

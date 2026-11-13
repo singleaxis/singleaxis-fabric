@@ -186,10 +186,12 @@ class Canaries:
         )
 
     def needles(self) -> dict[str, str]:
-        # the root's secret part, so a re-encoded URI is found too
+        # the root's secret directory name (``scra1-secret-<tag>``), so a re-encoded URI is
+        # found too; never a generic segment such as ``home``
+        secret = next(part for part in self.root.split("/") if part.startswith("scra1-secret-"))
         return {
             "system_prompt": self.system,
-            "mcp_root": self.root.split("/")[3],
+            "mcp_root": secret,
             "elicitation": self.elicitation,
         }
 
