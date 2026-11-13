@@ -52,6 +52,41 @@ export type ContentProvenance = "caller_reported" | "protocol";
 export const CAPTURE_INPUTS = vocabulary(["wire", "records"] as const);
 export type CaptureInput = "wire" | "records";
 
+/** `begin(kind, ...)`: the registry step_kind vocabulary plus `agent_turn` (050 §4.1). */
+export const STEP_KINDS = vocabulary([
+  "run",
+  "model_call",
+  "embedding",
+  "input",
+  "message",
+  "tool_call",
+  "provider_tool_call",
+  "mcp_call",
+  "retrieval",
+  "memory",
+  "terminal",
+  "remote_exec",
+  "database",
+  "network",
+  "file",
+  "ui_action",
+  "media_stream",
+  "delegation",
+  "workflow_node",
+  "checkpoint",
+  "control",
+  "context_change",
+  "selection",
+  "side_effect",
+  "outcome",
+  "hook",
+  "skill",
+  "interaction",
+  "extension",
+  "agent_turn",
+] as const);
+export type StepKind = typeof STEP_KINDS extends ReadonlySet<infer T> ? T : never;
+
 export const DESCRIPTOR_STATUSES = vocabulary(["not_captured", "unsupported"] as const);
 export type DescriptorStatus = "not_captured" | "unsupported";
 
