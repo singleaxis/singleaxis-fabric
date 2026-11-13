@@ -32,7 +32,6 @@ import { detect } from "../src/cli/runtime";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GOLDENS = resolve(HERE, "..", "..", "goldens", "cli-launcher", "launcher-v1.json");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const DOCUMENT: any = JSON.parse(readFileSync(GOLDENS, "utf-8"));
 const STATUS_FILE = /^\{\{dir\}\}\/\.fabric\/state\/runs\/[0-9]+-[A-Za-z0-9._-]+\.status\.json$/;
 const LABEL = /^run-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$/;
@@ -66,7 +65,6 @@ function materialize(name: string): string {
   return directory;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function prepareCase(directory: string, testCase: any): void {
   for (const relative of testCase.remove ?? []) unlinkSync(join(directory, relative));
   for (const [relative, mode] of Object.entries(testCase.chmod ?? {})) {
@@ -101,10 +99,9 @@ function lastRecord(directory: string): Record<string, unknown> | null {
 }
 
 describe.runIf(posix)("npm launcher on the shared goldens", () => {
-  it.each(DOCUMENT.detect.map((c: unknown, i: number) => [i, c]))(
+  it.each(DOCUMENT.detect.map((c: unknown, i: number) => [i, c]) as Array<[number, unknown]>)(
     "detects the runtime (case %i)",
     (_i, testCase) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const c = testCase as any;
       const directory = materialize("detect");
       const command = c.command.map((w: string) => w.replaceAll("{{dir}}", directory));
@@ -116,52 +113,54 @@ describe.runIf(posix)("npm launcher on the shared goldens", () => {
     },
   );
 
-  it.each(DOCUMENT.run.map((c: { name: string }) => [c.name, c]))("run: %s", (_name, testCase) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const c = testCase as any;
-    const directory = materialize(c.project);
-    prepareCase(directory, c);
-    const environ: Record<string, string> = {
-      PATH: join(directory, "bin"),
-      HOME: directory,
-      ...c.environ,
-    };
-    const prober = (interpreter: string): ProbeAnswer => {
-      if (c.probe === null) throw new Error(`asked ${interpreter} although the case has no probe`);
-      return c.probe as ProbeAnswer;
-    };
-    const { env, findings } = prepare(
-      { runLabel: c.run_label, noCapture: Boolean(c.no_capture), quiet: true },
-      c.command,
-      { ...environ },
-      directory,
-      prober,
-      () => 1_700_000_000_000_000_000n,
-    );
-    const added: Record<string, string> = {};
-    for (const name of Object.keys(env).sort()) {
-      const value = env[name] as string;
-      if (environ[name] === value) continue;
-      let templated = template(value, directory);
-      if (name === "FABRIC_WIRE_STATUS_FILE") {
-        expect(templated).toMatch(STATUS_FILE);
-        templated = "<status-file>";
+  it.each(DOCUMENT.run.map((c: { name: string }) => [c.name, c]) as Array<[string, unknown]>)(
+    "run: %s",
+    (_name, testCase) => {
+      const c = testCase as any;
+      const directory = materialize(c.project);
+      prepareCase(directory, c);
+      const environ: Record<string, string> = {
+        PATH: join(directory, "bin"),
+        HOME: directory,
+        ...c.environ,
+      };
+      const prober = (interpreter: string): ProbeAnswer => {
+        if (c.probe === null)
+          throw new Error(`asked ${interpreter} although the case has no probe`);
+        return c.probe as ProbeAnswer;
+      };
+      const { env, findings } = prepare(
+        { runLabel: c.run_label, noCapture: Boolean(c.no_capture), quiet: true },
+        c.command,
+        { ...environ },
+        directory,
+        prober,
+        () => 1_700_000_000_000_000_000n,
+      );
+      const added: Record<string, string> = {};
+      for (const name of Object.keys(env).sort()) {
+        const value = env[name] as string;
+        if (environ[name] === value) continue;
+        let templated = template(value, directory);
+        if (name === "FABRIC_WIRE_STATUS_FILE") {
+          expect(templated).toMatch(STATUS_FILE);
+          templated = "<status-file>";
+        }
+        if (name === "FABRIC_RUN_ID" && LABEL.test(templated)) templated = "<generated-label>";
+        added[name] = templated;
       }
-      if (name === "FABRIC_RUN_ID" && LABEL.test(templated)) templated = "<generated-label>";
-      added[name] = templated;
-    }
-    expect(Object.keys(environ).filter((name) => !(name in env))).toEqual([]);
-    expect({
-      added,
-      finding_ids: findings.map((f) => f.id),
-      record: lastRecord(directory),
-    }).toEqual(c.expect);
-  });
+      expect(Object.keys(environ).filter((name) => !(name in env))).toEqual([]);
+      expect({
+        added,
+        finding_ids: findings.map((f) => f.id),
+        record: lastRecord(directory),
+      }).toEqual(c.expect);
+    },
+  );
 
-  it.each(DOCUMENT.doctor.map((c: { name: string }) => [c.name, c]))(
+  it.each(DOCUMENT.doctor.map((c: { name: string }) => [c.name, c]) as Array<[string, unknown]>)(
     "doctor: %s",
     async (_name, testCase) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const c = testCase as any;
       const directory = materialize(c.project);
       prepareCase(directory, c);

@@ -1,6 +1,6 @@
 // Copyright 2026 AI5Labs Research OPC Private Limited
 // SPDX-License-Identifier: Apache-2.0
-/* global process */
+/* global process, Buffer */
 
 /**
  * The built npm launcher (`bin/fabric.mjs`, `dist/cli.js`) as real processes
@@ -101,7 +101,7 @@ function run(argv, directory, extraEnv = {}) {
         input: STDIN,
         timeout: 60_000,
     });
-    let seen = null;
+    let seen;
     try {
         seen = JSON.parse(readFileSync(dump, "utf-8"));
     } catch {
@@ -205,7 +205,7 @@ syncBuiltinESMExports(); // named imports of these modules see the guards too
             directory,
         );
         assert.equal(wrapped.result.status, 7, wrapped.result.stderr.toString());
-        let used = "";
+        let used;
         try {
             used = readFileSync(log, "utf-8");
         } catch {

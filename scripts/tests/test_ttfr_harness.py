@@ -186,4 +186,3 @@ def test_ci_runs_every_path_and_agent_and_keeps_ttfr_json() -> None:
     steps = json.dumps(job["steps"])
     assert "scripts/ttfr/ttfr.py" in steps and "ttfr.json" in steps
     assert "upload-artifact" in steps
-
