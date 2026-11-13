@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import _catalogue
-from . import _config, _project, _run, _runstate, _secrets, _templates, _up, _verify
+from . import _config, _project, _run, _runstate, _templates, _up, _verify
 from ._docker import Docker
 from ._report import EXIT_FINDINGS, EXIT_OK, CliError, Finding, Report
 
@@ -45,23 +45,6 @@ def _path_check(which: Callable[[str], str | None], findings: list[Finding]) -> 
     found = which("fabric")
     if found and not _ours(found):
         findings.append(Finding("FC-092", found))
-
-
-def _secret_checks(
-    project: _project.Project, compiled: Mapping[str, str], findings: list[Finding]
-) -> None:
-    for name in ("FABRIC_WIRE_ID_KEY_FILE", "FABRIC_OTLP_CERTIFICATE"):
-        value = compiled.get(name)
-        if not value:
-            continue
-        path = Path(value)
-        try:
-            present = _secrets.check_secret_file(path, public=name == "FABRIC_OTLP_CERTIFICATE")
-        except CliError as exc:
-            findings.extend(exc.findings)
-            continue
-        if not present or not os.access(path, os.R_OK):
-            findings.append(Finding("FC-031", f"{name}: {path} (run `fabric init`)"))
 
 
 def interpreter_for(
@@ -277,7 +260,7 @@ def run(
             )
             if not _project.compiled_env_is_current(project):
                 findings.append(Finding("FC-060", str(project.compiled_env_path)))
-            _secret_checks(project, compiled, findings)
+            findings.extend(_verify.secret_findings(compiled))
     _sdk(project, compiled, environ, runner, which, findings, lines)
     if project is not None:
         _last_run(project, findings, lines)

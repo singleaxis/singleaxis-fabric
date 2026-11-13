@@ -323,6 +323,27 @@ def test_verify_failures_name_the_cause(lab: dict[str, Any]) -> None:
         _verify.run(parse(["verify", "--production"]), lab["shell"], lab["project"])
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
+def test_verify_checks_the_secret_file_modes(lab: dict[str, Any]) -> None:
+    """§5.6 step 1: "secrets exist with the right permissions". An id key open to other
+    users is an error with its fix, in verify as in doctor; a missing one is FC-031 and
+    the Node is not probed."""
+    key = secrets_dir(lab["env"]) / "id.key"
+    assert key.is_file()
+    key.chmod(0o644)
+    code, _, report = _verify_now(lab, "--canary-only")
+    assert code == 1 and "FC-013" in _ids(report), report["findings"]
+    key.unlink()
+    probed: list[bool] = []
+    report_obj, _ = _verify.run(
+        parse(["verify", "--canary-only"]),
+        lab["shell"],
+        lab["project"],
+        node_ok=lambda *_: probed.append(True) or True,
+    )
+    assert "FC-031" in [f.id for f in report_obj.findings] and probed == []
+
+
 def test_the_judgement_is_the_readers_verdict_and_the_decisions_chain() -> None:
     record = _runstate.RunRecord(label="r", started_ns=0, command="python", runtime="python")
 

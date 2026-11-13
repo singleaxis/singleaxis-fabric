@@ -30,13 +30,36 @@ from urllib.parse import urlsplit
 
 from ..reconstruct._inputs import ACCEPTED_INPUTS, ReconstructInputError
 from ..reconstruct._report import COMPLETE_VERDICTS, EXIT_RUN_STATES
-from . import _config, _project, _read, _run, _runstate, _up
+from . import _config, _project, _read, _run, _runstate, _secrets, _up
 from ._report import EXIT_FINDINGS, EXIT_OK, CliError, Finding, Report
 
 CANARY_TIMEOUT_S = 90.0
 _HTTPX_MISSING = (
     'httpx is not installed in the CLI\'s environment: pip install "singleaxis-fabric[cli]"'
 )
+
+
+# ---------------------------------------------------------------- the secrets
+
+
+def secret_findings(compiled: Mapping[str, str]) -> list[Finding]:
+    """§5.6 step 1 and §5.7: each secret file the compiled environment names exists, is
+    readable, and is a regular file of this user closed to others (``FC-013``; the CA
+    certificate may be world-readable). ``FC-031`` for a missing or unreadable one."""
+    out: list[Finding] = []
+    for name in ("FABRIC_WIRE_ID_KEY_FILE", "FABRIC_OTLP_CERTIFICATE"):
+        value = compiled.get(name)
+        if not value:
+            continue
+        path = Path(value)
+        try:
+            present = _secrets.check_secret_file(path, public=name == "FABRIC_OTLP_CERTIFICATE")
+        except CliError as exc:
+            out.extend(exc.findings)
+            continue
+        if not present or not os.access(path, os.R_OK):
+            out.append(Finding("FC-031", f"{name}: {path} (run `fabric init`)"))
+    return out
 
 
 # ---------------------------------------------------------------- the Node
@@ -448,12 +471,9 @@ def run(
     )
     if not _project.compiled_env_is_current(project):
         findings.append(Finding("FC-060", str(project.compiled_env_path)))
-    unreadable = [
-        f"{name}: {path}"
-        for name in ("FABRIC_WIRE_ID_KEY_FILE", "FABRIC_OTLP_CERTIFICATE")
-        if (path := compiled.get(name)) and not os.access(path, os.R_OK)
-    ]
-    findings.extend(Finding("FC-031", f"{item} (run `fabric init`)") for item in unreadable)
+    secrets = secret_findings(compiled)
+    findings.extend(secrets)
+    unreadable = any(f.id == "FC-031" for f in secrets)
     lines.append(
         f"configuration: {project.config_path} (project {project.name}, profile "
         f"{project.resolved['profile']})"
