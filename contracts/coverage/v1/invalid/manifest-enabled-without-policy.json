@@ -19,7 +19,7 @@
   "pseudonym_mode": "keyed",
   "key_id": "kid-b2a0080c",
   "content_capture": "enabled",
-  "role_table_version": "fabric.content-role-table/v1@5",
+  "role_table_version": "fabric.content-role-table/v1@6",
   "limits": {
     "max_body_bytes": 33554432,
     "max_retain_bytes": 67108864,

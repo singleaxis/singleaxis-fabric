@@ -230,18 +230,20 @@ def test_the_registered_channels() -> None:
         ("exec.subprocess", "FABRIC_WIRE_EXEC", "fabric.hooks._exec"),
         ("http.nonmodel", "FABRIC_WIRE_HTTP_HOSTS", "fabric.hooks._http"),
         ("remote.sandbox", "FABRIC_WIRE_REMOTE_SANDBOX", "fabric.hooks._sandbox"),
+        ("mcp.client", "FABRIC_WIRE_MCP", "fabric.hooks._mcp"),
     ]
     for slot, module in zip(hooks.CHANNELS[:2], (_exec, _http), strict=True):
         assert slot.load is not None
         loaded = slot.load()  # a literal import of the slot's own module
         assert loaded is module and loaded.__name__ == slot.module
-    points = ("exec.subprocess", "http.nonmodel", "remote.sandbox")
+    points = ("exec.subprocess", "http.nonmodel", "remote.sandbox", "mcp.client")
     assert points == _manifest.HOOK_POINTS
     for point in points:
         assert point in _manifest.RUNTIME_POINTS
         assert _manifest.DEFAULT_STATES[point] == ("disabled", "hook_disabled")
     assert wire._HOOK_ENV_NAMES == _config.HOOK_ENV_NAMES
     assert "FABRIC_WIRE_HTTP_HOSTS" not in _config.NOT_IN_BUILD_ENV
+    assert "FABRIC_WIRE_MCP" not in _config.NOT_IN_BUILD_ENV  # spec 057 WP7-8
 
 
 # --- configuration error matrix -------------------------------------------------------
@@ -381,8 +383,8 @@ def test_m2_environment_configuration_never_raises(env: dict[str, str], expected
 
 def test_requested_covers_every_channel() -> None:
     config = _config.config_from_args(exec=True, http_hosts=["a.example"],
-                                      remote_sandbox=["e2b"])  # fmt: skip
-    assert [config.requested(s.point) for s in hooks.CHANNELS] == [True, True, True]
+                                      remote_sandbox=["e2b"], mcp=True)  # fmt: skip
+    assert [config.requested(s.point) for s in hooks.CHANNELS] == [True, True, True, True]
     assert not _config.HooksConfig().any_requested
     only_hosts = _config.config_from_args(sandbox_hosts=["api.e2b.app"])
     assert not only_hosts.any_requested and only_hosts.sandbox_undeclared
@@ -457,11 +459,12 @@ def test_environment_activation_installs_exec_and_lists_channels_not_in_build(
     fake: FakeModule, tmp_path: Path
 ) -> None:
     _capture(tmp_path, id_key=KEY)
-    env = {"FABRIC_WIRE_EXEC": "1", "FABRIC_WIRE_MCP": "1", "FABRIC_HOST_LABEL": "build-host-7"}
+    env = {"FABRIC_WIRE_EXEC": "1", "FABRIC_WIRE_DB_DRIVERS": "sqlite3",
+           "FABRIC_HOST_LABEL": "build-host-7"}  # fmt: skip
     handle = hooks.install_from_env(env)
     assert handle is not None and hooks.current_handle() is handle
     status = handle.status()
-    assert status["state"] == "active" and status["not_in_build"] == ["FABRIC_WIRE_MCP"]
+    assert status["state"] == "active" and status["not_in_build"] == ["FABRIC_WIRE_DB_DRIVERS"]
     assert status["capabilities"][POINT] == {"state": "active"}
     assert len(fake.installed) == 1
     assert handle.producer is not None

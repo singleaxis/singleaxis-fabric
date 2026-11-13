@@ -76,7 +76,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from fabric import _classify
-from fabric.reconstruct import _derive, _os_access, _security
+from fabric.reconstruct import _derive, _mcp_read, _os_access, _security
 from fabric.reconstruct._evidence import EVIDENCE_TYPES, decode_evidence
 from fabric.reconstruct._fields_model import _response_body
 from fabric.reconstruct._inputs import pseudonym
@@ -97,7 +97,7 @@ from fabric.reconstruct._stitch import (
     _UnparsedError,
     extract_stitch_keys,
 )
-from fabric.reconstruct.dialects import TOOL_RESULT_FLAG
+from fabric.reconstruct.dialects import MCP_JSONRPC, TOOL_RESULT_FLAG
 from fabric.reconstruct.dialects.tool_result import tool_results
 
 __all__ = [
@@ -1008,6 +1008,14 @@ class ActionReader:
         self._index: tuple[Any, _security.ControlIndex] | None = None
         self._sensor_cache: tuple[Any, dict[str, Any], dict[str, Any]] | None = None
 
+    def _mcp_hosts(self) -> frozenset[str]:
+        """The ``hst-`` ids of the ``--mcp-host`` hosts (computed once)."""
+        cached = getattr(self, "_mcp_host_ids", None)
+        if cached is None:
+            cached = _mcp_read.listed_host_ids(self.derivation.mcp_hosts, self.id_key)
+            self._mcp_host_ids: frozenset[str] = cached
+        return cached
+
     @property
     def declared_host_sources(self) -> tuple[str, ...]:
         """The source ids the host joiner declares (``--host-source KIND=SOURCE_ID``): host
@@ -1055,6 +1063,7 @@ class ActionReader:
             self._note_host_events(host.trace_host_events)
         result = attribute(inp, host=host)
         _derive.add_rows(sec, inp, result.calls, self.derivation)
+        self._add_mcp_rows(reader, sec, inp)
         for exchange in inp["exchanges"]:
             if isinstance(exchange.get("offered_grant_id"), str):
                 self.offered_grants[exchange["exchange_id"]] = exchange["offered_grant_id"]
@@ -1079,6 +1088,17 @@ class ActionReader:
                 self.links[uid] = links
         for uid, links in security.projection_links.items():
             self.links[uid] = [*self.links.get(uid, ()), *links]
+
+    def _add_mcp_rows(self, reader: _RunReader, sec: dict[str, Any], inp: dict[str, Any]) -> None:
+        """Spec 057 WP7-7, WP7-8: the rows ``--derive mcp.jsonrpc`` reads from one run's
+        recorded MCP messages (nothing without the option)."""
+        if not self.derivation.wants(MCP_JSONRPC):
+            return
+        found = _mcp_read.read(
+            reader, http_records=reader.http_records, mcp_records=reader.mcp_records,
+            effects=inp["effects"], listed=self._mcp_hosts(), key=self.id_key,
+        )  # fmt: skip
+        _derive.add_mcp_rows(sec, found, self.id_key)
 
     # -- spec 057 WP7-10/WP7-13: classification of host records (offline) -------------
 
@@ -1441,6 +1461,10 @@ class _RunReader:
                       if isinstance(r.span.attributes.get(_A_CONTROL_KIND), str)}  # fmt: skip
         self.control_records = [r for r in self.http_records if r.attempt_uid in controlled]
         self.http_records = [r for r in self.http_records if r.attempt_uid not in controlled]
+        # Spec 057 WP7-8: the MCP transport hook's records (read by mcp.jsonrpc only)
+        self.mcp_records = [
+            r for r in self.records if _point_id(r.span.attributes) == _mcp_read.MCP_POINT
+        ]
         self.keys = sorted({x.source for x in run.members} | {r.source for r in self.records})
         self.channels = self._channels()
         self.withheld_privacy = False
@@ -1483,6 +1507,8 @@ class _RunReader:
                     active.add(str(row["id"]))
         if self.run.members:  # spec 057 §6.4: a derivation rule applied to this run's calls
             active.update(self.owner.derivation.active)
+        if self.owner.derivation.wants(MCP_JSONRPC) and (self.mcp_records or self.http_records):
+            active.add(MCP_JSONRPC)  # spec 057 WP7-7/8: MCP messages the rule reads
         sec["active_points"] = sorted(active)
         keys = {(item["source_id"], item["source_epoch"])
                 for name in ("controls", "hooks", "grants", "extensions")

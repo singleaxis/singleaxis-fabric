@@ -68,14 +68,15 @@ SRC = SDK / "src" / "fabric"
 TESTS = SDK / "tests"
 ROOT = SDK.parents[1]
 
-#: Every module spec 057 (P0a-P0c, P1a) added to the SDK.
+#: Every module spec 057 (P0a-P0c, P1a, P1b) added to the SDK.
 NEW_MODULES = (
     "_rec_check.py", "_rec_controls.py", "_rec_extension.py", "_rec_grant.py", "_rec_run.py",
     "_records_api.py", "_security_policy.py", "records/__init__.py", "records/_handles.py",
     "records/_vocab.py", "records/_walker.py", "reconstruct/_controls.py",
     "reconstruct/_security.py", "reconstruct/_derive.py", "reconstruct/dialects/__init__.py",
     "reconstruct/dialects/offered_grant.py", "reconstruct/dialects/safety_map.py",
-    "reconstruct/dialects/tool_result.py",
+    "reconstruct/dialects/tool_result.py", "reconstruct/dialects/jsonrpc2.py",
+    "reconstruct/dialects/mcp.py", "reconstruct/_mcp_read.py", "hooks/_mcp.py",
 )  # fmt: skip
 #: The ones on the agent's request path (everything but the offline reader).
 REQUEST_PATH = tuple(m for m in NEW_MODULES if not m.startswith("reconstruct/"))
@@ -497,14 +498,28 @@ def test_b8_no_classification_list_or_profile_is_built_in() -> None:
 
 # ============================================================================ B9
 _THIRD_PARTY_ALLOWED = frozenset({"httpx", "aiohttp"})  # the qualified transport libraries
+# OD-4: the MCP protocol library (and the event-loop backend whose pipe streams it writes
+# and reads) joins the list for the pinned transport hook only, never for another module.
+_THIRD_PARTY_PER_MODULE: dict[str, frozenset[str]] = {
+    "hooks/_mcp.py": frozenset({"mcp", "anyio"}),
+}
 
 
 @pytest.mark.parametrize("relative", NEW_MODULES)
 def test_b9_new_modules_import_only_stdlib_and_fabric(relative: str) -> None:
+    extra = _THIRD_PARTY_PER_MODULE.get(relative, frozenset())
     for module in _imports(_tree(relative), relative):
         root = module.split(".")[0]
         allowed = root in ("fabric", "__future__") or root in sys.stdlib_module_names
-        assert allowed or root in _THIRD_PARTY_ALLOWED, (relative, module)
+        assert allowed or root in _THIRD_PARTY_ALLOWED | extra, (relative, module)
+
+
+def test_b9_the_mcp_library_is_allowed_only_in_the_transport_hook() -> None:
+    for relative in NEW_MODULES:
+        if relative in _THIRD_PARTY_PER_MODULE:
+            continue
+        roots = {module.split(".")[0] for module in _imports(_tree(relative), relative)}
+        assert not roots & {"mcp", "anyio"}, relative
 
 
 def _squash(text: str) -> str:

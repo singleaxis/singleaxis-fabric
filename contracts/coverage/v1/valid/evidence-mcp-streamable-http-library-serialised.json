@@ -1,0 +1,19 @@
+{
+  "schema_version": "fabric.record-evidence-fixture/v1",
+  "identity_mode": "pseudonymous",
+  "capture_point": "mcp.client",
+  "document": {
+    "schema_version": "fabric.record-evidence/v1",
+    "evidence_type": "fabric.mcp.correlation/v1",
+    "items": [
+      {
+        "transport": "streamable_http",
+        "connection_index": 2,
+        "representation": "library_serialised",
+        "direction": "client_to_server",
+        "message_kind": "notification",
+        "correlation": "not_applicable"
+      }
+    ]
+  }
+}

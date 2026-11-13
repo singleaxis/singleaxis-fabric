@@ -15,6 +15,36 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **MCP servers as security context (spec 057 P1, second part).** For an MCP
+  server reached over Streamable HTTP, the request and response bodies the
+  non-model HTTP hook already records are now read as MCP by
+  `python -m fabric.reconstruct ... --derive mcp.jsonrpc`. For a server
+  launched over stdio by a Python agent, the new MCP transport hook
+  (`FABRIC_WIRE_MCP=1`, capture point `mcp.client`) records each JSON-RPC
+  message exactly as it crossed the pipe, observed where the MCP Python
+  library already writes and reads it: never a relay, never a second pipe
+  reader. The reader shows the server (name, version, its tools and the
+  counts of their destructive, read-only, idempotent and open-world hints),
+  a `listed` grant, inventory changes (F11), tool calls with `isError`
+  (F14) or protocol errors, and each user-confirmation request
+  (`elicitation/create`) with the user's answer (`accept`, `decline`,
+  `cancel`). A stdio server is also shown as a launched process, joined to
+  the exec hook's record of it from launch to exit. Only `mcp` 2.3.x on
+  `anyio` 4.x is hooked; another version is reported as
+  `unsupported(unsupported_version)` and nothing is patched. The patched
+  stream methods run for every subprocess the event loop manages, so a stream
+  the hook does not track always passes through untouched, and a lookup
+  failure is never raised into the application. `--mcp-host HOST` lists an MCP host so that missing bodies are reported
+  as `body_not_retained` instead of silently giving nothing.
+
+- **Less work per recorded event.** Every hook record now reads the caller's
+  tracing context once instead of twice, and skips two small rebuilds it did
+  not need. The MCP transport hook parses a pipe chunk that holds one whole
+  message without splitting it, and finds a late answer to an evicted request
+  by key instead of scanning the last 4096 requests, and submits its records
+  without re-checking arguments it built itself. What is recorded is
+  unchanged.
+
 - **Hook programs and control endpoints you declare (spec 057 P2, first
   part).** The capture policy's `security_context` lists are now loaded at
   install and applied. `hook_programs`: a subprocess whose exact path or
@@ -372,6 +402,10 @@ it never makes, applies, waits for or returns one.
 
 ### Changed
 
+- **MCP message roles are off by default.** `mcp.request`, `mcp.response`,
+  `mcp.notification` and `mcp.server` now default to `off`, as spec 057
+  §7.1 states (role table revision 6): name them in the capture policy to
+  keep MCP messages. No release emitted them before.
 - **`ControlObservation.to_dict()` emits v2**
   (`fabric.external-control-observation/v2`); the invariant
   `enforcement_performed_by_fabric` is now spelled `enforced_by_fabric`, and

@@ -27,6 +27,12 @@ security analysis joins:
   is matched once, where it was first fed back; a result that matches nothing gives
   nothing, never ``allow``.
 
+- ``mcp.jsonrpc`` (WP7-7, WP7-8): the MCP messages of the run's ``http.nonmodel`` and
+  ``mcp.client`` records (``_mcp_read``), read by the ``mcp`` method layer: MCP server
+  extensions (initialize, tools/list with annotation counts and inventory digest, the
+  stdio launch), ``listed`` grants, elicitation controls and ``tools/call`` rows.
+  ``--mcp-host`` lists MCP hosts whose missing bodies make ``body_not_retained``.
+
 Every derived control carries the two D11 constants (B5). No row is ever an evaluation of
 the call: each is a literal field or the customer's own declared text (§3.8).
 """
@@ -37,23 +43,29 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
+from fabric.reconstruct import _mcp_read
 from fabric.reconstruct._controls import AUTHENTICATION, ENFORCED_BY_FABRIC
 from fabric.reconstruct.dialects import (
+    MCP_JSONRPC,
     OFFERED_GRANT,
     RULES,
     SAFETY_MAP,
     TOOL_RESULT_FLAG,
     TOOL_RESULT_MARKER,
 )
+from fabric.reconstruct.dialects.mcp import derive as mcp_derive
+from fabric.reconstruct.dialects.mcp import launch_row
 from fabric.reconstruct.dialects.offered_grant import offered
 from fabric.reconstruct.dialects.safety_map import safety_rows
 from fabric.reconstruct.dialects.tool_result import MarkerTable
 
-__all__ = ["DERIVE_CHOICES", "Derivation", "add_rows", "exchange_facts"]
+__all__ = ["DERIVE_CHOICES", "Derivation", "add_mcp_rows", "add_rows", "exchange_facts"]
 
-#: ``--derive`` values: one rule, or ``wire`` for the three rules that need no list.
-DERIVE_CHOICES: Final = ("wire", OFFERED_GRANT, SAFETY_MAP, TOOL_RESULT_FLAG)
+#: ``--derive`` values: one rule, ``wire`` for the three model-wire rules that need no
+#: list, or ``mcp.jsonrpc`` (MCP messages, WP7-7/8).
+DERIVE_CHOICES: Final = ("wire", OFFERED_GRANT, SAFETY_MAP, TOOL_RESULT_FLAG, MCP_JSONRPC)
 _WIRE_RULES: Final = frozenset({OFFERED_GRANT, SAFETY_MAP, TOOL_RESULT_FLAG})
+_RULES: Final = _WIRE_RULES | {MCP_JSONRPC}
 _INVARIANTS: Final = {"fabric.control.enforced_by_fabric": ENFORCED_BY_FABRIC,
                       "fabric.control.authentication": AUTHENTICATION}  # fmt: skip
 
@@ -61,18 +73,24 @@ _INVARIANTS: Final = {"fabric.control.enforced_by_fabric": ENFORCED_BY_FABRIC,
 @dataclass(frozen=True, slots=True)
 class Derivation:
     """The derivation rules the reader applies: ``rules`` (of ``wire.offered_grant``,
-    ``wire.safety_map``, ``wire.tool_result_flag``) and the denial-marker table."""
+    ``wire.safety_map``, ``wire.tool_result_flag``, ``mcp.jsonrpc``), the denial-marker
+    table and the listed MCP hosts (``--mcp-host``, as configured)."""
 
     rules: frozenset[str] = frozenset()
     markers: MarkerTable | None = None
+    mcp_hosts: tuple[str, ...] = ()
 
     @classmethod
-    def build(cls, rules: Iterable[str] = (), markers: object = None) -> Derivation:
+    def build(cls, rules: Iterable[str] = (), markers: object = None,
+              mcp_hosts: Iterable[str] = ()) -> Derivation:  # fmt: skip
         chosen: set[str] = set()
         for rule in rules:
-            chosen |= _WIRE_RULES if rule == "wire" else {rule} & _WIRE_RULES
+            chosen |= _WIRE_RULES if rule == "wire" else {rule} & _RULES
+        hosts = tuple(dict.fromkeys(mcp_hosts))
+        if hosts:
+            chosen.add(MCP_JSONRPC)  # a listed MCP host asks for the MCP rule
         table = MarkerTable.load(markers) if markers is not None else None
-        return cls(frozenset(chosen), table)
+        return cls(frozenset(chosen), table, hosts)
 
     @property
     def active(self) -> tuple[str, ...]:
@@ -93,6 +111,8 @@ class Derivation:
         out: dict[str, Any] = {"rules": list(self.active)}
         if self.markers is not None:
             out["tool_result_markers"] = self.markers.summary()
+        if self.mcp_hosts:
+            out["mcp_hosts"] = {"count": len(self.mcp_hosts)}
         return out
 
 
@@ -245,3 +265,16 @@ def flag_of(result: Any) -> bool | None:
     """A tool result's structured error flag as the input keeps it."""
     flag = result.get("is_error") if isinstance(result, Mapping) else None
     return flag if isinstance(flag, bool) else None
+
+
+def add_mcp_rows(sec: dict[str, Any], found: _mcp_read.McpInput, key: bytes | None) -> None:
+    """The rows the ``mcp`` method layer derives from one run's MCP messages, and the stdio
+    launch rows, added to its security input ``sec`` (in place)."""
+    derived = mcp_derive(found.messages, found.sessions, key=key)
+    launches = [launch_row(info, at, evidence, pid=pid, key=key)
+                for info, at, evidence, pid in found.launches]  # fmt: skip
+    sec["extensions"] = [*sec["extensions"], *launches, *derived.extensions]
+    sec["grants"] = [*sec["grants"], *derived.grants]
+    sec["controls"] = [*sec["controls"], *derived.controls]
+    sec["mcp_calls"] = derived.calls
+    sec["mcp_body_not_retained"] = found.body_not_retained

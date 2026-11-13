@@ -24,7 +24,7 @@
     "encrypted_store_required": false
   },
   "content_capture": "enabled",
-  "role_table_version": "fabric.content-role-table/v1@5",
+  "role_table_version": "fabric.content-role-table/v1@6",
   "limits": {
     "max_body_bytes": 33554432,
     "max_retain_bytes": 67108864,

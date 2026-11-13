@@ -170,6 +170,26 @@ def test_end_never_infers_ok_and_the_three_inputs_stay_independent() -> None:
     assert (got.lifecycle, got.result_status) == ("deferred", "unknown")
 
 
+def test_resolved_status_inputs_are_remembered_only_for_table_values() -> None:
+    """The phase table is fixed, so a plain combination is resolved once; a dropped input
+    or a ``str`` subclass is resolved (and named in ``dropped``) on every call."""
+    from fabric import _capture_types  # noqa: PLC0415
+
+    class Odd(str):
+        pass
+
+    first = resolve_status_inputs("end", "completed", "ok", "error")
+    assert resolve_status_inputs("end", "completed", "ok", "error") is first
+    assert first == _capture_types._resolve_status_inputs("end", "completed", "ok", "error")
+    for _ in range(2):
+        assert resolve_status_inputs("start", "completed").dropped == ("lifecycle",)
+        odd = resolve_status_inputs("end", Odd("completed"))  # type: ignore[arg-type]
+        assert type(odd.lifecycle) is Odd
+    memo = _capture_types._STATUS_MEMO
+    assert ("start", "completed", None, "unset") not in memo
+    assert all(type(part) in (str, type(None)) for key in memo for part in key)
+
+
 @pytest.mark.parametrize(
     ("phase", "kwargs", "dropped", "kept"),
     [
