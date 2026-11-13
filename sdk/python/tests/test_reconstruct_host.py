@@ -1402,6 +1402,31 @@ def test_lineage_follows_a_child_forked_without_exec() -> None:
     assert join.link_counts["process_lineage"]["resolved"] == 2
 
 
+def test_failed_exec_attempts_are_events_of_the_process_that_tried_them() -> None:
+    """Spec 057 WP7-11 records failed execs. A PATH search (``execvp``) fails with ENOENT
+    before the exec that succeeds: in the forked child before its anchoring exec, in the
+    anchored shell, and in a child forked from it. Each is an event of that process
+    (lineage), never unexplained, so a sensor with syscall results keeps corroboration
+    complete. A failed exec of the same pid in another start tick is another process."""
+    start = 1_000 * TICK_NS
+    effect = _effect(start=start)
+    at = effect.start_ns
+    failed = {"result": "failed", "syscall": "execve", "errno": "ENOENT"}
+    before = _exec(1, 4121, 4100, at + MS // 2, start, **failed)
+    anchor = _exec(2, 4121, 4100, at + MS, start)
+    after = _exec(3, 4121, 4100, at + 2 * MS, start, **failed)
+    in_place = _exec(4, 4121, 4100, at + 3 * MS, start)
+    forked = _exec(5, 4122, 4121, at + 4 * MS, start + TICK_NS, **failed)
+    forked_ok = _exec(6, 4122, 4121, at + 5 * MS, start + TICK_NS)
+    other = _exec(7, 4121, 4100, at + MS // 4, start - 5 * TICK_NS, **failed)
+    join = _join([effect], [other, before, anchor, after, in_place, forked, forked_ok])
+    trace = join.trace["host_events"]
+    assert trace[anchor.event_id] == "H1"
+    assert [trace[e.event_id] for e in (before, after, in_place, forked, forked_ok)] == ["H3"] * 5
+    assert trace[other.event_id] == "unexplained"
+    assert join.unexplained_count == 1
+
+
 # ------------------------------------------------------------------ revision 10: per-record clocks
 def test_governing_clock_follows_after_source_sequence() -> None:
     """Spec 049 §2.4: manifest k governs sequences after(k) + 1 up to after(k + 1)."""
@@ -1468,3 +1493,45 @@ def test_record_clock_reads_the_manifests_of_the_records_epoch() -> None:
     merged.extend(evidence)
     merged.extend(host_evidence_from_spans([_manifest_span(1, 15, 3 * MS)]))
     assert merged.record_clock(at(20)) is None
+
+
+def test_a_process_exit_is_a_valid_listed_host_event() -> None:
+    """Spec 057 WP7-11: a sensor ``exit`` record linked to a run is a ``sensor_events``
+    entry, and one in no run an ``unattributed_host_events`` entry; both validate (the
+    report schema named only exec, connect and file, so any report listing an exit was
+    refused by the capture validator)."""
+    exited = _exec(1, 4121, 4100, T0 + MS, event_class="exit", result="unknown", signal=31)
+    entry = exited.report_entry()
+    assert entry["event_class"] == "exit"
+    SENSOR_EVENT.validate(entry)
+    schema = _json(REPO_ROOT / "contracts/capture/v1/schema/run-reconstruction-v1.schema.json")
+    block = schema["properties"]["unattributed_host_events"]
+    Draft202012Validator({"$defs": schema["$defs"], **block}).validate({
+        "count": 1,
+        "reasons": {"other_process": 0, "out_of_scope": 0, "no_run": 1},
+        "events": [{**{k: entry[k] for k in ("event_id", "source", "event_class", "pid",
+                                             "time_ns")}, "reason": "no_run"}],
+    })  # fmt: skip
+
+
+def test_a_local_record_keeps_the_errno_name_of_a_failed_call() -> None:
+    """Spec 057 WP7-12: a local-profile record says ``failed:NAME`` (the auditd receiver,
+    the eBPF emitter with syscall results); the errno name is kept, so a local sensor's
+    EACCES or EPERM is a refusal like a production record's. A number, ``other`` or a
+    bare ``failed`` names no errno."""
+    from fabric.reconstruct import _os_access  # noqa: PLC0415
+
+    def read(result: str, syscall: str = "openat") -> HostEvent:
+        attrs = _exec_attrs(4121, 4100, **{"audit.syscall": syscall, "audit.result": result,
+                                           "log.record.uid": "host-" + "a" * 32})  # fmt: skip
+        event = normalize_local_record(T0, attrs, id_key=KEY)
+        assert isinstance(event, HostEvent)
+        return event
+
+    denied = read("failed:EACCES")
+    assert denied.result == "failed" and denied.errno == "EACCES"
+    assert _os_access.event_refusal(denied) == ("errno.eacces", "openat")
+    assert _os_access.event_refusal(read("failed:EPERM", "connect")) == ("errno.eperm", "connect")
+    for result in ("failed:13", "failed:other", "failed", "success"):
+        assert read(result).errno is None
+    assert _os_access.event_refusal(read("failed:ENOENT")) is None

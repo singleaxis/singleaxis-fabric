@@ -26,6 +26,22 @@
 #                               emitted
 #   TestSandboxRootScope        a short-lived container cgroup removed before
 #                               user space reads the event keeps its id
+#   TestSyscallResultsAndExits  spec 057 WP7-11: connect, openat and execve
+#                               paired with their result and errno, a
+#                               process exit's code and signal, a watched
+#                               open labelled, no ring loss
+#   TestHeldSyscallEmittedAtStop  a connect blocked at shutdown is emitted
+#                               by the stop drain, result unknown
+#   TestKernelRefusals          a connect a cgroup connect4 program refuses
+#                               (EPERM) and a seccomp kill (signal 31)
+#   TestPathReadRetriedAtExit   a path the sys_enter read could not see is
+#                               read again at sys_exit
+#   TestFileAccessWithoutResults  openat and connect with results off, seen
+#                               through the raw syscall tracepoints
+#   TestRestartedSyscallIsNotFailed  an open a signal interrupts (a kernel
+#                               restart code) is unknown, not failed
+# E2E_RUN=<regexp> runs a subset (go test -run), for example while
+# debugging one test on a local kernel.
 set -euo pipefail
 
 if [ "${1:-}" = "--production" ]; then
@@ -42,7 +58,7 @@ if [ "${1:-}" = "--production" ]; then
     -v /sys/kernel/debug:/sys/kernel/debug \
     -w /src/host-emitter "$BUILD_IMG" \
     go test -tags e2e -count=1 -v \
-      -run '^(TestNamespacePidsMatchProc|TestAgentRootPodShape|TestSandboxRootScope)$' .
+      -run "${E2E_RUN:-^(TestNamespacePidsMatchProc|TestAgentRootPodShape|TestSandboxRootScope|TestSyscallResultsAndExits|TestHeldSyscallEmittedAtStop|TestKernelRefusals|TestPathReadRetriedAtExit|TestFileAccessWithoutResults|TestRestartedSyscallIsNotFailed)$}" .
 fi
 
 EMIT_IMG="${EMIT_IMG:-fabric-host-emitter:local}"

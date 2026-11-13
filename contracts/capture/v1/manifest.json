@@ -6,7 +6,7 @@
     {"path": "schema/content-log-record-v1.schema.json", "sha256": "b8ce9af20eb9499b418698792e67fa9447b1f1d57369ff28af24e15aa3fb178b", "expectation": "schema", "expected_error": null},
     {"path": "schema/llm-exchange-v1.schema.json", "sha256": "93c96c072b2239d094b5574035476ee9888a7b62d90c6df9dc4c13ea081dec74", "expectation": "schema", "expected_error": null},
     {"path": "schema/loss-record-v1.schema.json", "sha256": "4a9f58dae5ba25c2a5e4f81ebed2544678834fd91d8ff340fb621e1a96a74bce", "expectation": "schema", "expected_error": null},
-    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "73bcf0c91f5d8e5c661cfdca6f9c615849fda1aa889df7be5b43acf8522b3ab8", "expectation": "schema", "expected_error": null},
+    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "d6cf3b3fb80b037d9b3a44a934c1c26dd58ed11fe04f0a359233f4691add4aa1", "expectation": "schema", "expected_error": null},
     {"path": "schema/spool-record-v1.schema.json", "sha256": "55087c488bc8acb2c3e6a0a39bba37abdbd7be0263371a7eb529cc64d27b9658", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/valid/content-log-record-request.json", "sha256": "aca0284cba0d0b41d9fa98200400ac46711878fda2bc9f69e1e74b2eb67a19cd", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/content-log-record-truncated.json", "sha256": "a105468714387effbd1ee6609103885f2d52f9cd93c0af54b01f63de45adaae8", "expectation": "valid", "expected_error": null},
@@ -169,6 +169,9 @@
     {"path": "fixtures/valid/run-reconstruction-security-context.json", "sha256": "1741a05fcb7965264ab396f5ef65546074e2eba24efb06bbba9296d656ccb776", "expectation": "valid", "expected_error": null},
     {"path": "schema/otlp-mapping-profile-v1.schema.json", "sha256": "681dd25e5192bb8d2a7a519615c83d3c44ca626dccee4b848c3cf5e5020e0deb", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/invalid/run-reconstruction-controls-reason-without-fact.json", "sha256": "1874f8561b92ed3c2b845a19923d86aef2708960efad83bb7c2a952c04291bd5", "expectation": "invalid", "expected_error": "capture.reconstruction.chains"},
-    {"path": "fixtures/invalid/run-reconstruction-controls-unbounded-verdict.json", "sha256": "4fa59ddca8a1437795503b86ec1febddff7647d123d4c66d6bdaf2c9d13a88b7", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"}
+    {"path": "fixtures/invalid/run-reconstruction-controls-unbounded-verdict.json", "sha256": "4fa59ddca8a1437795503b86ec1febddff7647d123d4c66d6bdaf2c9d13a88b7", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"},
+    {"path": "fixtures/host/valid/manifest-sensor-classes.json", "sha256": "d453d714b25116a237d31ff3bd85c535604502531e4102a853452ce3e7fc5a35", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/host/valid/record-exit.json", "sha256": "6bfaa713b2eff7278f786076e3b13025b13870761c1a1f9741c24bd6111958d7", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/host/valid/record-file-watched.json", "sha256": "402751e5049d9dc626746fb8ca04f56c0d24ceb95e12828b36e8af4d26320bc0", "expectation": "valid", "expected_error": null}
   ]
 }

@@ -143,6 +143,7 @@
     "fabric.sensor.signal",
     "fabric.sensor.syscall",
     "fabric.sensor.watch_class",
+    "fabric.sensor.watch_id",
     "fabric.sensor.watch_label",
     "fabric.source.epoch",
     "fabric.source.sequence",
@@ -298,6 +299,11 @@
       ]
     },
     "fabric.sensor.watch_class": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.watch_id": {
       "capture_point_kinds": [
         "S"
       ]
@@ -1352,6 +1358,7 @@
     "fabric.sensor.signal",
     "fabric.sensor.syscall",
     "fabric.sensor.watch_class",
+    "fabric.sensor.watch_id",
     "fabric.sensor.watch_label",
     "fabric.source.epoch",
     "fabric.source.sequence",

@@ -24,7 +24,7 @@ happened near an agent's activity, not that it belongs to it.
 | | auditd receiver | eBPF host emitter |
 |---|---|---|
 | Ships as | The `audit` receiver compiled into the Fabric Node image (`components/otel-collector-fabric/receiver/auditreceiver`) | A separate image, `ghcr.io/singleaxis/fabric-host-emitter` (`components/host-emitter`) |
-| Source | Linux audit subsystem: netlink multicast (live) or `audit.log` (tailed, with a durable cursor) | CO-RE eBPF tracepoints: `sched_process_exec`, `sys_enter_connect`, `sys_enter_openat` |
+| Source | Linux audit subsystem: netlink multicast (live) or `audit.log` (tailed, with a durable cursor) | CO-RE eBPF tracepoints: `sched_process_exec`, and the raw syscall tracepoints `sys_enter` and `sys_exit` for connect, openat and execve |
 | Output | `event_class=audit` OTLP log records inside the Node | Local mode: `event_class=audit` OTLP/gRPC log records sent to a Node, through a local fsync'd disk spool. Production mode: spans on the sensor's own ingress group, which reach the destination's trace export ([production mode](#production-mode)) |
 | Spec | [030](../specs/030-auditd-host-connector.md), status implemented, not enterprise-qualified | [031](../specs/031-ebpf-host-emitter.md), status implemented, not enterprise-qualified |
 | Platform | Linux, native amd64/arm64 syscall numbers (no 32-bit compat ABIs) | Linux ≥ 5.8 with BTF |

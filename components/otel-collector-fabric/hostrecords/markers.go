@@ -7,6 +7,7 @@ import (
 	"io"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -170,6 +171,21 @@ func putStrings(m pcommon.Map, key string, values []string) {
 	}
 }
 
+// capturePoints is the manifest's capture-point rows: the source's own, then
+// the spec 057 §6.4 sensor classes it has enabled (<kind>.exit,
+// <kind>.syscall_result). A source with neither publishes one row, as before.
+func (s *Source) capturePoints() []string {
+	rows := []string{s.point + manifestCaptureSuffix}
+	version := "@" + s.cfg.Version + manifestCaptureSuffix
+	if s.classes[classExit] {
+		rows = append(rows, string(s.cfg.Kind)+".exit"+version)
+	}
+	if s.cfg.SyscallResults {
+		rows = append(rows, string(s.cfg.Kind)+".syscall_result"+version)
+	}
+	return rows
+}
+
 // manifestSpan is a host source's capture manifest (053 §6.2.3,
 // capture-manifest-v1 as host_records.host_manifest builds it): one
 // capture-point row of kind S, inputs records, source_auth bound, content
@@ -205,8 +221,13 @@ func (s *Source) manifestSpan(manifestSeq int64, unsealed []uint64) (ptrace.Trac
 	m := span.Attributes()
 	m.PutStr("fabric.capture.manifest_id", manifestID)
 	m.PutInt("fabric.manifest.after_source_sequence", s.next-1)
-	putStrings(m, "fabric.manifest.capture_point_fields", []string{kind + "=" + manifestFieldsC41})
-	putStrings(m, "fabric.manifest.capture_points", []string{s.point + manifestCaptureSuffix})
+	fields := []string{kind + "=" + manifestFieldsC41}
+	for _, row := range s.capturePoints()[1:] {
+		id, _, _ := strings.Cut(row, "@")
+		fields = append(fields, id+"=") // a sensor-class row supplies no field of its own
+	}
+	putStrings(m, "fabric.manifest.capture_point_fields", fields)
+	putStrings(m, "fabric.manifest.capture_points", s.capturePoints())
 	m.PutBool("fabric.manifest.chunk_boundaries_retained", false)
 	m.PutStr("fabric.manifest.clock.domain", "wall_utc")
 	m.PutInt("fabric.manifest.clock.uncertainty_ns", s.clockUncertainty())

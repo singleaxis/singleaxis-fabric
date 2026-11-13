@@ -1460,8 +1460,8 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - o
         what = " · ".join(str(v) for v in (row.get("control_kind", "?"), where or "?",
                                            row.get("decision", "?")))  # fmt: skip
         parts = [f"control    {what}"]
-        parts += [str(row[k]) for k in ("signal", "engine", "reason_code", "error_class")
-                  if k in row]  # fmt: skip
+        parts += [str(row[k]) for k in ("signal", "engine", "reason_code", "syscall",
+                                        "error_class") if k in row]  # fmt: skip
         if row.get("decided_by") in ("human", "provider", "service"):
             parts.append(f"({row['decided_by']})")
         if "latency_ms" in row:
@@ -1473,8 +1473,12 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - o
             parts.append(f"http {row['status']}")
         if row.get("body_not_retained"):
             parts.append("response body not retained")
-        if "via" in row:
+        if "via" in row and row.get("control_kind") == "os_access":
+            parts.append(f"seen by {row['via']}")
+        elif "via" in row:
             parts.append(f"connect seen by {row['via']}")
+        if row.get("host_events"):
+            parts.append(f"host events {row['host_events']}")
         if row.get("host_connects"):
             parts.append(f"host connects {row['host_connects']}")
         if row.get("pending_at_end"):
