@@ -280,7 +280,7 @@ def test_a_mistyped_run_flag_still_runs_the_agent(monkeypatch: pytest.MonkeyPatc
     assert seen[-1] == ("true", ["true", "y"], dict(os.environ))
     # A `run` that is only one of the agent's own words is not `fabric run`.
     cli.main(["show", "--bogus", "--", "run"])
-    assert len(seen) == 2  # noqa: PLR2004 - nothing launched
+    assert len(seen) == 2
 
 
 @pytest.mark.parametrize(

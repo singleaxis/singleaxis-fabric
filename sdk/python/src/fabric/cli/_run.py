@@ -473,7 +473,7 @@ def _say(findings: Sequence[Finding], stream: IO[str], quiet: bool) -> None:
                 continue
             stream.write(f"fabric run: {printable(finding.line())}\n")
         stream.flush()
-    except Exception:  # noqa: BLE001 - called outside launch's guard: a message never stops the agent (I3)
+    except Exception:  # outside launch's guard: a message never stops the agent (I3)
         return
 
 

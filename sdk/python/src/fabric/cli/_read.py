@@ -341,16 +341,16 @@ def coverage(
         rows.append(Row("commands the agent ran", "fix", "fabric init --exec"))
     else:
         rows.append(Row("commands the agent ran", _state(_chain(runs, "effects")), "exec hook"))
-    hosts = ", ".join(resolved["capture.http_hosts"] or [])
-    if not hosts:
+    watched = ", ".join(resolved["capture.http_hosts"] or [])
+    if not watched:
         rows.append(Row("network contacts (non-model HTTP)", "fix", "fabric init --http-host HOST"))
     elif http:
         rows.append(
-            Row("network contacts (non-model HTTP)", "recorded", f"{http} request(s); {hosts}")
+            Row("network contacts (non-model HTTP)", "recorded", f"{http} request(s); {watched}")
         )
     else:  # configured, but this run shows none: say so, never assume it was recorded
         rows.append(
-            Row("network contacts (non-model HTTP)", "not observed", f"no request to {hosts}")
+            Row("network contacts (non-model HTTP)", "not observed", f"no request to {watched}")
         )
     if record.sensor == "scoped":
         rows.append(

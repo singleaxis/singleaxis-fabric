@@ -335,11 +335,13 @@ def test_verify_checks_the_secret_file_modes(lab: dict[str, Any]) -> None:
     assert code == 1 and "FC-013" in _ids(report), report["findings"]
     key.unlink()
     probed: list[bool] = []
+
+    def node_ok(*_: Any) -> bool:
+        probed.append(True)
+        return True
+
     report_obj, _ = _verify.run(
-        parse(["verify", "--canary-only"]),
-        lab["shell"],
-        lab["project"],
-        node_ok=lambda *_: probed.append(True) or True,
+        parse(["verify", "--canary-only"]), lab["shell"], lab["project"], node_ok=node_ok
     )
     assert "FC-031" in [f.id for f in report_obj.findings] and probed == []
 
