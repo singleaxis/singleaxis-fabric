@@ -143,6 +143,17 @@ def agent_environment(
     return env
 
 
+def load_report(path: Path, done: subprocess.CompletedProcess[str]) -> dict[str, Any]:
+    """The docs runner's report; when it wrote none (it crashed), its own words."""
+    try:
+        loaded: dict[str, Any] = json.loads(path.read_text("utf-8"))
+        return loaded
+    except (OSError, ValueError):
+        said = (done.stderr or done.stdout or "").strip()[-800:]
+        return {"steps": [], "counts": {}, "ok": False,
+                "error": f"the docs runner exited {done.returncode} without a report: {said}"}  # fmt: skip
+
+
 def summarize(report: Mapping[str, Any], *, budget: float, path: str, agent: str,
               mode: str, package_source: str, evicted: Sequence[str]) -> dict[str, Any]:  # fmt: skip
     """``ttfr.json``: the steps, the counts and the verdict against the budgets."""
@@ -150,7 +161,9 @@ def summarize(report: Mapping[str, Any], *, budget: float, path: str, agent: str
     counts = dict(report.get("counts") or {})
     total = round(sum(float(s["seconds"]) for s in steps), 3)
     failures: list[str] = []
-    if not report.get("ok"):
+    if report.get("error"):
+        failures.append(f"the page was refused before any step ran: {report['error']}")
+    elif not report.get("ok"):
         failed = next((s for s in steps if not s["ok"]), None)
         failures.append(f"step {failed['step']} failed (exit {failed['exit_code']})"
                         if failed else "no step ran")  # fmt: skip
@@ -266,10 +279,10 @@ def run_container(options: argparse.Namespace, work: Path) -> dict[str, Any]:
             source = "local wheel (the build under test), dependencies from PyPI"
         evicted = evict_images(pinned_fabric_images())
         report_file = work / "steps.json"
-        container.exec(["python", "-I", str(RUNNER), str(PAGE), "--path", options.path,
-                        "--workdir", str(project), "--json", str(report_file)],
-                       env=env, check=False, timeout=1800)  # fmt: skip
-        report = json.loads(report_file.read_text("utf-8"))
+        done = container.exec(["python", "-I", str(RUNNER), str(PAGE), "--path", options.path,
+                               "--workdir", str(project), "--json", str(report_file)],
+                              env=env, check=False, timeout=1800)  # fmt: skip
+        report = load_report(report_file, done)
         return summarize(report, budget=options.budget, path=options.path, agent=options.agent,
                          mode="container", package_source=source, evicted=evicted)  # fmt: skip
     finally:
@@ -341,10 +354,10 @@ def run_host(options: argparse.Namespace, work: Path) -> dict[str, Any]:
             evicted = evict_images(pinned_fabric_images()) if options.cold else []
             try:
                 report_file = work / "steps.json"
-                _sh([sys.executable, "-I", str(RUNNER), str(PAGE), "--path", options.path,
-                     "--workdir", str(project), "--json", str(report_file)], env=env,
-                    check=False, timeout=1800)  # fmt: skip
-                report = json.loads(report_file.read_text("utf-8"))
+                done = _sh([sys.executable, "-I", str(RUNNER), str(PAGE), "--path",
+                            options.path, "--workdir", str(project), "--json",
+                            str(report_file)], env=env, check=False, timeout=1800)  # fmt: skip
+                report = load_report(report_file, done)
             finally:
                 _sh([str(venv / "bin/fabric"), "down", "--purge", "--quiet"], env=env,
                     cwd=project, check=False, timeout=300)  # fmt: skip
@@ -394,10 +407,10 @@ def main(argv: Sequence[str] | None = None) -> int:
           f"{result['flags']} flags, {result['page_lines']} page lines: "
           + ("PASS" if result["ok"] else "FAIL " + "; ".join(result["failures"])))  # fmt: skip
     if not result["ok"]:
-        failed = json.loads((work / "steps.json").read_text("utf-8"))["steps"]
-        for step in failed:
-            if not step["ok"]:
-                print(step["output_tail"], file=sys.stderr)
+        with contextlib.suppress(OSError, ValueError, KeyError):
+            for step in json.loads((work / "steps.json").read_text("utf-8"))["steps"]:
+                if not step["ok"]:
+                    print(step["output_tail"], file=sys.stderr)
     return 0 if result["ok"] else 1
 
 

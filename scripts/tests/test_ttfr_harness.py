@@ -186,3 +186,31 @@ def test_ci_runs_every_path_and_agent_and_keeps_ttfr_json() -> None:
     steps = json.dumps(job["steps"])
     assert "scripts/ttfr/ttfr.py" in steps and "ttfr.json" in steps
     assert "upload-artifact" in steps
+
+
+def test_a_refused_page_is_named_in_ttfr_json(tmp_path: Path) -> None:
+    """A page the docs runner refuses (a hand-made item, an extra command) never ran a
+    step: ttfr.json says why instead of the harness failing on a missing report."""
+    page = tmp_path / "docs" / "get-started" / "page.md"
+    page.parent.mkdir(parents=True)
+    page.write_text(
+        "<!-- fabric-docs-test: path=laptop-python step=1 kind=install -->\n"
+        "```bash\nexport FABRIC_TENANT_ID=acme\n```\n",
+        encoding="utf-8",
+    )
+    report_file = tmp_path / "steps.json"
+    done = subprocess.run(  # noqa: S603
+        [sys.executable, "-I", str(ttfr.RUNNER), str(page), "--path", "laptop-python",
+         "--workdir", str(tmp_path), "--json", str(report_file)],
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    assert done.returncode == 1
+    report = ttfr.load_report(report_file, done)
+    result = ttfr.summarize(report, budget=300, path="laptop-python", agent="openai",
+                            mode="container", package_source="x", evicted=[])  # fmt: skip
+    assert not result["ok"] and "exports a variable" in result["failures"][0]
+    crashed = ttfr.load_report(
+        tmp_path / "absent.json",
+        subprocess.CompletedProcess(["x"], 1, "", "Traceback: boom"),
+    )
+    assert "without a report" in crashed["error"] and "boom" in crashed["error"]
