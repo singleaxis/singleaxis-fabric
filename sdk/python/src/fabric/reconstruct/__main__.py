@@ -73,6 +73,7 @@ from fabric.reconstruct._report import (
     EXIT_RUN_STATES,
     unattributed_host_json,
 )
+from fabric.reconstruct._select import latest_run_id
 from fabric.reconstruct._verify import reconstruct
 
 EXIT_COMPLETE = 0
@@ -246,6 +247,11 @@ def _input_options(parser: argparse.ArgumentParser) -> None:
         metavar="RUN_ID",
         help="only report this run (repeatable): the id given to fabric.wire.run() in the "
         "clear, its r- pseudonym, or a trace:/source: fallback id",
+    )
+    parser.add_argument(
+        "--latest",
+        action="store_true",
+        help="only report the run that started last (by its first model exchange)",
     )
     parser.add_argument(
         "--id-key-env",
@@ -735,6 +741,7 @@ def report_main(argv: Sequence[str]) -> int:
         clock_uncertainty = _duration_ns(args.clock_uncertainty, "--clock-uncertainty")
         max_clock = _duration_ns(args.max_clock_uncertainty, "--max-clock-uncertainty")
         coverage_profile = _coverage_profile(args.coverage_profile)
+        _select_latest(args, key)
         reader = _action_reader(args, clock_uncertainty, key)
         graphs: list[RunGraph] = []
         collector = ProjectionCollector() if args.projection else None
@@ -1076,6 +1083,7 @@ def actions_main(argv: Sequence[str]) -> int:
     try:
         clock_uncertainty = _duration_ns(args.clock_uncertainty, "--clock-uncertainty")
         key = _id_key(args, os.environ)
+        _select_latest(args, key)
         reader = _action_reader(args, clock_uncertainty, key, view=True)
         document = reconstruct(
             args.spans,
@@ -1123,6 +1131,21 @@ def actions_main(argv: Sequence[str]) -> int:
     if not document["runs"]:
         _explain_no_runs(args.spans, args.runs)
     return _exit_code(document)
+
+
+def _select_latest(args: argparse.Namespace, key: bytes | None) -> None:
+    """``--latest`` (spec 058 §13.4): becomes a ``--run`` selection of the run that started
+    last, chosen on a first reading of the same inputs (``_select.py``)."""
+    if not args.latest:
+        return
+    if args.runs:
+        raise ReconstructInputError("--latest and --run both select runs: give one of them")
+    first = reconstruct(args.spans, id_key=key, profile=args.profile,
+                        trusted_source=args.trusted_source)  # fmt: skip
+    latest = latest_run_id(first)
+    if latest is None and first["runs"]:
+        _fail("--latest: no reported run has a model exchange, so none can be dated")
+    args.runs = [latest] if latest is not None else []
 
 
 def _explain_no_runs(spans: Sequence[str], runs: Sequence[str] | None) -> None:
