@@ -21,7 +21,7 @@ jobs:
       actions: read
       checks: read
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Verify all required workflows succeeded on ${{ github.sha }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -45,7 +45,7 @@ jobs:
       version: ${{ steps.identity.outputs.version }}
       source-commit: ${{ steps.identity.outputs.source-commit }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Ensure tag points to a commit on main
@@ -77,7 +77,7 @@ jobs:
     env:
       VERSION: ${{ needs.verify-tag.outputs.version }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -210,7 +210,7 @@ jobs:
     outputs:
       notes: ${{ steps.extract.outputs.notes }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate CHANGELOG `[Unreleased]` keep-alive
         # SPEC 016 §4.6: every release must leave a live `[Unreleased]`
         # section AND a matching `[Unreleased]: ...HEAD` link reference
@@ -254,7 +254,7 @@ jobs:
       VERSION: ${{ needs.verify-tag.outputs.version }}
       SOURCE_COMMIT: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -338,7 +338,7 @@ jobs:
       IMAGE_NAME: ${{ github.repository_owner }}/${{ matrix.image }}
       VERSION: ${{ needs.verify-tag.outputs.version }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
