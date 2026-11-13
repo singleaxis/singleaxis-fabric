@@ -206,6 +206,13 @@ func TestSensorClassConfig(t *testing.T) {
 	if err := local.Validate(); err != nil {
 		t.Fatalf("syscall results in local mode: %v", err)
 	}
+	// Results with no syscall class to pair would do nothing: refused, naming the fix.
+	exitsOnly := productionConfig(t, dir)
+	exitsOnly.Exec, exitsOnly.Connect, exitsOnly.FileAccess = false, false, false
+	exitsOnly.ProcessExit, exitsOnly.SyscallResults = true, true
+	if err := exitsOnly.Validate(); err == nil || !strings.Contains(err.Error(), "EMIT_CONNECT") {
+		t.Fatalf("syscall results with no syscall class: %v", err)
+	}
 	prod := productionConfig(t, dir)
 	prod.WatchedPathsFile, prod.watch = list, testWatch(t)
 	if err := prod.Validate(); err == nil || !strings.Contains(err.Error(), "EMIT_FILE_ACCESS") {

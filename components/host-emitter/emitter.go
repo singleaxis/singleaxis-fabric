@@ -131,6 +131,9 @@ func (c *Config) Validate() error {
 	if !c.Exec && !c.Connect && !c.FileAccess && !c.ProcessExit {
 		return fmt.Errorf("at least one host observation event type must be enabled")
 	}
+	if c.SyscallResults && !c.Exec && !c.Connect && !c.FileAccess {
+		return fmt.Errorf("EMIT_SYSCALL_RESULTS=true pairs execve, connect and openat with their result, but none is enabled: set EMIT_EXEC, EMIT_CONNECT or EMIT_FILE_ACCESS to true, or unset EMIT_SYSCALL_RESULTS")
+	}
 	if c.ProcessExit && !c.Production {
 		return fmt.Errorf("EMIT_EXIT=true needs EMIT_PRODUCTION=true: local audit-class records have no exit class; turn production mode on or leave EMIT_EXIT unset")
 	}
