@@ -217,7 +217,7 @@
       "segments": [
         {
           "last_sequence": 1,
-          "manifest_digest": "sha256:a7fb94e6ef4be7f4629b6d6bfdf1d8335a7d7ecff0e200c8f7dbd54f8c483e26",
+          "manifest_digest": "sha256:60be481b1ff781509c3fcdfdbd9c50b3c5f7ec07f1a60b3bf37d0184a85f7c28",
           "predecessors": [
             "none"
           ],
@@ -230,7 +230,7 @@
         },
         {
           "last_sequence": 0,
-          "manifest_digest": "sha256:acc3ac10b95e9ed74c79c305d29cc4bc5b138744d9a469498f8d39b595e1e757",
+          "manifest_digest": "sha256:688f8e928f6650912cea46088f32c64e608089dd6d66a051ccade233c3953b9a",
           "predecessors": [
             "none"
           ],

@@ -396,6 +396,57 @@ strings never appear in the report or the view.
 
 Without these options the reader reports every run exactly as before.
 
+### MCP servers on the wire (`--derive mcp.jsonrpc`)
+
+MCP is JSON-RPC 2.0 over Streamable HTTP or stdio. Fabric reads it at the
+protocol level, so it works for any MCP client built on these transports,
+whatever framework sits above it.
+
+**Capture.**
+
+- **Streamable HTTP**: put the MCP server's host in
+  `FABRIC_WIRE_HTTP_HOSTS` and retain `network.request` and
+  `network.response` for it in the capture policy. The existing non-model
+  HTTP hook records the request and response bodies; nothing MCP-specific
+  runs in the agent.
+- **stdio (Python)**: set `FABRIC_WIRE_MCP=1` (or
+  `fabric.hooks.install(mcp=True)`) and retain `mcp.request`,
+  `mcp.response` and `mcp.notification`. The hook observes the bytes the
+  MCP Python library's own stdio transport writes to and reads from the
+  server it launched. It never relays the pipes and never reads them a
+  second time. Only the library versions it was qualified on are hooked
+  (`mcp` 2.3.x on `anyio` 4.x); any other version is reported in the
+  capture manifest as `unsupported(unsupported_version)` and nothing is
+  patched. With `FABRIC_WIRE_EXEC=1` as well, the server's process is one
+  exec record from launch to exit.
+- **Other languages**: only the server's launch and its connections are
+  recorded (exec hook, host sensors).
+
+All MCP content roles are `off` by default: without retained bodies
+nothing about MCP can be derived.
+
+**Reading.**
+
+```console
+python -m fabric.reconstruct actions <export> --derive mcp.jsonrpc \
+    --mcp-host mcp.internal.example
+```
+
+| What | Rows |
+|---|---|
+| `initialize` | an `mcp_server` extension with the server's name, version and protocol version (`via mcp_initialize`) |
+| `tools/list` | an extension with the tool count, the inventory digest and the counts of the server's annotation hints (destructive, read-only, idempotent, open-world: the server's own claims), and a `listed` grant; F11 when a later listing differs |
+| `roots/list` | the `listed` grant counts the roots the client exposed (never their paths) |
+| `tools/call` | an MCP call row: `ok`, `isError` (F14) or a protocol error; joined to the model's tool call of the same name when exactly one is pending (`sequence_bracket`, tentative) |
+| `elicitation/create` | an `elicitation` control request (`escalate`) and the user's answer as its resolution (`accept` -> `allow`, `decline` -> `deny`, `cancel` -> `cancelled`), joined by JSON-RPC id; an unanswered request is F4 |
+| stdio launch | an `mcp_server` extension `via process_launch` with the keyed reference (`src-`) of the launch command |
+
+`--mcp-host` (spelled as in `FABRIC_WIRE_HTTP_HOSTS`, needs the id key)
+lists an MCP host: a request to it whose bodies were not retained makes the
+`controls` chain `partial(body_not_retained)`, so a reviewer sees that
+MCP context was not available rather than absent. The same holds for an
+`mcp.client` session recorded with the MCP roles off.
+
 ### Hook programs and control endpoints you declare (spec 057 P2)
 
 Fabric never guesses that a process is a hook or that a host is a policy

@@ -24,7 +24,8 @@
     "fabric.test.items/v1",
     "fabric.exec.observation/v1",
     "fabric.http.observation/v1",
-    "fabric.sandbox.observation/v1"
+    "fabric.sandbox.observation/v1",
+    "fabric.mcp.correlation/v1"
   ],
   "cases": [
     {

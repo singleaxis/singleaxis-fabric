@@ -155,19 +155,20 @@ POINTS: Mapping[str, PointSpec] = MappingProxyType({
 
 # The registry points this Python runtime has, in manifest order: not the TypeScript tee,
 # the P4/P5 hooks this build does not register, out-of-process sensors or the
-# qualified-run-only sources. ``exec.subprocess``, ``http.nonmodel`` and ``remote.sandbox``
-# are the P4 hook channels this build registers (spec 056 §7.2, §7.3.3 (i),
-# ``fabric.hooks``); their state changes through capture_point_changed when hooks install,
-# disable or close them.
+# qualified-run-only sources. ``exec.subprocess``, ``http.nonmodel``, ``remote.sandbox`` and
+# ``mcp.client`` (spec 057 WP7-8) are the P4 hook channels this build registers (spec 056
+# §7.2, §7.3.3 (i), ``fabric.hooks``); their state changes through capture_point_changed
+# when hooks install, disable or close them.
 RUNTIME_POINTS: tuple[str, ...] = (
     "fabric.self", "install.config", "wire.py.httpx", "wire.py.aiohttp",
     "explicit.call_recorder", "explicit.byte_boundary", "explicit.final_http",
     "explicit.subprocess_artifact", "sdk.records", "run.scope", "mcp.wrapper",
-    "exec.subprocess", "http.nonmodel", "remote.sandbox", "reconstruct.parse",
+    "exec.subprocess", "http.nonmodel", "remote.sandbox", "mcp.client", "reconstruct.parse",
     "reconstruct.infer",
 )  # fmt: skip
 # The hook channels among them (opt-in, off until ``fabric.hooks.install``).
-HOOK_POINTS: tuple[str, ...] = ("exec.subprocess", "http.nonmodel", "remote.sandbox")
+HOOK_POINTS: tuple[str, ...] = ("exec.subprocess", "http.nonmodel", "remote.sandbox",
+                                "mcp.client")  # fmt: skip
 
 # Initial states of the points whose state is not derived from the install (the wire tees
 # and the records input are). Explicit producers report on the records input only once a
@@ -184,6 +185,7 @@ DEFAULT_STATES: Mapping[str, StateEntry] = MappingProxyType({
     "exec.subprocess": ("disabled", "hook_disabled"),  # opt-in (053 §1)
     "http.nonmodel": ("disabled", "hook_disabled"),  # opt-in per host allowlist (053 §5.4)
     "remote.sandbox": ("disabled", "hook_disabled"),  # opt-in per provider (056 §4.4.1)
+    "mcp.client": ("disabled", "hook_disabled"),  # opt-in (spec 057 WP7-8, OD-4)
     "reconstruct.parse": ("active", None),
     "reconstruct.infer": ("active", None),
 })  # fmt: skip

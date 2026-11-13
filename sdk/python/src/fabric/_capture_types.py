@@ -237,6 +237,12 @@ class StatusInputs:
     dropped: tuple[str, ...] = ()
 
 
+#: Resolved status inputs of plain ``str``/``None`` arguments that dropped nothing: the
+#: table is fixed, so each combination is resolved once (bounded: only table values).
+_STATUS_MEMO: dict[tuple[str | None, ...], StatusInputs] = {}
+_PLAIN = (str, type(None))
+
+
 def resolve_status_inputs(
     phase: Phase, lifecycle: Lifecycle | None = None, result_status: ResultStatus | None = None,
     otlp_status: OtlpStatus = "unset",
@@ -246,6 +252,22 @@ def resolve_status_inputs(
     stays ``unset`` even with ``result_status=error``). An unknown ``phase`` raises
     :class:`RecordsMisuseError` (nothing can be emitted); any other value outside the
     table is dropped and named in ``dropped``."""
+    plain = (type(phase) is str and type(lifecycle) in _PLAIN
+             and type(result_status) in _PLAIN and type(otlp_status) is str)  # fmt: skip
+    if plain:
+        found = _STATUS_MEMO.get((phase, lifecycle, result_status, otlp_status))
+        if found is not None:
+            return found
+    resolved = _resolve_status_inputs(phase, lifecycle, result_status, otlp_status)
+    if plain and not resolved.dropped:  # only table values: a finite set of keys
+        _STATUS_MEMO[(phase, lifecycle, result_status, otlp_status)] = resolved
+    return resolved
+
+
+def _resolve_status_inputs(
+    phase: Phase, lifecycle: Lifecycle | None, result_status: ResultStatus | None,
+    otlp_status: OtlpStatus,
+) -> StatusInputs:  # fmt: skip
     rule = PHASE_TABLE.get(phase) if isinstance(phase, str) else None
     if rule is None:
         raise RecordsMisuseError("records API misuse: unknown phase")
@@ -804,13 +826,16 @@ def _check_held(bodies: tuple[AnyBody, ...], evidence: EvidenceDoc | None,
     """The bodies and evidence object a record job may hold (§3.4 step 3)."""
     if len(bodies) + (evidence is not None) > MAX_RECORD_BODIES:
         raise RecordsMisuseError("records API misuse: more than 8 bodies on one record")
-    evidence_bodies = sum(body.role == EVIDENCE_ROLE for body in bodies)
-    if evidence_bodies + (evidence is not None) > 1:
+    evidence_objects = int(evidence is not None)
+    protocol = False
+    for body in bodies:  # one pass (the calling thread's hot path)
+        if body.role == EVIDENCE_ROLE:
+            evidence_objects += 1
+        if isinstance(body, RecordBody) and body.content_provenance == "protocol":
+            protocol = True
+    if evidence_objects > 1:
         raise RecordsMisuseError("records API misuse: more than one evidence object")
-    if provenance == "reported" and any(
-        isinstance(body, RecordBody) and body.content_provenance == "protocol"
-        for body in bodies
-    ):  # fmt: skip
+    if protocol and provenance == "reported":
         raise RecordsMisuseError("records API misuse: protocol content on a reported record")
 
 

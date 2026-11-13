@@ -1039,7 +1039,7 @@ def coverage_manifests(reg: dict[str, Any]) -> dict[str, Any]:
             "encrypted_store_required": False,
         },
         "content_capture": "enabled",
-        "role_table_version": "fabric.content-role-table/v1@5",
+        "role_table_version": "fabric.content-role-table/v1@6",
         "limits": LIMITS,
         "sequence_unit": "record",
         "clock": {

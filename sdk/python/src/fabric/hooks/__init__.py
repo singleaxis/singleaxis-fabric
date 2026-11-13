@@ -4,8 +4,9 @@
 
 A hook observes an operation the agent's own process performs (in this build: starting a
 subprocess, ``exec.subprocess``; an httpx request to an allowlisted non-model host,
-``http.nonmodel``; a remote sandbox provider's command and code calls, ``remote.sandbox``)
-and records it on the records input of the installed capture handle, with provenance
+``http.nonmodel``; a remote sandbox provider's command and code calls, ``remote.sandbox``;
+the JSON-RPC messages the MCP protocol library's stdio transport writes and reads,
+``mcp.client``) and records it on the records input of the installed capture handle, with provenance
 ``observed``. Hooks are passive: they never approve, block, retry, modify or delay the
 operation (AGENTS.md; 053 §4.1).
 
@@ -22,9 +23,9 @@ asked for::
 
 or, with ``fabric.wire.install_from_env()`` (and so the autoload bootstrap),
 ``FABRIC_WIRE_EXEC=1`` (optionally ``FABRIC_HOST_LABEL``), ``FABRIC_WIRE_HTTP_HOSTS``
-(a JSON array of hosts), ``FABRIC_WIRE_REMOTE_SANDBOX=e2b`` and
+(a JSON array of hosts), ``FABRIC_WIRE_REMOTE_SANDBOX=e2b``,
 ``FABRIC_WIRE_SANDBOX_HOSTS`` (a JSON array of the sandbox provider hosts a deployment
-uses; manifest only).
+uses; manifest only) and ``FABRIC_WIRE_MCP=1``.
 
 Rules (053 §4):
 - Hooks need an installed capture handle. Without one nothing is patched and ``status()``
@@ -51,8 +52,10 @@ Channels are registered in :data:`CHANNELS`. Each names a module with one entry 
 ``install_channel(producer, patches) -> HookChannel`` (``_producer.py``), and a loader that
 imports that module with a literal import (never a name computed at run time). This build
 registers ``exec.subprocess`` (module ``fabric.hooks._exec``), ``http.nonmodel``
-(``fabric.hooks._http``) and ``remote.sandbox`` (``fabric.hooks._sandbox``, which
-dispatches to the provider module; a build without it reports ``unsupported``).
+(``fabric.hooks._http``), ``remote.sandbox`` (``fabric.hooks._sandbox``, which
+dispatches to the provider module; a build without it reports ``unsupported``) and
+``mcp.client`` (``fabric.hooks._mcp``; an MCP library version outside its pins reports
+``unsupported(unsupported_version)`` and records nothing).
 """
 
 from __future__ import annotations
@@ -74,6 +77,7 @@ from ._config import (
     HOOK_ENV_NAMES,
     HOST_LABEL_ENV,
     HTTP_HOSTS_ENV,
+    MCP_ENV,
     REMOTE_SANDBOX_ENV,
     HooksConfig,
     config_from_args,
@@ -131,6 +135,13 @@ def _load_http() -> ModuleType:
     return module
 
 
+def _load_mcp() -> ModuleType:
+    """The ``mcp.client`` channel module (spec 057 WP7-8), imported only when it is on."""
+    import fabric.hooks._mcp as module  # noqa: PLC0415 - imported only when switched on
+
+    return module
+
+
 def _load_sandbox() -> ModuleType:
     """The ``remote.sandbox`` channel module (056 WP6-09b), imported only when a provider
     is enabled; a build without it reports the channel ``unsupported``."""
@@ -155,6 +166,7 @@ CHANNELS: tuple[ChannelSlot, ...] = (
     ChannelSlot("exec.subprocess", EXEC_ENV, "fabric.hooks._exec", _load_exec),
     ChannelSlot("http.nonmodel", HTTP_HOSTS_ENV, "fabric.hooks._http", _load_http),
     ChannelSlot(_SANDBOX_POINT, REMOTE_SANDBOX_ENV, "fabric.hooks._sandbox", _load_sandbox),
+    ChannelSlot("mcp.client", MCP_ENV, "fabric.hooks._mcp", _load_mcp),
 )
 
 
@@ -403,7 +415,7 @@ def current_handle() -> HooksHandle | None:
 
 def install(
     *, exec: bool = False, host_label: str | None = None, http_hosts: Sequence[str] = (),
-    remote_sandbox: Sequence[str] = (), sandbox_hosts: Sequence[str] = (),
+    remote_sandbox: Sequence[str] = (), sandbox_hosts: Sequence[str] = (), mcp: bool = False,
 ) -> HooksHandle:  # fmt: skip
     """Install the hook channels asked for (all off by default) on the installed capture
     handle (056 §7.3.3 (i)).
@@ -419,6 +431,11 @@ def install(
     - ``sandbox_hosts`` declares the sandbox provider hosts the deployment uses (manifest
       only): with no provider enabled the manifest says ``remote.sandbox``
       ``disabled(remote_sandbox)``.
+    - ``mcp`` turns on the MCP transport hook (``mcp.client``, spec 057 WP7-8): the
+      JSON-RPC messages the MCP Python library's stdio transport writes to and reads from
+      a server it launched, exactly as they crossed the pipe. Only the library versions it
+      was qualified on are hooked; another version reports
+      ``unsupported(unsupported_version)``.
 
     Without an installed, capturing capture handle nothing is patched and the returned
     handle's ``status()`` reports ``no_capture_handle``. Malformed or contradictory
@@ -426,7 +443,7 @@ def install(
     ``ValueError``."""
     config = config_from_args(exec=exec, host_label=host_label, http_hosts=http_hosts,
                               remote_sandbox=remote_sandbox,
-                              sandbox_hosts=sandbox_hosts)  # fmt: skip
+                              sandbox_hosts=sandbox_hosts, mcp=mcp)  # fmt: skip
     return _install(config)
 
 
@@ -472,8 +489,8 @@ def _install(config: HooksConfig, not_in_build: tuple[str, ...] = ()) -> HooksHa
 
 def install_from_env(environ: Mapping[str, str] | None = None) -> HooksHandle | None:
     """Install from ``FABRIC_WIRE_EXEC`` (and ``FABRIC_HOST_LABEL``),
-    ``FABRIC_WIRE_HTTP_HOSTS``, ``FABRIC_WIRE_REMOTE_SANDBOX`` and
-    ``FABRIC_WIRE_SANDBOX_HOSTS``; never raises.
+    ``FABRIC_WIRE_HTTP_HOSTS``, ``FABRIC_WIRE_REMOTE_SANDBOX``,
+    ``FABRIC_WIRE_SANDBOX_HOSTS`` and ``FABRIC_WIRE_MCP``; never raises.
     ``None`` when no hook switch is set. A malformed value enables nothing and returns a
     handle whose ``status()`` reports ``invalid_configuration`` (one class-only warning);
     a set switch of a channel this build does not have is listed as ``not_in_build``."""

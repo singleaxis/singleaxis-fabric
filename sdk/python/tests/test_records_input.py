@@ -308,14 +308,16 @@ def test_observed_records_keep_protocol_provenance_end_to_end(handle: Handle) ->
     attempt = handle.input.begin("mcp_call", "sdk.records", provenance="observed")
     evidence = EvidenceDoc.build("fabric.test.items/v1", [{"name": "x", "count": 1}])
     assert isinstance(evidence, EvidenceDoc)
-    bodies = [RecordBody("mcp.notification", b'{"jsonrpc":"2.0"}', JSON, "tool", "protocol"),
-              RecordBody("mcp.request", b"{}", JSON, "tool", "caller_reported")]  # fmt: skip
+    bodies = [
+        RecordBody("tool.call.result", b'{"jsonrpc":"2.0"}', JSON, "tool", "protocol"),
+        RecordBody("tool.call.arguments", b"{}", JSON, "tool", "caller_reported"),
+    ]
     assert _emit(attempt, bodies=bodies, evidence=evidence)
     [(span, staged)] = _items(handle)
     assert span["attributes"]["fabric.capture.source"] == "observed"
     provenance = [(d["role"], d["provenance"], d["status"]) for d, _ in staged]
-    assert provenance == [("mcp.notification", "protocol", "stored"),
-                          ("mcp.request", "caller_reported", "stored"),
+    assert provenance == [("tool.call.result", "protocol", "stored"),
+                          ("tool.call.arguments", "caller_reported", "stored"),
                           ("record.evidence", "protocol", "stored")]  # fmt: skip
 
 
@@ -356,7 +358,7 @@ def test_a_record_is_delivered_from_the_real_spool_bodies_first(handle: Handle) 
 def test_reported_records_cannot_claim_protocol_provenance(
     monkeypatch: pytest.MonkeyPatch, handle: Handle
 ) -> None:
-    protocol = RecordBody("mcp.notification", b"{}", JSON, "tool", "protocol")
+    protocol = RecordBody("tool.call.result", b"{}", JSON, "tool", "protocol")
     with pytest.raises(RecordsMisuseError):  # the WP-01 RecordJob check
         RecordJob(SOURCE, 1, 0, None, None, None, str(uuid.uuid4()), str(uuid.uuid4()),
                   "fabric.activity", 0, 0, "unset", {}, bodies=(protocol,))  # fmt: skip
@@ -365,9 +367,9 @@ def test_reported_records_cannot_claim_protocol_provenance(
         _emit(attempt, bodies=[protocol])
     monkeypatch.delenv(ct.STRICT_ENV)
     COUNTERS.reset()
-    assert _emit(attempt, bodies=[protocol, RecordBody("mcp.request", b"{}", JSON, "tool")])
+    assert _emit(attempt, bodies=[protocol, RecordBody("tool.call.arguments", b"{}", JSON, "tool")])
     [(span, staged)] = _items(handle)
-    assert [(d["role"], d["provenance"]) for d, _ in staged] == [("mcp.request",
+    assert [(d["role"], d["provenance"]) for d, _ in staged] == [("tool.call.arguments",
                                                                    "caller_reported")]  # fmt: skip
     assert span["attributes"]["fabric.capture.source"] == "reported"
     assert COUNTERS.api_misuse == 1

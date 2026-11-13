@@ -113,6 +113,16 @@ EVIDENCE_TYPES: Mapping[str, Mapping[str, Any]] = MappingProxyType({
         ),
         "schema": EVIDENCE_ITEM_SCHEMAS["fabric.sandbox.observation/v1"],
     }),
+    "fabric.mcp.correlation/v1": MappingProxyType({
+        "capture_points": ("mcp.client",),
+        "fields": (
+            ("structure", "x-fabric.mcp.session_ref", "/items/*/session_ref"),
+            ("structure", "x-fabric.mcp.rpc_ref", "/items/*/rpc_ref"),
+            ("content", "x-fabric.mcp.message_kind", "/items/*/message_kind"),
+            ("content", "x-fabric.mcp.correlation", "/items/*/correlation"),
+        ),
+        "schema": EVIDENCE_ITEM_SCHEMAS["fabric.mcp.correlation/v1"],
+    }),
 })  # fmt: skip
 # ---------------------------------------------------------------------------------------------
 
