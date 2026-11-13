@@ -66,6 +66,8 @@ func TestMain(m *testing.M) {
 		os.Exit(unmappedPathHelper())
 	case "plain-connect":
 		os.Exit(plainConnectHelper())
+	case "fifo-open":
+		os.Exit(fifoOpenHelper())
 	}
 	os.Exit(m.Run())
 }
@@ -276,6 +278,17 @@ func heldConnectHelper() int {
 		_ = unix.Connect(s, &unix.SockaddrInet4{Port: p, Addr: [4]byte{127, 0, 0, 1}})
 	}
 	return 21
+}
+
+// fifoOpenHelper opens a FIFO for reading: the open blocks in the kernel
+// until a writer opens it (the test interrupts it with a signal first).
+func fifoOpenHelper() int {
+	fd, err := unix.Open(os.Getenv("FABRIC_E2E_FIFO"), unix.O_RDONLY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return 70
+	}
+	unix.Close(fd)
+	return 0
 }
 
 // --- harness ----------------------------------------------------------------
@@ -1079,5 +1092,94 @@ func TestPathReadRetriedAtExit(t *testing.T) {
 			t.Errorf("type %d: name %q incomplete %v, want %q and complete",
 				typ, e.Filename, e.FilenameIncomplete, denied)
 		}
+	}
+}
+
+// blockedIn returns the id of a thread of pid that is in syscall nr, or 0.
+func blockedIn(pid int, nr uintptr) int {
+	tasks, _ := os.ReadDir(fmt.Sprintf("/proc/%d/task", pid))
+	for _, task := range tasks {
+		raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/task/%s/syscall", pid, task.Name()))
+		if err != nil {
+			continue
+		}
+		if f := strings.Fields(string(raw)); len(f) > 0 && f[0] == strconv.FormatUint(uint64(nr), 10) {
+			tid, _ := strconv.Atoi(task.Name())
+			return tid
+		}
+	}
+	return 0
+}
+
+// TestRestartedSyscallIsNotFailed (spec 057 WP7-11): a syscall a signal
+// interrupts leaves the kernel with a restart code (-ERESTARTSYS), never seen
+// by the process: with SA_RESTART the kernel runs the call again. That return
+// is not the call's outcome, so it is result unknown, never a failure with an
+// errno outside errno's range; the restarted call is paired as usual.
+func TestRestartedSyscallIsNotFailed(t *testing.T) {
+	base := testBase(t)
+	agent := mkCgroup(t, filepath.Join(base, "agent"))
+	rt := loadSensorClasses(t, agent)
+	events := collect(t, rt)
+
+	dir := filepath.Join("/tmp", "fabric-e2e-"+randomHex(t, 4))
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	fifo := filepath.Join(dir, "fifo")
+	if err := unix.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run=^$")
+	cmd.Env = append(os.Environ(), helperEnv+"=fifo-open", "FABRIC_E2E_FIFO="+fifo)
+	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: openCgroup(t, agent)}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	pid := cmd.Process.Pid
+	waitBlocked := func() int {
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			if tid := blockedIn(pid, unix.SYS_OPENAT); tid != 0 {
+				return tid
+			}
+		}
+		t.Fatal("the helper never blocked in openat")
+		return 0
+	}
+	// The Go runtime handles SIGURG with SA_RESTART: the open is restarted.
+	if err := unix.Tgkill(pid, waitBlocked(), unix.SIGURG); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	waitBlocked()
+	w, err := unix.Open(fifo, unix.O_WRONLY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unix.Close(w)
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("the fifo-open helper failed: %v", err)
+	}
+	var results []string
+	for exit := false; !exit; {
+		e := waitFor(t, events, "the helper's open and exit", func(e *event) bool {
+			return e.Pid == uint32(pid) && (e.Type == evExit || (e.Type == evOpenat && e.Filename == fifo))
+		})
+		if e.Type == evExit {
+			exit = true
+			continue
+		}
+		ev, _ := hostEvent(e, nil)
+		results = append(results, ev.Result+":"+ev.Errno)
+	}
+	// the interrupted open (unknown), then the restarted one (success)
+	if !reflect.DeepEqual(results, []string{"unknown:", "success:"}) {
+		t.Errorf("fifo opens %v, want [unknown: success:]", results)
 	}
 }

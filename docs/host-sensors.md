@@ -178,7 +178,13 @@ default; each is a separate switch:
   the errno, and a failed `execve` (for example `EACCES` on a file without
   the execute bit) is recorded. The auditd receiver always reads the result
   from the audit record. The syscall is never delayed: the event waits in a
-  kernel map and is sent when the call returns.
+  kernel map and is sent when the call returns. A call whose return is not
+  its outcome stays `unknown`: a non-blocking or interrupted connect, a call
+  a signal interrupted (the kernel restarts it, and the restarted call is
+  recorded on its own), and a call still running when the emitter stops.
+  A syscall that a seccomp filter refuses with an errno never reaches the
+  syscall tracepoints, so the emitter does not see it at all; a seccomp
+  kill is seen as the process's `exit` with `SIGSYS`.
 - `EMIT_EXIT=true` (emitter) records each process exit in scope as event
   class `exit`, with `fabric.sensor.exit_code` or, for a process a signal
   ended, `fabric.sensor.signal` (31 is `SIGSYS`, the seccomp kill action).

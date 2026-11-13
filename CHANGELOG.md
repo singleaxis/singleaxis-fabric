@@ -69,8 +69,10 @@ it never makes, applies, waits for or returns one.
   and `execve` with their return (`EMIT_SYSCALL_RESULTS=true`): records
   carry `fabric.sensor.result` (`success` or `failed`) and the errno, and a
   failed `execve` is recorded for the first time. The syscall is never
-  delayed; an event whose return was not seen (a non-blocking connect, a
-  call still running at shutdown) keeps result `unknown`. `EMIT_EXIT=true`
+  delayed; an event whose return was not seen or is not its outcome (a
+  non-blocking connect, a call a signal interrupted, a call still running
+  at shutdown) keeps result `unknown`. A syscall a seccomp filter refuses
+  with an errno never reaches the tracepoints and is not recorded. `EMIT_EXIT=true`
   (production) records every process exit in scope as event class `exit`
   with its exit code or the signal that ended it; the manifest gains the
   `host.ebpf.exit` and `host.ebpf.syscall_result` rows. Both are off by

@@ -47,6 +47,11 @@ char LICENSE[] SEC("license") = "GPL";
 #define EINTR 4
 #define EALREADY 114
 #define EINPROGRESS 115
+// Kernel-internal restart codes (include/linux/errno.h): a syscall a signal
+// interrupted returns one at sys_exit; the process never sees it (the call
+// is run again, or returns EINTR).
+#define ERESTARTSYS 512
+#define ERESTART_RESTARTBLOCK 516
 
 // include/linux/sched/signal.h
 #define SIGNAL_GROUP_EXIT 0x00000004
@@ -406,6 +411,10 @@ static __always_inline void complete(long ret) {
     }
     if (ret >= 0) {
         e->result = RES_SUCCESS;
+    } else if (ret <= -ERESTARTSYS && ret >= -ERESTART_RESTARTBLOCK) {
+        // A signal interrupted the call: the kernel restarts it (its own
+        // sys_enter and sys_exit follow) or it returns EINTR. Not its outcome.
+        e->result = RES_UNKNOWN;
     } else if (type == EV_CONNECT && (ret == -EINPROGRESS || ret == -EINTR || ret == -EALREADY)) {
         // A non-blocking or interrupted connect goes on after the call returns:
         // its outcome is not this return value.

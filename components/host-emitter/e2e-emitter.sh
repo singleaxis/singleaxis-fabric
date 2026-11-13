@@ -38,6 +38,10 @@
 #                               read again at sys_exit
 #   TestFileAccessWithoutResults  openat and connect with results off, seen
 #                               through the raw syscall tracepoints
+#   TestRestartedSyscallIsNotFailed  an open a signal interrupts (a kernel
+#                               restart code) is unknown, not failed
+# E2E_RUN=<regexp> runs a subset (go test -run), for example while
+# debugging one test on a local kernel.
 set -euo pipefail
 
 if [ "${1:-}" = "--production" ]; then
@@ -54,7 +58,7 @@ if [ "${1:-}" = "--production" ]; then
     -v /sys/kernel/debug:/sys/kernel/debug \
     -w /src/host-emitter "$BUILD_IMG" \
     go test -tags e2e -count=1 -v \
-      -run '^(TestNamespacePidsMatchProc|TestAgentRootPodShape|TestSandboxRootScope|TestSyscallResultsAndExits|TestHeldSyscallEmittedAtStop|TestKernelRefusals|TestPathReadRetriedAtExit|TestFileAccessWithoutResults)$' .
+      -run "${E2E_RUN:-^(TestNamespacePidsMatchProc|TestAgentRootPodShape|TestSandboxRootScope|TestSyscallResultsAndExits|TestHeldSyscallEmittedAtStop|TestKernelRefusals|TestPathReadRetriedAtExit|TestFileAccessWithoutResults|TestRestartedSyscallIsNotFailed)$}" .
 fi
 
 EMIT_IMG="${EMIT_IMG:-fabric-host-emitter:local}"
