@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.coverage-vocabularies/v1",
-  "registry_revision": 12,
+  "registry_revision": 13,
   "coverage_status": [
     {
       "value": "captured",
@@ -988,7 +988,7 @@
   "capture_input": [
     {
       "value": "wire",
-      "meaning": "Automatic in-process tee of model traffic (httpx/httpx2, aiohttp; undici on the TypeScript track): exchanges plus their run markers."
+      "meaning": "Automatic in-process tee of model traffic (httpx/httpx2, aiohttp; on the TypeScript track undici and, separately qualified, Node.js core `http`/`https`): exchanges plus their run markers."
     },
     {
       "value": "records",

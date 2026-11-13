@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/schemas/fabric/diagnostics/v1/wire-status-v1.schema.json",
+  "title": "Fabric wire status document (spec 058 §13.2, spec 055 §4.7)",
+  "description": "What an SDK writes to FABRIC_WIRE_STATUS_FILE (mode 0600, atomic rename) at install and at exit, and what status() / envStatus() return: the capture state, catalogue ids and content-free counters. Python writes it from fabric.wire._statusfile; the TypeScript SDK writes the same document from its Fabric worker. Local output only: it may name a model host so the operator can add it, never a key, a header, a URL credential or content, so every free-form value in `status` and `stats` is a code, a number or a bounded token without spaces.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "phase", "written_at", "pid", "sdk_version", "capture", "warning_ids", "notice_ids"],
+  "properties": {
+    "schema": {"const": "fabric.wire-status/v1"},
+    "phase": {"enum": ["install", "exit"]},
+    "written_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "pid": {"type": "integer", "minimum": 1},
+    "sdk_version": {"type": "string", "pattern": "^[0-9A-Za-z.+-]{1,64}$"},
+    "sdk_language": {"description": "Absent means python.", "enum": ["python", "typescript"]},
+    "capture": {"enum": ["installed", "disabled", "not_installed", "closed"]},
+    "warning_ids": {"$ref": "#/$defs/ids"},
+    "notice_ids": {"$ref": "#/$defs/ids"},
+    "status": {"$ref": "#/$defs/status"},
+    "error": {"description": "The error class only, never its message.", "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"},
+    "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+    "reason_id": {"$ref": "#/$defs/id"},
+    "fix": {"type": "string", "minLength": 1, "maxLength": 500},
+    "delivered": {"type": "boolean"},
+    "stats": {
+      "type": "object",
+      "maxProperties": 128,
+      "propertyNames": {"$ref": "#/$defs/name"},
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "unmatched_model_hosts": {"$ref": "#/$defs/unmatched"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"capture": {"const": "not_installed"}}},
+      "then": {
+        "required": ["error", "reason", "reason_id"],
+        "properties": {"phase": {"const": "install"}},
+        "not": {"anyOf": [{"required": ["status"]}, {"required": ["stats"]}, {"required": ["delivered"]}]}
+      }
+    },
+    {
+      "if": {"properties": {"capture": {"enum": ["installed", "disabled"]}}},
+      "then": {
+        "required": ["status"],
+        "properties": {"phase": {"const": "install"}},
+        "not": {"anyOf": [{"required": ["error"]}, {"required": ["stats"]}, {"required": ["delivered"]}]}
+      }
+    },
+    {
+      "if": {"properties": {"capture": {"const": "closed"}}},
+      "then": {
+        "required": ["delivered", "stats"],
+        "properties": {"phase": {"const": "exit"}},
+        "not": {"anyOf": [{"required": ["error"]}, {"required": ["status"]}]}
+      }
+    }
+  ],
+  "$defs": {
+    "id": {"type": "string", "pattern": "^F[CWERN]-[0-9]{3}$"},
+    "ids": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"$ref": "#/$defs/id"}},
+    "name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,63}$"},
+    "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+    "token": {"type": "string", "pattern": "^[A-Za-z0-9._:@/+=-]{0,160}$"},
+    "scalar": {"oneOf": [{"type": "integer"}, {"type": "boolean"}, {"type": "null"}, {"$ref": "#/$defs/token"}]},
+    "safe_value": {
+      "oneOf": [
+        {"$ref": "#/$defs/scalar"},
+        {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/scalar"}},
+        {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": {"$ref": "#/$defs/name"},
+          "additionalProperties": {"$ref": "#/$defs/scalar"}
+        }
+      ]
+    },
+    "point_state": {"enum": ["active", "installed_inactive", "disabled", "unsupported", "failed"]},
+    "unmatched": {
+      "description": "One row per model-looking host no matcher covers (FW-006): the host and the exact FABRIC_WIRE_ENDPOINTS value that adds it.",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["host", "port", "count", "fix"],
+        "properties": {
+          "host": {"type": "string", "pattern": "^[A-Za-z0-9.:\\[\\]-]{1,253}$"},
+          "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+          "count": {"type": "integer", "minimum": 1},
+          "fix": {"type": "string", "maxLength": 600}
+        }
+      }
+    },
+    "status": {
+      "description": "The content-free status object. Python's counters and modes are open-ended tokens; the TypeScript SDK adds each capture point's reason, the runtime qualification tuple and the spool backlog (spec 055 §4.7).",
+      "type": "object",
+      "maxProperties": 128,
+      "propertyNames": {"$ref": "#/$defs/name"},
+      "properties": {
+        "capture": {"$ref": "#/$defs/code"},
+        "capture_reason": {"$ref": "#/$defs/code"},
+        "capture_points": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": {"pattern": "^[a-z][a-z0-9_.]{0,63}$"},
+          "additionalProperties": {"$ref": "#/$defs/point_state"}
+        },
+        "capture_point_reasons": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": {"pattern": "^[a-z][a-z0-9_.]{0,63}$"},
+          "additionalProperties": {"$ref": "#/$defs/code"}
+        },
+        "runtime_qualification": {
+          "description": "The exact build the process runs on and whether sdk/typescript/wire-qualification.json lists it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["node", "undici", "platform", "listed"],
+          "properties": {
+            "node": {"type": "string", "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,4}$"},
+            "undici": {"oneOf": [{"type": "string", "pattern": "^[0-9A-Za-z.+-]{1,64}$"}, {"type": "null"}]},
+            "undici_origin": {"enum": ["bundled", "external"]},
+            "platform": {"type": "string", "pattern": "^[a-z0-9]+-[a-z0-9]+(-[a-z]+)?$"},
+            "listed": {"type": "boolean"}
+          }
+        },
+        "endpoint_set": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/token"}},
+        "endpoint_table_version": {"type": "integer", "minimum": 1},
+        "spool_backlog": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["records", "bytes"],
+          "properties": {
+            "records": {"type": "integer", "minimum": 0},
+            "bytes": {"type": "integer", "minimum": 0}
+          }
+        },
+        "unmatched_model_hosts": {"$ref": "#/$defs/unmatched"}
+      },
+      "additionalProperties": {"$ref": "#/$defs/safe_value"}
+    }
+  }
+}

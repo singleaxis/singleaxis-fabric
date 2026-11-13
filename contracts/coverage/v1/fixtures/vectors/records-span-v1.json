@@ -1,7 +1,7 @@
 {
   "schema_version": "fabric.records-span-vectors/v1",
   "rule": "Spec 050 §3.4 rule A and §3.14: a records-class span keeps exactly the keys whose registry placement names record, each value passing the key's check (capture_check for a reused key) under the Node's capture_labels and identity_mode; every other key, a failing value, a float, a map or bytes is dropped and counted (records_keys_dropped), never hashed or truncated. keys is the table (fabric/_records_keys_generated.py and fabricguard recordKeyValidators are generated from the same rows).",
-  "table_revision": 13,
+  "table_revision": 14,
   "keys": [
     "fabric.actor.id",
     "fabric.actor.type",

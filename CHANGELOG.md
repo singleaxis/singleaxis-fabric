@@ -15,6 +15,48 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: settings, endpoint matching and run ids
+  (spec 055, unit 055-t2).** Still no Node.js capture; this is the shared
+  core it will run on. The TypeScript SDK now reads every Python capture
+  setting under the same name and with the same rules, including the
+  `*_FILE` variants for keys, `FABRIC_WIRE_ID_KEY_FILE`,
+  `FABRIC_WIRE_STATUS_FILE`, `FABRIC_WIRE_BUILTIN_ENDPOINTS` and the
+  `FABRIC_OTLP_*` variables (which win over `OTEL_EXPORTER_OTLP_*`), so the
+  environment file `fabric init` writes will configure a Node agent
+  unchanged. A malformed setting is reported with the same diagnostics id
+  Python gives it, its fix, and the variable's name, never its value; a
+  shared fixture generated from `python -m fabric.wire status` checks this
+  for 78 environments. Keys, the redaction service's bearer token and OTLP
+  header values are held where printing or logging the settings never shows
+  them. The built-in model endpoints come from the same table
+  as Python's, and TypeScript matches requests exactly as Python does. Digests,
+  resume tokens and run ids are computed byte for byte as Python computes
+  them. A new vector file, `spool-bytes-v1.json`, pins the exact bytes the
+  Python spool, ledger and registration writers produce, and the contract
+  validator re-reads every byte. One difference: a Node agent whose OTLP
+  setting selects `grpc` is told to use OTLP/HTTP (`FABRIC_OTLP_ENDPOINT`),
+  since the Node.js sender speaks only OTLP/HTTP. Capture contract 1.11.0.
+
+- **Contracts for recording Node.js model calls (spec 055, unit 055-t1).**
+  No Node.js capture code ships yet; this sets down what it must do. The
+  coverage registry now describes the two TypeScript capture points: global
+  `fetch` and clients built on undici (`wire.ts.undici`), and Node's core
+  `http`/`https` as a separate opt-in (`wire.ts.node_http`), each with what
+  it can and cannot see. A new compatibility table,
+  `sdk/typescript/wire-qualification.json`, records which Node.js builds
+  actually publish request and response bytes: Node 22 and Node 24.0 to 24.3
+  do not, Node 24.4.0 (undici 7.11.0) and later do. CI re-checks four exact
+  builds with `scripts/typescript/audit-undici-channels.mjs`. Nothing is
+  claimed until the later gates pass. The diagnostics catalogue gains nine
+  Node.js messages (`FW-025` to `FW-033`), each with its fix, and an `sdk`
+  list saying which SDK emits each message. The status file
+  (`FABRIC_WIRE_STATUS_FILE`) now has a schema, and Python's documents
+  are tested against it. The native lock module's interface is fixed in
+  `sdk/typescript/native/fabric_wire_abi.h`. Contract validators now refuse
+  an unregistered capture point even when its name looks right, and refuse
+  a manifest whose 64-bit numbers went through a floating-point value.
+  Coverage contract 1.5.0, capture contract 1.10.0, diagnostics 1.1.0.
+
 - **MCP servers as security context (spec 057 P1, second part).** For an MCP
   server reached over Streamable HTTP, the request and response bodies the
   non-model HTTP hook already records are now read as MCP by
