@@ -52,7 +52,11 @@ The verifier links them with the rules of spec 056:
   sensor records have no start time, so today's anchors are `tentative`.
   Events whose parent-pid chain reaches an anchored process are `part_of`
   that effect (`process_lineage`, H3). This is how the `curl` that a shell
-  script starts, and its connection, become visible. A shell that execs its
+  script starts, and its connection, become visible. A failed `execve` (a
+  `PATH` search that tries several directories, or a refused exec) is an
+  event of the process that tried it and is lineage too; so are the
+  anchored child's own failed attempts before the exec that anchors it,
+  when their start tick is the child's. A shell that execs its
   command in place (`bash -c "cmd"`, or `dash` for the last command of
   `sh -c "a && b"`) gives two exec events with one pid and parent pid.
   Without start times, H2 reads them as one process (an exec chain): the

@@ -1402,6 +1402,31 @@ def test_lineage_follows_a_child_forked_without_exec() -> None:
     assert join.link_counts["process_lineage"]["resolved"] == 2
 
 
+def test_failed_exec_attempts_are_events_of_the_process_that_tried_them() -> None:
+    """Spec 057 WP7-11 records failed execs. A PATH search (``execvp``) fails with ENOENT
+    before the exec that succeeds: in the forked child before its anchoring exec, in the
+    anchored shell, and in a child forked from it. Each is an event of that process
+    (lineage), never unexplained, so a sensor with syscall results keeps corroboration
+    complete. A failed exec of the same pid in another start tick is another process."""
+    start = 1_000 * TICK_NS
+    effect = _effect(start=start)
+    at = effect.start_ns
+    failed = {"result": "failed", "syscall": "execve", "errno": "ENOENT"}
+    before = _exec(1, 4121, 4100, at + MS // 2, start, **failed)
+    anchor = _exec(2, 4121, 4100, at + MS, start)
+    after = _exec(3, 4121, 4100, at + 2 * MS, start, **failed)
+    in_place = _exec(4, 4121, 4100, at + 3 * MS, start)
+    forked = _exec(5, 4122, 4121, at + 4 * MS, start + TICK_NS, **failed)
+    forked_ok = _exec(6, 4122, 4121, at + 5 * MS, start + TICK_NS)
+    other = _exec(7, 4121, 4100, at + MS // 4, start - 5 * TICK_NS, **failed)
+    join = _join([effect], [other, before, anchor, after, in_place, forked, forked_ok])
+    trace = join.trace["host_events"]
+    assert trace[anchor.event_id] == "H1"
+    assert [trace[e.event_id] for e in (before, after, in_place, forked, forked_ok)] == ["H3"] * 5
+    assert trace[other.event_id] == "unexplained"
+    assert join.unexplained_count == 1
+
+
 # ------------------------------------------------------------------ revision 10: per-record clocks
 def test_governing_clock_follows_after_source_sequence() -> None:
     """Spec 049 §2.4: manifest k governs sequences after(k) + 1 up to after(k + 1)."""

@@ -1868,6 +1868,23 @@ def _forked_child(procs: Mapping[int, _Proc], event: HostEvent) -> _Proc | None:
     return _Proc(parent.depth + 1, event.time_ns, own, event.ppid)
 
 
+def _attempt_before(event: HostEvent, root: HostEvent, start: int | None) -> bool:
+    """Whether ``event`` is an exec attempt that did not succeed (failed, or its result not
+    seen) by the walk's root process before the root's exec: the same pid and parent pid,
+    and a start time in the root's tick (both known: pid and start tick name one process
+    per boot, so time alone never decides)."""
+    own = event.process_start_ns
+    return (
+        event.event_class == "exec"
+        and event.result != "success"
+        and event.pid == root.pid
+        and event.ppid == root.ppid
+        and own is not None
+        and start is not None
+        and same_tick(own, start)
+    )
+
+
 def _lineage(
     hosts: _Hosts, effect: ProcessEffect, anchor: HostEvent, claimed: set[str]
 ) -> tuple[list[HostEvent], list[HostEvent]]:
@@ -1880,8 +1897,11 @@ def _lineage(
     are left to H5. A later successful exec of a known process (same pid, parent and start
     tick: ``sh`` exec'ing ``curl``) stays at its depth; connect and file events of a
     process in the chain are linked at its depth when their start time, if both sides
-    carry one, is in its tick. A connect or file event of an unknown pid whose parent is
-    in the chain is a child forked without an exec: it joins the chain one level down.
+    carry one, is in its tick, and so is an exec of such a process that failed (or whose
+    result was not seen), and the root's own failed exec attempts before its anchoring
+    exec in the same tick (:func:`_attempt_before`). A connect, file or failed exec event
+    of an unknown pid whose parent is in the chain is a child forked without an exec: it
+    joins the chain one level down.
     An exec whose parent forked without exec and produced no event of its own stays
     unlinked: no event names that parent (no fork tracepoint in M2).
 
@@ -1906,14 +1926,20 @@ def _walk(  # noqa: PLR0912 - one branch per event kind and bound
     linked: list[HostEvent] = []
     truncated: list[HostEvent] = []
     for event in hosts.events:
-        if (
-            event.event_id in claimed
-            or event.time_ns < root.time_ns
-            or _sandbox(event)
-            or not hosts.same_host(event, host_id)
-        ):
+        if event.event_id in claimed or _sandbox(event) or not hosts.same_host(event, host_id):
             continue
         own = event.process_start_ns
+        if event.time_ns < root.time_ns:
+            # The root's own exec attempts before the exec that anchors it (a forked
+            # child's PATH search: execve fails with ENOENT, then succeeds) are events of
+            # that process: the same pid, parent and start tick (spec 057 WP7-11 records
+            # failed execs; 056 §4.3: the events of the pid are lineage at depth 0).
+            if _attempt_before(event, root, start):
+                if len(linked) >= LINEAGE_MAX_EVENTS:
+                    truncated.append(event)
+                else:
+                    linked.append(event)
+            continue
         held = procs.get(event.pid)
         if held is not None and hosts.exited_init(host_id, event.pid, held.time, event.time_ns):
             del procs[event.pid]  # the pid was freed: whatever holds it now is another
@@ -1946,8 +1972,8 @@ def _walk(  # noqa: PLR0912 - one branch per event kind and bound
             else:
                 procs.pop(event.pid, None)  # pid reuse: another process holds the pid now
                 continue
-        elif event.event_class == "exec":
-            continue  # a failed exec started no process: not lineage, maybe unexplained
+        # A failed exec (or one whose result was not seen) started no process: it is an
+        # event of the process that tried it, linked at its depth like a connect or open.
         elif (proc := procs.get(event.pid)) is None:
             forked = _forked_child(procs, event)
             if forked is None:
