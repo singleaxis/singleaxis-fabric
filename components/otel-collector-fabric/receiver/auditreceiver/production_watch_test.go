@@ -144,3 +144,40 @@ func TestAuditPathName(t *testing.T) {
 		}
 	}
 }
+
+// TestCreatedWatchedFileIsLabelled: an open that creates a file logs its
+// directory first (nametype=PARENT) and the file next (CREATE); the record
+// is labelled, and digested, by the file, so writing a new permission file
+// is labelled like opening an existing one.
+func TestCreatedWatchedFileIsLabelled(t *testing.T) {
+	cfg := productionConfig(t, "netlink")
+	cfg.FileAccess = true
+	cfg.Production.Digests = "permitted"
+	cfg.Production.WatchedPathsFile = filepath.Join(t.TempDir(), "policy.json")
+	if err := os.WriteFile(cfg.Production.WatchedPathsFile, []byte(watchedPathsJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	sink := &traceSink{}
+	r := newProductionTestReceiver(t, cfg, sink)
+	lines := startNetlinkForTest(t, r, newFakeNetlink())
+	feed(lines, strings.Join([]string{
+		`type=SYSCALL msg=audit(1791331201.230:510): arch=c000003e syscall=257 success=yes exit=3 ppid=4100 pid=4121 auid=1000 comm="agent" exe="/usr/bin/agent" key="fabric"`,
+		`type=PATH msg=audit(1791331201.230:510): item=0 name="/etc/agent/" inode=9 nametype=PARENT`,
+		`type=PATH msg=audit(1791331201.230:510): item=1 name="/etc/agent/acl.json" inode=10 nametype=CREATE`,
+		`type=EOE msg=audit(1791331201.230:510):`,
+	}, "\n"))
+	waitUntil(t, "one file record", 5*time.Second, func() bool {
+		return len(sink.acceptedSpans(recordSpanName)) == 1
+	})
+	shutdown(t, r)
+	span := sink.acceptedSpans(recordSpanName)[0]
+	if got := str(span, "fabric.sensor.watch_label"); got != "agent-acl" {
+		t.Errorf("created watched file: label %q, want agent-acl", got)
+	}
+	if got := str(span, "fabric.sensor.path_sha256"); got != sha256Hex("/etc/agent/acl.json") {
+		t.Errorf("path digest %q is not the created file's", got)
+	}
+}
