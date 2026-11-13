@@ -1493,3 +1493,22 @@ def test_record_clock_reads_the_manifests_of_the_records_epoch() -> None:
     merged.extend(evidence)
     merged.extend(host_evidence_from_spans([_manifest_span(1, 15, 3 * MS)]))
     assert merged.record_clock(at(20)) is None
+
+
+def test_a_process_exit_is_a_valid_listed_host_event() -> None:
+    """Spec 057 WP7-11: a sensor ``exit`` record linked to a run is a ``sensor_events``
+    entry, and one in no run an ``unattributed_host_events`` entry; both validate (the
+    report schema named only exec, connect and file, so any report listing an exit was
+    refused by the capture validator)."""
+    exited = _exec(1, 4121, 4100, T0 + MS, event_class="exit", result="unknown", signal=31)
+    entry = exited.report_entry()
+    assert entry["event_class"] == "exit"
+    SENSOR_EVENT.validate(entry)
+    schema = _json(REPO_ROOT / "contracts/capture/v1/schema/run-reconstruction-v1.schema.json")
+    block = schema["properties"]["unattributed_host_events"]
+    Draft202012Validator({"$defs": schema["$defs"], **block}).validate({
+        "count": 1,
+        "reasons": {"other_process": 0, "out_of_scope": 0, "no_run": 1},
+        "events": [{**{k: entry[k] for k in ("event_id", "source", "event_class", "pid",
+                                             "time_ns")}, "reason": "no_run"}],
+    })  # fmt: skip
