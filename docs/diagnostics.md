@@ -517,6 +517,22 @@ one with the SDK (`fabric doctor` names the one it checked).
 
 Fix: nothing to do.
 
+### FC-098
+
+`launcher_command_unavailable`, error: the npm launcher has the `run` and `doctor` commands only;
+this command is in the Python CLI and the fabric-cli container image.
+
+Fix: install the full CLI with pipx install "singleaxis-fabric[cli]" (or uv tool install), or run
+the image: docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:$PWD" -w "$PWD"
+ghcr.io/singleaxis/fabric-cli:VERSION COMMAND.
+
+### FC-099
+
+`doctor_no_python`, info: no Python interpreter was found, so the Python SDK check was skipped.
+
+Fix: nothing to do for a Node.js agent, which records through the explicit API; for a Python agent,
+put its interpreter on PATH or create the project's .venv and run `fabric doctor` again.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001

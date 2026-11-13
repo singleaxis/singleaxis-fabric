@@ -188,6 +188,7 @@ jobs:
           npm run build
           npm test
           npm run test:package
+          npm run test:cli
           npm run package:qualified -- --smoke
       - name: Fresh install from the README with current OpenTelemetry releases
         # Runs the README's exact npm install lines (the SDK resolved to the

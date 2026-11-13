@@ -820,5 +820,25 @@ CATALOGUE: dict[str, Any] = {
             "text": "no problem found",
             "fix": "nothing to do",
         },
+        {
+            "id": "FC-098",
+            "name": "launcher_command_unavailable",
+            "severity": "error",
+            "text": "the npm launcher has the `run` and `doctor` commands only; this "
+            "command is in the Python CLI and the fabric-cli container image",
+            "fix": 'install the full CLI with pipx install "singleaxis-fabric[cli]" (or uv '
+            "tool install), or run the image: docker run --rm -it -v "
+            '/var/run/docker.sock:/var/run/docker.sock -v "$PWD:$PWD" -w "$PWD" '
+            "ghcr.io/singleaxis/fabric-cli:VERSION COMMAND",
+        },
+        {
+            "id": "FC-099",
+            "name": "doctor_no_python",
+            "severity": "info",
+            "text": "no Python interpreter was found, so the Python SDK check was skipped",
+            "fix": "nothing to do for a Node.js agent, which records through the explicit "
+            "API; for a Python agent, put its interpreter on PATH or create the "
+            "project's .venv and run `fabric doctor` again",
+        },
     ],
 }
