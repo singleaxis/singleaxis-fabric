@@ -57,6 +57,8 @@ def _copy_tree(tmp_path: Path) -> Path:
         action_record.REPORT_SCHEMA,
         action_record.ALLOWLIST_GO,
         action_record.PROCESSOR_GO,
+        # Spec 055 §9.4: the shipped qualification table is validated with the family.
+        Path("sdk/typescript/wire-qualification.json"),
         *(
             action_record.CAPTURE
             / f"fixtures/valid/spool-record-exec-subprocess-{phase}.json"
@@ -684,8 +686,9 @@ def _vector_code(document: Any) -> str:
 def test_p1_every_section_4_3_artifact_is_pinned() -> None:
     manifest = json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())
     pinned = {record["path"]: record for record in manifest["artifacts"]}
-    # 1.2.0: spec 056 (WP6-01); 1.3.0: 056 M2 (WP6-11); 1.4.0: spec 057 WP7-0
-    assert manifest["version"] == "1.4.0"
+    # 1.2.0: spec 056 (WP6-01); 1.3.0: 056 M2 (WP6-11); 1.4.0: spec 057 WP7-0;
+    # 1.5.0: spec 055 §8 (the TypeScript wire points, unit 055-t1)
+    assert manifest["version"] == "1.5.0"
     for path in P1_ARTIFACTS:
         assert path in pinned, path
     assert (
@@ -1633,3 +1636,53 @@ def test_056_m2_peer_address_and_sandbox_id_vectors() -> None:
     assert docker in {
         c["ids"].get("fabric.execution.sandbox_id") for c in sandbox["cgroups"]
     }
+
+
+# --------------------------------------------- spec 055 §8: projection capture-point ids
+def _strip_point_versions(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: (
+                item.split("@", 1)[0]
+                if key == "capture_point" and isinstance(item, str)
+                else _strip_point_versions(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_strip_point_versions(item) for item in value]
+    return value
+
+
+def test_a_projection_may_cite_a_bare_registered_capture_point() -> None:
+    """step-projection-v1 allows ``id`` or ``id@version``; the reader writes bare ids."""
+    from contracts.validate_coverage_contracts import validate_projection
+
+    reg = load_registries(REPO_ROOT)
+    schema = json.loads(
+        (REPO_ROOT / FAMILY / "schema/step-projection-v1.schema.json").read_text()
+    )
+    document = json.loads(
+        (REPO_ROOT / FAMILY / "valid/projection-typescript-model-call.json").read_text()
+    )
+    bare = _strip_point_versions(document)
+    assert "wire.ts.undici" in json.dumps(bare)
+    validate_projection(bare, reg, schema)
+
+
+def test_a_bare_unregistered_capture_point_is_still_refused() -> None:
+    from contracts.validate_coverage_contracts import validate_projection
+
+    reg = load_registries(REPO_ROOT)
+    schema = json.loads(
+        (REPO_ROOT / FAMILY / "schema/step-projection-v1.schema.json").read_text()
+    )
+    document = json.loads(
+        (
+            REPO_ROOT / FAMILY / "invalid/projection-typescript-unregistered-point.json"
+        ).read_text()
+    )
+    with pytest.raises(CoverageContractError) as caught:
+        validate_projection(_strip_point_versions(document), reg, schema)
+    assert caught.value.code == "coverage.projection.capture_point"
+    assert "'wire.ts.fetch'" in str(caught.value)

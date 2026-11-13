@@ -39,10 +39,13 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from contracts import p1_reference as ref  # noqa: E402
+from contracts import (
+    p1_reference as ref,  # noqa: E402
+    typescript_wire as tsw,  # noqa: E402
+)
 
 ROOT = Path("contracts/capture/v1")
-IDENTITY = ("singleaxis.fabric.capture", "1.9.0")
+IDENTITY = ("singleaxis.fabric.capture", "1.10.0")
 SCHEMAS = {
     "fabric.llm-exchange/v1": "schema/llm-exchange-v1.schema.json",
     "fabric.loss-record/v1": "schema/loss-record-v1.schema.json",
@@ -485,8 +488,31 @@ def _spool_inconsistent(path: str, message: str) -> CaptureContractError:
     return CaptureContractError("capture.spool.consistency", path, message)
 
 
+_POINTS = Path("contracts/coverage/v1/registry/capture-points-v1.json")
+
+
+def _capture_points() -> dict[str, Any]:
+    root = Path(__file__).resolve().parents[2]
+    return {"points": json.loads((root / _POINTS).read_text(encoding="utf-8"))}
+
+
+def _check_capture_point(document: Mapping[str, Any]) -> None:
+    """Spec 055 §8: ``fabric.capture.point`` resolves to a registry row; its pattern alone
+    establishes neither a registered nor a qualified point."""
+    attrs = document.get("span", {}).get("attributes", {})
+    if "fabric.capture.point" in attrs and not tsw.registered(
+        attrs["fabric.capture.point"], _capture_points()
+    ):
+        raise CaptureContractError(
+            "capture.capture_point",
+            "$.span.attributes.fabric.capture.point",
+            "names no capture point of capture-points-v1.json",
+        )
+
+
 def _validate_spool(document: Mapping[str, Any]) -> None:
     kind = document["record_kind"]
+    _check_capture_point(document)
     if kind == "loss":
         _check_range(document["loss"])
         return
