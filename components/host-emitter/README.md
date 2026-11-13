@@ -41,8 +41,8 @@ privilege and already approved.
 | `EMIT_CGROUP_PATH` | — | cgroup dir to scope observation to |
 | `EMIT_ALL_HOST` | `false` | explicit opt-in to unscoped collection |
 | `EMIT_EXEC` | `true` | sched_process_exec tracepoint |
-| `EMIT_CONNECT` | `true` | sys_enter_connect tracepoint |
-| `EMIT_FILE_ACCESS` | `false` | sys_enter_openat — host-scale volume, keep off unless scoped |
+| `EMIT_CONNECT` | `true` | connect, seen at the raw `sys_enter` syscall tracepoint |
+| `EMIT_FILE_ACCESS` | `false` | openat, seen at the raw `sys_enter` syscall tracepoint — host-scale volume, keep off unless scoped |
 | `EMIT_MAX_EVENTS_PER_SEC` | `0` | optional token-bucket cap; `0` disables deliberate rate loss |
 | `EMIT_DEDUPE_WINDOW` | `0s` | optional repeat collapse; `0s` preserves individual observed events |
 | `EMIT_SPOOL_DIR` | `/var/lib/fabric-host-emitter` | required pre-existing persistent directory, owned by emitter UID and mode `0700` |

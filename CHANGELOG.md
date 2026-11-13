@@ -437,6 +437,16 @@ it never makes, applies, waits for or returns one.
 
 ### Fixed
 
+- **eBPF host emitter: file access and failed execs were missing on Linux
+  6.19+ kernels such as Ubuntu's 7.0.** On those kernels, an eBPF program
+  attached to the `openat` or `execve` syscall tracepoint was never run, so
+  `EMIT_FILE_ACCESS` produced no records and a failed exec was not seen, with
+  no error or loss count. The emitter now sees connect, openat and execve at
+  the generic raw syscall tracepoints (`sys_enter`, `sys_exit`), which work on
+  every supported kernel. Nothing to change in your configuration; records,
+  loss accounting and the stop drain are unchanged. A 32-bit (compat)
+  process's syscalls are still not recorded, as before.
+
 - **A declared hook program no longer counts as a tool call's effect.**
   In an agent whose tools run remotely and whose pre-tool hook runs locally,
   the hook process was linked to each tool call, so the report showed no
