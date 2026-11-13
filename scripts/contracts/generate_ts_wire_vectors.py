@@ -507,7 +507,8 @@ MAPPING: tuple[tuple[str, str | None, str | None], ...] = (
 
 _SPOOL = "/var/empty/fabric-ts-config-fixture/spool"
 _B64_32 = base64.b64encode(bytes(range(32))).decode()
-# Files a case names as {dir}/<name>; the TypeScript test writes the same files.
+# Files a case names as {dir}/<name>; the TypeScript test writes the same files, each
+# owner-only (0600), as a redaction token file must be.
 FILES: dict[str, str] = {
     "id-key": TEST_ID_KEY + "\n",
     "id-key-short": "short\n",
@@ -517,6 +518,7 @@ FILES: dict[str, str] = {
     "headers-bad": "no equals sign here\n",
     "cert": "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n",
     "policy-bad": "{not json",
+    "redaction-token": "redaction-test-token\n",
 }
 _ENDPOINTS_OK = (
     '[{"endpoint_id":"my-model","dialect":"openai","hosts":["models.example.com"]}]'
@@ -814,6 +816,27 @@ CASES: tuple[tuple[str, dict[str, str]], ...] = (
         "redaction token file without an endpoint",
         {"FABRIC_REDACTION_TOKEN_FILE": "{dir}/headers"},
     ),
+    (
+        "redaction endpoint with its token file",
+        {
+            "FABRIC_REDACTION_ENDPOINT": "http://127.0.0.1:8081",
+            "FABRIC_REDACTION_TOKEN_FILE": "{dir}/redaction-token",
+        },
+    ),
+    (
+        "redaction token file missing",
+        {
+            "FABRIC_REDACTION_ENDPOINT": "http://127.0.0.1:8081",
+            "FABRIC_REDACTION_TOKEN_FILE": "{dir}/missing",
+        },
+    ),
+    (
+        "redaction token file not one token",
+        {
+            "FABRIC_REDACTION_ENDPOINT": "http://127.0.0.1:8081",
+            "FABRIC_REDACTION_TOKEN_FILE": "{dir}/headers",
+        },
+    ),
     ("capture policy missing", {"FABRIC_CAPTURE_POLICY": "{dir}/missing"}),
     ("capture policy not JSON", {"FABRIC_CAPTURE_POLICY": "{dir}/policy-bad"}),
 )
@@ -883,6 +906,7 @@ def config_env() -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="f055-t2-") as directory:
         for name, text in FILES.items():
             Path(directory, name).write_text(text, encoding="utf-8")
+            Path(directory, name).chmod(0o600)
         for name, env in CASES:
             real = {k: v.replace("{dir}", directory) for k, v in env.items()}
             with _environment(real):

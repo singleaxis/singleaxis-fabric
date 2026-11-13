@@ -23,11 +23,11 @@
  * never runs in a transport hook.
  */
 
-import { closeSync, openSync, readSync } from "node:fs";
+import { closeSync, openSync, readSync, statSync } from "node:fs";
 
 import { DeploymentPolicy } from "../deployment-policy.js";
 import { identityModeFromEnv, utf8SurrogatePass } from "../identity.js";
-import { redactionServiceFromEnv } from "../redaction.js";
+import { readRedactionToken, redactionServiceFromEnv } from "../redaction.js";
 import { CATALOGUE, type TypeScriptCatalogueId } from "./catalogue.generated.js";
 import { PyFloat, parseJson } from "./codec.js";
 import { BUILTIN_ENDPOINTS, endpointMatcher, isValidEndpoint } from "./match.js";
@@ -573,19 +573,21 @@ function tlsFile(name: string, path: string): string {
 }
 
 /** The route of a process with nothing to deliver to (no endpoint, no spool). */
-const NO_ROUTE: OtlpRoute = Object.freeze({
-  route: "otel",
-  endpoint: undefined,
-  signalUrl: undefined,
-  endpointName: undefined,
-  headers: Object.freeze({}),
-  certificate: undefined,
-  clientCertificate: undefined,
-  clientKey: undefined,
-  timeoutMs: 10000,
-  protocol: "http/protobuf",
-  compression: undefined,
-});
+const NO_ROUTE: OtlpRoute = route(
+  {
+    route: "otel",
+    endpoint: undefined,
+    signalUrl: undefined,
+    endpointName: undefined,
+    certificate: undefined,
+    clientCertificate: undefined,
+    clientKey: undefined,
+    timeoutMs: 10000,
+    protocol: "http/protobuf",
+    compression: undefined,
+  },
+  {},
+);
 
 const appendPath = (base: string, path: string): string => base.replace(/\/+$/, "") + path;
 
@@ -613,19 +615,21 @@ export function otlpSignalSettings(signal: "traces" | "logs", env: Env): OtlpRou
     }
     const headersFile = getTrimmed(env, "FABRIC_OTLP_HEADERS_FILE");
     const endpoint = appendPath(base, SIGNAL_PATHS[signal]);
-    return Object.freeze({
-      route: "fabric",
-      endpoint,
-      signalUrl: endpoint,
-      endpointName: "FABRIC_OTLP_ENDPOINT",
-      headers: Object.freeze(headersFile === undefined ? {} : headersFromFile(headersFile)),
-      certificate,
-      clientCertificate,
-      clientKey,
-      timeoutMs: 10000,
-      protocol: "http/protobuf",
-      compression: undefined,
-    });
+    return route(
+      {
+        route: "fabric",
+        endpoint,
+        signalUrl: endpoint,
+        endpointName: "FABRIC_OTLP_ENDPOINT",
+        certificate,
+        clientCertificate,
+        clientKey,
+        timeoutMs: 10000,
+        protocol: "http/protobuf",
+        compression: undefined,
+      },
+      headersFile === undefined ? {} : headersFromFile(headersFile),
+    );
   }
   const pick = (suffix: string): [string, string] | undefined => {
     for (const name of [
@@ -665,24 +669,26 @@ export function otlpSignalSettings(signal: "traces" | "logs", env: Env): OtlpRou
   }
   const fromSignal =
     endpoint?.[0].startsWith(`OTEL_EXPORTER_OTLP_${signal.toUpperCase()}_`) === true;
-  return Object.freeze({
-    route: "otel",
-    endpoint: endpoint?.[1],
-    signalUrl:
-      endpoint === undefined
-        ? undefined
-        : fromSignal
-          ? endpoint[1]
-          : appendPath(endpoint[1], SIGNAL_PATHS[signal]),
-    endpointName: endpoint?.[0],
-    headers: Object.freeze(headers),
-    certificate: files[0],
-    clientCertificate: files[1],
-    clientKey: files[2],
-    timeoutMs: Math.round(timeoutS! * 1000),
-    protocol: pick("PROTOCOL")?.[1] ?? "http/protobuf",
-    compression: compression?.[1].toLowerCase(),
-  });
+  return route(
+    {
+      route: "otel",
+      endpoint: endpoint?.[1],
+      signalUrl:
+        endpoint === undefined
+          ? undefined
+          : fromSignal
+            ? endpoint[1]
+            : appendPath(endpoint[1], SIGNAL_PATHS[signal]),
+      endpointName: endpoint?.[0],
+      certificate: files[0],
+      clientCertificate: files[1],
+      clientKey: files[2],
+      timeoutMs: Math.round(timeoutS! * 1000),
+      protocol: pick("PROTOCOL")?.[1] ?? "http/protobuf",
+      compression: compression?.[1].toLowerCase(),
+    },
+    headers,
+  );
 }
 
 /** `FABRIC_WIRE_PROXY` (Python `delivery_proxy_from_env`): an http(s) proxy host and port. */
@@ -809,13 +815,81 @@ function capturePolicy(env: Env): DeploymentPolicy | undefined {
   }
 }
 
-/** Errors another module throws (fixed text by contract) become generic config errors. */
+/**
+ * Python's `wire/_diagnose.py` rules (`_FIXES`) whose ids TypeScript emits: the id of a
+ * fixed-text message another module throws (`redaction.ts`, `identity.ts`), which this
+ * module cannot type at the throw site. First needle found wins, as in Python.
+ */
+const FOREIGN_REASONS: readonly (readonly [string, TypeScriptCatalogueId])[] = [
+  ["requires verified HTTPS or loopback HTTP", "FW-012"],
+  ["must not carry credentials, a query or a fragment", "FW-010"],
+  ["_FILE, not both", "FW-018"],
+  ["is not readable", "FW-019"],
+  ["_FILE must hold", "FW-019"],
+];
+
+/** The catalogue id Python's `reason_id` gives a fixed-text message (its generic id: FW-025). */
+export function foreignReasonId(message: string): TypeScriptCatalogueId {
+  return FOREIGN_REASONS.find(([needle]) => message.includes(needle))?.[1] ?? GENERIC_REASON_ID;
+}
+
+/** Errors another module throws (fixed text by contract) become config errors. */
 function wrap<T>(fn: () => T): T {
   try {
     return fn();
   } catch (error) {
     if (error instanceof WireConfigError) throw error;
-    throw new WireConfigError(error instanceof Error ? error.message : "a setting is malformed");
+    const message = error instanceof Error ? error.message : "a setting is malformed";
+    throw new WireConfigError(message, foreignReasonId(message));
+  }
+}
+
+/**
+ * `value` frozen, with `hidden` as non-enumerable properties: readable by name, never
+ * shown by `util.inspect`, `console.log`, `JSON.stringify`, spread or `Object.entries`
+ * (Python keeps the same secrets out of `repr`).
+ */
+function withHidden<T extends object>(value: object, hidden: Record<string, unknown>): T {
+  for (const [key, item] of Object.entries(hidden)) {
+    Object.defineProperty(value, key, { value: item, enumerable: false });
+  }
+  return Object.freeze(value) as T;
+}
+
+/** A frozen OTLP route whose header values (credentials) are never printed. */
+function route(
+  fields: Omit<OtlpRoute, "headers">,
+  headers: Readonly<Record<string, string>>,
+): OtlpRoute {
+  return withHidden<OtlpRoute>({ ...fields }, { headers: Object.freeze({ ...headers }) });
+}
+
+/**
+ * The redaction bearer token (`redaction.ts` `readRedactionToken`), refused as Python's
+ * `read_token_file` refuses it: unreadable (FW-019), not an owner-only regular file
+ * (generic), or not one printable ASCII token of at most 4096 bytes (FW-019).
+ */
+function redactionTokenFrom(path: string): string {
+  const name = "FABRIC_REDACTION_TOKEN_FILE";
+  try {
+    return readRedactionToken(path);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("is not readable")) {
+      return fail(`${name} is not readable`, "FW-019");
+    }
+    let ownerOnly = false;
+    try {
+      // The open with O_NOFOLLOW succeeded, so `path` is no symlink and stat is fstat.
+      const info = statSync(path);
+      const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+      ownerOnly =
+        info.isFile() && (info.mode & 0o077) === 0 && (uid === undefined || info.uid === uid);
+    } catch {
+      return fail(`${name} is not readable`, "FW-019");
+    }
+    return ownerOnly
+      ? fail(`${name} must hold one printable ASCII token`, "FW-019")
+      : fail(`${name} must be a 0600 file owned by this user`);
   }
 }
 
@@ -912,6 +986,10 @@ export function resolveConfig(options: WireOptions = {}, env: Env = process.env)
   const spoolKey = options.spoolKey ?? keyFromEnv(env, "FABRIC_WIRE_SPOOL_KEY", SPOOL_KEY_BYTES);
   const migrate = truthy(get(env, "FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT"));
   const redaction = wrap(() => redactionServiceFromEnv(env));
+  // Python's RedactionService reads its token file once, at configuration: a missing or
+  // unsafe file is a configuration error there (FW-019 / generic), so it is here.
+  const tokenFile = redaction?.tokenFile;
+  const redactionToken = tokenFile === undefined ? undefined : redactionTokenFrom(tokenFile);
   const builtin = options.builtinEndpoints ?? builtinFromEnv(env);
   const endpointsText = get(env, "FABRIC_WIRE_ENDPOINTS");
   const extra =
@@ -1080,20 +1158,16 @@ export function resolveConfig(options: WireOptions = {}, env: Env = process.env)
   const identityMode = options.identityMode ?? wrap(() => identityModeFromEnv(env));
   const undici = options.undici ?? switchFromEnv(env, "FABRIC_WIRE_UNDICI", true);
   const nodeHttp = options.nodeHttp ?? switchFromEnv(env, "FABRIC_WIRE_NODE_HTTP", false);
-  const recordsRaw = getTrimmed(env, "FABRIC_RECORDS_MAX_OBJECT_BYTES");
-  let recordsMax = RECORDS_MAX_OBJECT_BYTES;
-  if (recordsRaw !== undefined) {
-    if (
-      !/^[0-9]+$/.test(recordsRaw) ||
-      Number(recordsRaw) < 1 ||
-      Number(recordsRaw) > RECORDS_MAX_OBJECT_BYTES
-    ) {
-      fail(
-        `FABRIC_RECORDS_MAX_OBJECT_BYTES must be an integer between 1 and ${RECORDS_MAX_OBJECT_BYTES}`,
-      );
-    }
-    recordsMax = Number(recordsRaw);
-  }
+  // Python's `records_max_object_bytes` (`_manifest.py` `_env_int`): malformed or out of
+  // range is the default with a note, never a configuration error.
+  const recordsMax = envIntOrDefault(
+    env,
+    "FABRIC_RECORDS_MAX_OBJECT_BYTES",
+    RECORDS_MAX_OBJECT_BYTES,
+    1n,
+    BigInt(RECORDS_MAX_OBJECT_BYTES),
+    notes,
+  );
   const openDeadline = envIntOrDefault(
     env,
     "FABRIC_RUN_OPEN_DEADLINE_S",
@@ -1142,7 +1216,7 @@ export function resolveConfig(options: WireOptions = {}, env: Env = process.env)
     otlpLogs = otlpSignalSettings("logs", env);
     proxy = proxyFromEnv(env);
   }
-  return Object.freeze({
+  const visible: Omit<WireSettings, "secrets"> = {
     autoload: ["1", "true"].includes((env.FABRIC_WIRE_AUTOLOAD ?? "").trim().toLowerCase()),
     undici,
     nodeHttp,
@@ -1184,13 +1258,15 @@ export function resolveConfig(options: WireOptions = {}, env: Env = process.env)
     resumeTokens: Object.freeze(splitTokens(get(env, "FABRIC_RUN_RESUME_TOKEN") ?? "")),
     openDeadlineS: Number(openDeadline),
     recordsStrict: env.FABRIC_RECORDS_STRICT === "1",
-    recordsMaxObjectBytes: recordsMax,
+    recordsMaxObjectBytes: Number(recordsMax),
     clockUncertaintyNs: clockMs * 1000000n,
     providerRequestId:
       options.providerRequestId ?? truthy(get(env, "FABRIC_WIRE_PROVIDER_REQUEST_ID")),
     statusFile: getTrimmed(env, "FABRIC_WIRE_STATUS_FILE"),
     settingWarnings: Object.freeze(notes),
-    secrets: Object.freeze({ idKey, spoolKey, tokenizationKey }),
+  };
+  return withHidden<WireSettings>(visible, {
+    secrets: Object.freeze({ idKey, spoolKey, tokenizationKey, redactionToken }),
   });
 }
 

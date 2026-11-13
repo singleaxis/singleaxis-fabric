@@ -51,6 +51,7 @@ export interface OtlpRoute {
   readonly signalUrl: string | undefined;
   /** The variable the endpoint came from (a diagnostic names it). */
   readonly endpointName: string | undefined;
+  /** Header values are credentials: a non-enumerable property, never printed. */
   readonly headers: Readonly<Record<string, string>>;
   readonly certificate: string | undefined;
   readonly clientCertificate: string | undefined;
@@ -60,11 +61,16 @@ export interface OtlpRoute {
   readonly compression: string | undefined;
 }
 
-/** Secrets, kept apart from everything printable. */
+/**
+ * Secrets, kept apart from everything printable: `WireSettings.secrets` is a
+ * non-enumerable property, so `util.inspect`, `JSON.stringify` and spread never show it.
+ */
 export interface WireSecrets {
   readonly idKey: Uint8Array | undefined;
   readonly spoolKey: Uint8Array | undefined;
   readonly tokenizationKey: Uint8Array | undefined;
+  /** The bearer token `FABRIC_REDACTION_TOKEN_FILE` holds, read once at configuration. */
+  readonly redactionToken: string | undefined;
 }
 
 /**

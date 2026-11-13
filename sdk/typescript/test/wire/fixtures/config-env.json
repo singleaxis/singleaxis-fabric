@@ -296,7 +296,8 @@
     "headers": "authorization=Bearer test-token-not-a-secret\nx-tenant=tenant-a\n",
     "headers-bad": "no equals sign here\n",
     "cert": "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n",
-    "policy-bad": "{not json"
+    "policy-bad": "{not json",
+    "redaction-token": "redaction-test-token\n"
   },
   "cases": [
     {
@@ -1402,6 +1403,62 @@
       },
       "outcome": "invalid",
       "reason_id": "FW-001"
+    },
+    {
+      "name": "redaction endpoint with its token file",
+      "env": {
+        "FABRIC_REDACTION_ENDPOINT": "http://127.0.0.1:8081",
+        "FABRIC_REDACTION_TOKEN_FILE": "{dir}/redaction-token"
+      },
+      "outcome": "enabled",
+      "resolved": {
+        "endpoints": [
+          "openai",
+          "anthropic",
+          "azure-openai"
+        ],
+        "extraEndpoints": [],
+        "labels": "pseudonymous",
+        "sourceId": null,
+        "tenantId": null,
+        "contentEndpoint": null,
+        "spoolDir": null,
+        "modelAllowlist": [],
+        "maxBodyBytes": 33554432,
+        "maxRetainBytes": 67108864,
+        "queueMaxItems": 16384,
+        "shutdownTimeoutMs": 2000,
+        "drainOnExitMs": 0,
+        "contentBatchBodies": 32,
+        "contentConcurrency": 4,
+        "idKeySha256": null,
+        "spoolKeySha256": null,
+        "otlp": {
+          "route": "otel",
+          "endpoint": null,
+          "endpointName": null,
+          "headers": {},
+          "timeoutMs": 10000
+        }
+      }
+    },
+    {
+      "name": "redaction token file missing",
+      "env": {
+        "FABRIC_REDACTION_ENDPOINT": "http://127.0.0.1:8081",
+        "FABRIC_REDACTION_TOKEN_FILE": "{dir}/missing"
+      },
+      "outcome": "invalid",
+      "reason_id": "FW-019"
+    },
+    {
+      "name": "redaction token file not one token",
+      "env": {
+        "FABRIC_REDACTION_ENDPOINT": "http://127.0.0.1:8081",
+        "FABRIC_REDACTION_TOKEN_FILE": "{dir}/headers"
+      },
+      "outcome": "invalid",
+      "reason_id": "FW-019"
     },
     {
       "name": "capture policy missing",

@@ -7,9 +7,10 @@
 // invalid with the catalogue id wire/_diagnose.py gives the message); TypeScript must
 // decide the same, with FW-025 where Python reports its generic FW-001.
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { inspect } from "node:util";
 
 import { afterAll, describe, expect, it } from "vitest";
 
@@ -28,7 +29,7 @@ import { REPO, cases, contract } from "../helpers.js";
 const fixture = contract("sdk/typescript/test/wire/fixtures/config-env.json");
 const dir = mkdtempSync(join(tmpdir(), "f055-t2-config-"));
 for (const [name, text] of Object.entries(fixture.files))
-  writeFileSync(join(dir, name), String(text));
+  writeFileSync(join(dir, name), String(text), { mode: 0o600 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 const envOf = (env: Record<string, string>): Record<string, string> =>
@@ -236,7 +237,6 @@ describe("TypeScript-only settings", () => {
     expect(id({ FABRIC_WIRE_UNDICI: "maybe" })).toBe("FW-025");
     expect(id({ FABRIC_WIRE_NODE_HTTP: "2" })).toBe("FW-025");
     expect(id({ FABRIC_IDENTITY_MODE: "hashed" })).toBe("FW-025");
-    expect(id({ FABRIC_RECORDS_MAX_OBJECT_BYTES: "16777217" })).toBe("FW-025");
     expect(
       id({
         OTEL_EXPORTER_OTLP_ENDPOINT: "https://otel.example:4317",
@@ -251,14 +251,38 @@ describe("TypeScript-only settings", () => {
     ).toBe("FW-025");
   });
 
-  it("falls back to the default for a malformed open deadline or clock bound, with a note", () => {
+  it("falls back to the default for a malformed open deadline, clock or records bound, with a note", () => {
+    // Python's _manifest.py _env_int: never a configuration error, one class-only note.
     const s = resolveConfig(
       {},
-      { FABRIC_RUN_OPEN_DEADLINE_S: "5", FABRIC_CLOCK_UNCERTAINTY_MS: "x" },
+      {
+        FABRIC_RUN_OPEN_DEADLINE_S: "5",
+        FABRIC_CLOCK_UNCERTAINTY_MS: "x",
+        FABRIC_RECORDS_MAX_OBJECT_BYTES: "16777217",
+      },
     );
-    expect([s.openDeadlineS, s.clockUncertaintyNs]).toEqual([604800, 1_000_000_000n]);
-    expect(s.settingWarnings).toHaveLength(2);
+    expect([s.openDeadlineS, s.clockUncertaintyNs, s.recordsMaxObjectBytes]).toEqual([
+      604800,
+      1_000_000_000n,
+      16 * 1024 * 1024,
+    ]);
+    expect(s.settingWarnings).toHaveLength(3);
     expect(s.settingWarnings.join(" ")).not.toContain(" x");
+    expect(
+      resolveConfig({}, { FABRIC_RECORDS_MAX_OBJECT_BYTES: " 1_024 " }).recordsMaxObjectBytes,
+    ).toBe(1024);
+  });
+
+  it("refuses a group- or world-readable redaction token file (Python's generic id)", () => {
+    const file = join(dir, "redaction-token-open");
+    writeFileSync(file, "redaction-test-token\n");
+    chmodSync(file, 0o644);
+    expect(
+      id({
+        FABRIC_REDACTION_ENDPOINT: "http://127.0.0.1:8081",
+        FABRIC_REDACTION_TOKEN_FILE: file,
+      }),
+    ).toBe(GENERIC_REASON_ID);
   });
 
   it("resolves the OTLP signal URL as the OTel exporters do", () => {
@@ -280,6 +304,47 @@ describe("TypeScript-only settings", () => {
       "http://127.0.0.1:4318/v1/traces",
       "http://127.0.0.1:4318/v1/logs",
     ]);
+  });
+});
+
+describe("secrets are never printed (Python keeps them out of repr)", () => {
+  const settings = resolveConfig(
+    {},
+    {
+      FABRIC_WIRE_ID_KEY_FILE: join(dir, "id-key"),
+      FABRIC_WIRE_SPOOL_KEY_FILE: join(dir, "spool-key-b64"),
+      FABRIC_REDACTION_ENDPOINT: "http://127.0.0.1:8081",
+      FABRIC_REDACTION_TOKEN_FILE: join(dir, "redaction-token"),
+      FABRIC_OTLP_ENDPOINT: "http://127.0.0.1:4318",
+      FABRIC_OTLP_HEADERS_FILE: join(dir, "headers"),
+    },
+  );
+
+  it("keys, the redaction token and header values are readable by name", () => {
+    expect(settings.secrets.idKey).toBeDefined();
+    expect(settings.secrets.spoolKey).toHaveLength(32);
+    expect(settings.secrets.redactionToken).toBe("redaction-test-token");
+    expect(settings.otlp.headers.authorization).toBe("Bearer test-token-not-a-secret");
+  });
+
+  it("inspect, console formatting, spread and Object.entries never show them", () => {
+    const printed = [
+      inspect(settings, { depth: 10 }),
+      inspect({ ...settings }, { depth: 10 }),
+      inspect(settings.otlp, { depth: 10 }),
+      JSON.stringify(Object.entries(settings.otlp)),
+    ].join("\n");
+    for (const secret of [
+      "redaction-test-token",
+      "test-token-not-a-secret",
+      "fabric-test-id-key",
+      "secrets",
+      "headers",
+    ]) {
+      expect(printed).not.toContain(secret);
+    }
+    expect(Object.keys(settings)).not.toContain("secrets");
+    expect(Object.isFrozen(settings) && Object.isFrozen(settings.otlp)).toBe(true);
   });
 });
 
