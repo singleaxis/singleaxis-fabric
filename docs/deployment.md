@@ -79,6 +79,11 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
 ### Helm
 
+The commands use `charts/fabric`, the chart in a clone of this repository.
+Without a clone, pull the published chart (its profiles are inside it) and
+use `./fabric` instead:
+`helm pull oci://ghcr.io/singleaxis/charts/fabric --version 0.12.1 --untar`.
+
 ```bash
 helm upgrade --install fabric charts/fabric \
   --namespace fabric-system --create-namespace \

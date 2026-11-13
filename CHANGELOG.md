@@ -15,6 +15,34 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Get started with your own Python agent.**
+  [docs/get-started/python.md](docs/get-started/python.md) is one install
+  and three commands: `pip install "singleaxis-fabric[cli]"`, `fabric up`,
+  `fabric run -- python agent.py`, `fabric verify`. You write no file, set no
+  variable and make no key. If your model host is in neither the built-in
+  table nor a base-URL variable, `fabric up --provider URL` names it in the
+  same command, so the path stays at three commands with one flag.
+- **The page is tested as written, and timed.** CI runs its commands
+  verbatim in a fresh Python 3.12 container with an empty image cache,
+  against a model on a host Fabric has never heard of, with two agents that
+  know nothing of Fabric (an OpenAI SDK loop and a plain `httpx` loop), and
+  fails when the first verified record takes more than 300 seconds. The
+  same runner refuses a page that asks you to write a file, set a variable
+  or make a key, or that adds a command.
+- **`npx fabric` for machines without Python.** `@singleaxis/fabric` now
+  installs a `fabric` command with `run` and `doctor`. `npx fabric run --
+  node agent.js` gives the agent the project's tenant, agent id and run
+  label for the explicit API, records the run, and starts the agent with its
+  arguments, input, output and exit code untouched; if anything is wrong the
+  agent still runs, unrecorded. `npx fabric doctor` checks the project and
+  names each problem with its fix. Both read `.fabric/compiled.env`, and are
+  tested against the Python CLI on shared cases. The other commands say
+  where to find them.
+- **The `fabric-cli` container image** (`ghcr.io/singleaxis/fabric-cli`,
+  from the next release): the full CLI with Docker Compose and Helm, for
+  Node.js-only and compiled agents and for CI. It runs as a non-root user,
+  and every release image is checked for exactly the CLI's commands and no
+  module outside the recorder.
 - **MCP servers as security context (spec 057 P1, second part).** For an MCP
   server reached over Streamable HTTP, the request and response bodies the
   non-model HTTP hook already records are now read as MCP by
@@ -459,6 +487,14 @@ it never makes, applies, waits for or returns one.
   questions for the owner, each with a recommendation.
 
 ### Changed
+
+- **`.fabric/compiled.env` carries three settings as comments**
+  (`# fabric-setting: project=...`, `providers.from_environment=...`,
+  `node.mode=...`), so a launcher that reads the file needs no YAML parser.
+  The variables are unchanged.
+- **Two new diagnostics:** `FC-098` (a command the npm launcher does not
+  have, with the pipx line and the image) and `FC-099` (`fabric doctor` found
+  no Python interpreter, so it skipped the Python SDK check).
 
 - **MCP message roles are off by default.** `mcp.request`, `mcp.response`,
   `mcp.notification` and `mcp.server` now default to `off`, as spec 057

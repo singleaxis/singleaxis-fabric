@@ -143,6 +143,7 @@ updates:
     directories:
       - "/components/otel-collector-fabric"
       - "/components/host-emitter"
+      - "/components/fabric-cli"
       - "/examples/redaction-service"
     schedule:
       interval: "weekly"

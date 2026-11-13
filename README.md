@@ -11,6 +11,7 @@ verifiable record to storage you own.
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/singleaxis/singleaxis-fabric/badge)](https://securityscorecards.dev/viewer/?uri=github.com/singleaxis/singleaxis-fabric)
 [![PyPI](https://img.shields.io/pypi/v/singleaxis-fabric.svg)](https://pypi.org/project/singleaxis-fabric/)
 
+[Get started](docs/get-started/python.md) ·
 [Quickstart](docs/quickstart.md) ·
 [Architecture](docs/architecture.md) ·
 [Deployment](docs/deployment.md) ·
@@ -164,6 +165,9 @@ endpoint matches is not recorded; `status` warns about the first, and the
 running process counts the second and names the host and the
 `FABRIC_WIRE_ENDPOINTS` value that records it (see
 [operations](docs/operations/README.md#troubleshooting)).
+[Get started](docs/get-started/python.md) records your own Python agent with
+one install and three commands (`fabric up`, `fabric run -- python agent.py`,
+`fabric verify`), with nothing to write by hand.
 The [quickstart](docs/quickstart.md) runs an unmodified OpenAI SDK program
 through a local Fabric Node. [Deployment](docs/deployment.md) covers the
 production profile.
@@ -209,9 +213,11 @@ More: [architecture](docs/architecture.md).
   (`no runs reconstructed`).
 - Model calls through `requests`/`urllib3` are reported as losses, and
   `boto3`, gRPC and model endpoints beyond the five above are not captured.
-- Host sensors run with a local-profile Node; production ingress is
-  specified ([spec 053](specs/053-execution-channels-p4.md) §6).
-- A production Node serves one agent source.
+- With the single workload credential (`shadow-production`,
+  `make up-prod`), a production Node serves one agent source. Ingress
+  groups (`shadow-production-host-ingress`, `make up-prod-groups`) give
+  each agent and each host sensor its own source, token and listener on one
+  Node ([host sensors](docs/host-sensors.md#production-mode)).
 
 The full list, with measurements: [limitations](docs/limitations-and-roadmap.md).
 

@@ -155,6 +155,9 @@ jobs:
           python scripts/release/check_image_metadata.py \
             --policy scripts/release/release-policy.json --image fabric-host-emitter \
             --dockerfile components/host-emitter/Dockerfile
+          python scripts/release/check_image_metadata.py \
+            --policy scripts/release/release-policy.json --image fabric-cli \
+            --dockerfile components/fabric-cli/Dockerfile
       - name: Qualify exact publication artifacts
         run: |
           chart_package=$(find qualification/chart -maxdepth 1 -name 'fabric-*.tgz' -type f)
@@ -333,6 +336,12 @@ jobs:
           - component: host-emitter
             image: fabric-host-emitter
             context: components
+          # The operator CLI (spec 058 §11.1): the Python distribution with its [cli]
+          # extra, Docker with Compose, and Helm. Context: the repository root, limited
+          # by components/fabric-cli/Dockerfile.dockerignore to sdk/python.
+          - component: fabric-cli
+            image: fabric-cli
+            context: .
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository_owner }}/${{ matrix.image }}
@@ -414,6 +423,18 @@ jobs:
             --image "${{ matrix.image }}" \
             --inspect "${RUNNER_TEMP}/index.json" \
             --inspect "${RUNNER_TEMP}/config.json"
+      # AGENTS.md: the content of the exact image that is published is checked, not
+      # only a pull-request build: its commands are the I1 allowlist, it installs no
+      # forbidden module, and it runs as a non-root user (spec 058 §4.1, §11.1).
+      - name: Check the pushed fabric-cli image's contents before signing
+        if: matrix.image == 'fabric-cli'
+        env:
+          REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker pull --platform linux/amd64 "${REF}"
+          python3 scripts/release/check_cli_image.py \
+            --policy scripts/release/release-policy.json \
+            --image "${REF}" --version "${VERSION}"
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
       - name: Sign image (keyless via Fulcio)
         env:

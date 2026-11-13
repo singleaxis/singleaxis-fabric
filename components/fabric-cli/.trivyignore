@@ -1,0 +1,10 @@
+# fabric-cli image (spec 058 §11.1): the scan's only HIGH findings are Go modules
+# vendored in the newest released client binaries the image copies, with the fix in
+# upstream source but in no released binary on 2026-11-14:
+#   Helm 3.22.1 (the newest Helm 3; the chart is tested on Helm 3): stdlib 1.26.9
+#     (CVE-2026-111943) and golang.org/x/net 0.60.0 (CVE-2026-78661);
+#   Docker Compose v5.7.1 (the newest release): golang.org/x/net 0.60.0 (CVE-2026-78661).
+# Neither client is run by an agent. Each entry expires, so the scan fails again by then:
+# bump Helm and Compose when fixed releases ship, and delete the entry.
+CVE-2026-111943 exp:2026-12-15
+CVE-2026-78661 exp:2026-12-15
