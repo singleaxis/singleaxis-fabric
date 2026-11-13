@@ -190,7 +190,7 @@
       "segments": [
         {
           "last_sequence": 3,
-          "manifest_digest": "sha256:a7fb94e6ef4be7f4629b6d6bfdf1d8335a7d7ecff0e200c8f7dbd54f8c483e26",
+          "manifest_digest": "sha256:60be481b1ff781509c3fcdfdbd9c50b3c5f7ec07f1a60b3bf37d0184a85f7c28",
           "predecessors": [
             "none"
           ],

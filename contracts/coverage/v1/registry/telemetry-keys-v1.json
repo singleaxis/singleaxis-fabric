@@ -1808,6 +1808,9 @@
       "field": "N22",
       "validator": "META: closed enum (field type)",
       "phase": "P2 (R), P4 (H)",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -1823,6 +1826,9 @@
       "field": "N25",
       "validator": "META: closed enum (field type)",
       "phase": "P2",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -1838,6 +1844,9 @@
       "field": "N22",
       "validator": "META: closed enum of MCP method names (section 4.2 list) plus `other`",
       "phase": "P2 (R), P4 (H)",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [

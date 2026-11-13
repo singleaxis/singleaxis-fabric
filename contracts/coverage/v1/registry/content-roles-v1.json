@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.content-role-table/v1",
-  "registry_revision": 5,
+  "registry_revision": 6,
   "content_object_schema": "fabric.content-object/v2",
   "media_type_rule": "exact type/subtype, type/* wildcard, or * (any value passing the 047 §7 media rule)",
   "unknown_role": "rejected (destination_rejected)",
@@ -1063,7 +1063,7 @@
       "media_types": [
         "application/json"
       ],
-      "default_policy": "content",
+      "default_policy": "off",
       "cap": "max_body_bytes",
       "phase": "P2",
       "telemetry_forbidden": true,
@@ -1083,7 +1083,7 @@
       "media_types": [
         "application/json"
       ],
-      "default_policy": "content",
+      "default_policy": "off",
       "cap": "max_body_bytes",
       "phase": "P2",
       "telemetry_forbidden": true,
@@ -1102,7 +1102,7 @@
       "media_types": [
         "application/json"
       ],
-      "default_policy": "content",
+      "default_policy": "off",
       "cap": "1 MiB",
       "phase": "P4",
       "telemetry_forbidden": true,
@@ -1122,7 +1122,7 @@
       "media_types": [
         "application/json"
       ],
-      "default_policy": "content",
+      "default_policy": "off",
       "cap": "1 MiB",
       "phase": "P2",
       "telemetry_forbidden": true,

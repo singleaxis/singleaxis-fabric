@@ -266,7 +266,7 @@
       "segments": [
         {
           "last_sequence": 5,
-          "manifest_digest": "sha256:74d634e719f99596cce88a744190f937a832cc9f6adc8e5ee4a9bc6c7e4dbe7f",
+          "manifest_digest": "sha256:31bafc7dc81269c364a397487469fea8f7ff5d20ed62ea08d3a4d7e1ae544249",
           "predecessors": [
             "none"
           ],

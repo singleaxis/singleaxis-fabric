@@ -4837,6 +4837,37 @@
         }
       ],
       "definition": "The structured metadata of one remote.sandbox record (spec 056 §4.4.1, §7.3.3 (k)): the provider and the observed SDK call, whether a command runs in the background, the output form, the exit code (N37) or the count of run_code results, the language, and the error name or class as labels, never a message. One item per record, step kind remote_exec. The record says what the SDK returned to the agent, not what ran on the remote side."
+    },
+    {
+      "type": "fabric.mcp.correlation/v1",
+      "schema": "evidence/fabric.mcp.correlation-v1.schema.json",
+      "phase": "P4 (spec 057 P1, WP7-8: stdio)",
+      "capture_points": [
+        "mcp.client"
+      ],
+      "fields": [
+        {
+          "layer": "structure",
+          "key": "x-fabric.mcp.session_ref",
+          "pointer": "/items/*/session_ref"
+        },
+        {
+          "layer": "structure",
+          "key": "x-fabric.mcp.rpc_ref",
+          "pointer": "/items/*/rpc_ref"
+        },
+        {
+          "layer": "content",
+          "key": "x-fabric.mcp.message_kind",
+          "pointer": "/items/*/message_kind"
+        },
+        {
+          "layer": "content",
+          "key": "x-fabric.mcp.correlation",
+          "pointer": "/items/*/correlation"
+        }
+      ],
+      "definition": "The structured metadata of one mcp.client record (spec 053 §3.2, §5.5; spec 057 §4.2, OD-4): one JSON-RPC message the MCP protocol library's transport sent or received, its transport, direction and kind, the hook-minted session of the transport connection (N23), the pseudonymised JSON-RPC id, and how it was paired with its request. One item per record, step kind mcp_call. The message itself is an mcp.* content body; this build hooks the stdio transport only (spec 057 rev 3.9)."
     }
   ],
   "evidence_rule": "Spec 050 §3.4a: one generic closed carrier, fabric.record-evidence/v1, for structured metadata without a single telemetry key. P2-P5 add evidence types here, never a carrier. Each type names its closed item schema (schema/record-evidence-v1.schema.json is the envelope), the capture points allowed to emit it and, per projected field, the JSON pointer into the document ('*' stands for every item). Strings are at most 256 characters and pattern-checked by the type schema; no CONTENT-class value. An ID property may name an x-fabric-clear alternative (the opaque clear id or its h- form); it is admitted only when the record's source manifest declares identity_mode clear (spec 050 §3.4a item 2, R8)."

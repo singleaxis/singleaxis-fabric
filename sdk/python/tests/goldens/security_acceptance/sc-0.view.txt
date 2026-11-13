@@ -1,5 +1,5 @@
 run r-<hex-1>  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
-  ext     skill  ext-019f…  workspace-tools  1.0.0  via reported  signature unsigned  (reported)
+  ext     skill  ext-019f…  workspace-tools  1.0.0  via reported  src-bb04…  signature unsigned  (reported)
   grant   grt-99ed…  declared  api  run_start  allow 1  deny 1  ask 1  (reported)
   1  model_call   m-<hex-9>  → tool_call T1 run_command   in force grt-99ed… (reported)
   2    control    permission_request · pre_tool · escalate  (reported)  in force grt-99ed… (reported)   ← T1  provider_id · certain

@@ -31,7 +31,7 @@
           "encrypted_store_required": false
         },
         "content_capture": "enabled",
-        "role_table_version": "fabric.content-role-table/v1@5",
+        "role_table_version": "fabric.content-role-table/v1@6",
         "limits": {
           "max_body_bytes": 33554432,
           "max_retain_bytes": 67108864,
@@ -523,7 +523,7 @@
         "fabric.manifest.max_clock_uncertainty_ns": 300000000000,
         "fabric.manifest.profile": "local",
         "fabric.manifest.pseudonym_mode": "keyed",
-        "fabric.manifest.role_table_version": "fabric.content-role-table/v1@5",
+        "fabric.manifest.role_table_version": "fabric.content-role-table/v1@6",
         "fabric.manifest.runtime.name": "cpython",
         "fabric.manifest.runtime.version": "3.12.13",
         "fabric.manifest.sdk.language": "python",
@@ -578,7 +578,7 @@
           "encrypted_store_required": false
         },
         "content_capture": "enabled",
-        "role_table_version": "fabric.content-role-table/v1@5",
+        "role_table_version": "fabric.content-role-table/v1@6",
         "limits": {
           "max_body_bytes": 33554432,
           "max_retain_bytes": 67108864,
@@ -1014,7 +1014,7 @@
         "unsealed_prior_epochs": [],
         "unsealed_prior_epoch_count": 0,
         "source_auth": "unbound",
-        "previous_manifest_sha256": "sha256:c0abea7ae9a64edef2b09f4e10e6cb4aa6af0528d478378026d1a626822f5221"
+        "previous_manifest_sha256": "sha256:fa362712a778b72ae7b3230219c1b6d9c9f8b91a078918734ae1c3d01f87024e"
       },
       "attributes": {
         "fabric.capture.manifest_id": "b0dd603b-6a72-4811-aade-15f8b27d9b74",
@@ -1068,10 +1068,10 @@
         "fabric.manifest.limits.records_max_object_bytes": 16777216,
         "fabric.manifest.manifest_seq": 1,
         "fabric.manifest.max_clock_uncertainty_ns": 300000000000,
-        "fabric.manifest.previous_manifest_digest": "sha256:c0abea7ae9a64edef2b09f4e10e6cb4aa6af0528d478378026d1a626822f5221",
+        "fabric.manifest.previous_manifest_digest": "sha256:fa362712a778b72ae7b3230219c1b6d9c9f8b91a078918734ae1c3d01f87024e",
         "fabric.manifest.profile": "local",
         "fabric.manifest.pseudonym_mode": "keyed",
-        "fabric.manifest.role_table_version": "fabric.content-role-table/v1@5",
+        "fabric.manifest.role_table_version": "fabric.content-role-table/v1@6",
         "fabric.manifest.runtime.name": "cpython",
         "fabric.manifest.runtime.version": "3.12.13",
         "fabric.manifest.sdk.language": "python",
@@ -1125,7 +1125,7 @@
           "encrypted_store_required": true
         },
         "content_capture": "disabled",
-        "role_table_version": "fabric.content-role-table/v1@5",
+        "role_table_version": "fabric.content-role-table/v1@6",
         "limits": {
           "max_body_bytes": 33554432,
           "max_retain_bytes": 67108864,
@@ -1619,7 +1619,7 @@
         "fabric.manifest.max_clock_uncertainty_ns": 300000000000,
         "fabric.manifest.profile": "production",
         "fabric.manifest.pseudonym_mode": "unkeyed",
-        "fabric.manifest.role_table_version": "fabric.content-role-table/v1@5",
+        "fabric.manifest.role_table_version": "fabric.content-role-table/v1@6",
         "fabric.manifest.runtime.name": "cpython",
         "fabric.manifest.runtime.version": "3.12.13",
         "fabric.manifest.sdk.language": "python",
@@ -1669,7 +1669,7 @@
         "pseudonym_mode": "keyed",
         "key_id": "kid-b2a0080c",
         "content_capture": "metadata_only",
-        "role_table_version": "fabric.content-role-table/v1@5",
+        "role_table_version": "fabric.content-role-table/v1@6",
         "limits": {
           "max_body_bytes": 33554432,
           "max_retain_bytes": 67108864,
@@ -1949,7 +1949,7 @@
         "fabric.manifest.max_clock_uncertainty_ns": 300000000000,
         "fabric.manifest.profile": "local",
         "fabric.manifest.pseudonym_mode": "keyed",
-        "fabric.manifest.role_table_version": "fabric.content-role-table/v1@5",
+        "fabric.manifest.role_table_version": "fabric.content-role-table/v1@6",
         "fabric.manifest.runtime.name": "nodejs",
         "fabric.manifest.runtime.version": "24.1.0",
         "fabric.manifest.sdk.language": "typescript",
@@ -2001,7 +2001,7 @@
           "encrypted_store_required": false
         },
         "content_capture": "enabled",
-        "role_table_version": "fabric.content-role-table/v1@5",
+        "role_table_version": "fabric.content-role-table/v1@6",
         "limits": {
           "max_body_bytes": 33554432,
           "max_retain_bytes": 67108864,
@@ -2558,7 +2558,7 @@
         "fabric.manifest.max_clock_uncertainty_ns": 300000000000,
         "fabric.manifest.profile": "local",
         "fabric.manifest.pseudonym_mode": "keyed",
-        "fabric.manifest.role_table_version": "fabric.content-role-table/v1@5",
+        "fabric.manifest.role_table_version": "fabric.content-role-table/v1@6",
         "fabric.manifest.runtime.name": "cpython",
         "fabric.manifest.runtime.version": "3.12.13",
         "fabric.manifest.sdk.language": "python",

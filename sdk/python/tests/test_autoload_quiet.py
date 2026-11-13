@@ -165,6 +165,6 @@ def test_hooks_env_status_installs_nothing() -> None:
         "requested": False, "state": "disabled", "reason": "remote_sandbox",
     }  # fmt: skip
     assert declared["warnings"] == []
-    built = hooks.env_status({"FABRIC_WIRE_MCP": "1"})
-    assert built["not_in_build"] == ["FABRIC_WIRE_MCP"]
+    built = hooks.env_status({"FABRIC_WIRE_DB_DRIVERS": "sqlite3"})
+    assert built["not_in_build"] == ["FABRIC_WIRE_DB_DRIVERS"]
     assert hooks.current_handle() is None

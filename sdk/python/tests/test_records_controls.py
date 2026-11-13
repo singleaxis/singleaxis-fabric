@@ -213,13 +213,14 @@ def test_the_invariants_are_constants_of_one_module() -> None:
     """052 §4.2.3: the only assignments of the two D11 keys use the module constants.
 
     057 B5 sets the same two constants on the rows the reader derives offline, so the
-    reader's derivation module is the one other place that may assign them, and only
-    from the reader's own constants, which must equal the recorder's."""
+    reader's derivation modules (the wire rules and the MCP method layer) are the other
+    places that may assign them, and only from the reader's own constants, which must
+    equal the recorder's."""
     assert (AUTHENTICATION, ENFORCED_BY_FABRIC) == ("unverified_caller_report", False)
     assert reader_constants.AUTHENTICATION == AUTHENTICATION
     assert reader_constants.ENFORCED_BY_FABRIC is ENFORCED_BY_FABRIC
     keys = {"fabric.control.authentication", "fabric.control.enforced_by_fabric"}
-    allowed = {"_rec_controls.py", "decision.py", "_derive.py"}
+    allowed = {"_rec_controls.py", "decision.py", "_derive.py", "mcp.py"}
     for path in SRC.rglob("*.py"):
         if path.name == "_records_keys_generated.py":
             continue  # the generated rule-A table maps each key to its closed check

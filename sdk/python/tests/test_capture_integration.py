@@ -76,6 +76,8 @@ class JsonlSpanExporter(SpanExporter):
                             "name": span.name,
                             "start_ns": span.start_time,
                             "end_ns": span.end_time,
+                            # The status is part of a record digest (spec 050 §3.7).
+                            "status": span.status.status_code.name.lower(),
                             "resource": dict(span.resource.attributes),
                             "attributes": {
                                 key: list(value) if isinstance(value, tuple) else value

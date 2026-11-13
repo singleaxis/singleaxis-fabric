@@ -544,7 +544,8 @@ def test_c0_4_a_new_key_cannot_stay_pending(tmp_path: Path) -> None:
     root = _copy_tree(tmp_path)
 
     def pend(document: Any) -> None:
-        row = _key(document, "fabric.mcp.method")
+        # a key without a record placement (one with it fails its placement rule first)
+        row = _key(document, "fabric.mcp.protocol_version")
         row["check_pending"] = row.pop("check") and "waiting"
 
     _edit_registry(root, "keys", pend)
@@ -721,13 +722,14 @@ def test_p1_registry_rows() -> None:
     assert evidence["default_policy"] == "metadata" and evidence["cap"] == "1 MiB"
     assert evidence["allowed_modes"] == ["retain_original", "metadata_only", "omit"]
     assert (
-        reg["roles"]["registry_revision"] == 5
-    )  # spec 057 roles and control.checked off
+        reg["roles"]["registry_revision"] == 6
+    )  # spec 057 roles and control.checked off; mcp.* off (057 rev 3.9)
     assert [t["type"] for t in reg["fields"]["evidence_types"]] == [
         "fabric.test.items/v1",
         "fabric.exec.observation/v1",  # spec 053 §3.2, registered by spec 056 WP6-01
         "fabric.http.observation/v1",  # spec 053 §3.2, registered by spec 056 WP6-11
         "fabric.sandbox.observation/v1",  # spec 056 §4.4.1 (WP6-11)
+        "fabric.mcp.correlation/v1",  # spec 053 §3.2, registered by spec 057 WP7-8
     ]
 
 

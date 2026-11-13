@@ -2676,10 +2676,10 @@ governed store stays supported.
 | `agent.handoff` | new | structure | caller | caller_reported | `*` | content | 4 MiB | P2 | Delegation request payload. |
 | `checkpoint.state` | new | structure | caller | caller_reported | `*` | off | max_body_bytes | P2 | Checkpoint state, when exposed. |
 | `workflow.definition` | new | structure | caller | caller_reported | `application/json`, `application/yaml` | off | 4 MiB | P2 | Workflow or graph definition. |
-| `mcp.request` | new | content | tool | caller_reported, protocol | `application/json` | content | max_body_bytes | P2 | MCP JSON-RPC request bytes. |
-| `mcp.response` | new | content | tool | caller_reported, protocol | `application/json` | content | max_body_bytes | P2 | MCP JSON-RPC response bytes. |
-| `mcp.notification` | new | content | tool | protocol | `application/json` | content | 1 MiB | P4 | MCP notifications and server-to-client requests. |
-| `mcp.server` | new | context | tool | caller_reported, protocol | `application/json` | content | 1 MiB | P2 | Server info, capabilities and instructions from initialization. |
+| `mcp.request` | new | content | tool | caller_reported, protocol | `application/json` | off | max_body_bytes | P2 | MCP JSON-RPC request bytes. |
+| `mcp.response` | new | content | tool | caller_reported, protocol | `application/json` | off | max_body_bytes | P2 | MCP JSON-RPC response bytes. |
+| `mcp.notification` | new | content | tool | protocol | `application/json` | off | 1 MiB | P4 | MCP notifications and server-to-client requests. |
+| `mcp.server` | new | context | tool | caller_reported, protocol | `application/json` | off | 1 MiB | P2 | Server info, capabilities and instructions from initialization. |
 | `computer.action` | new | content | caller | caller_reported, protocol | `application/json` | content | 256 KiB | P2 | An executed UI action: action, target, coordinates, typed text, navigation. |
 | `computer.snapshot` | new | content | caller | caller_reported, protocol | `image/png`, `image/jpeg`, `image/webp`, `text/html`, `application/json` | content | max_body_bytes | P2 | Screenshot, DOM or accessibility snapshot that already existed. |
 | `control.checked` | new | decisions_effects | service | caller_reported | `*` | off | 1 MiB | P3 | What an external control checked, plus the reviewed-artifact digest, issuer and clear proof reference of a `ControlObservation` (spec 052 D-12). Default `off` (spec 057 OD-19). |
