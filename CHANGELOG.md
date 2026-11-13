@@ -94,7 +94,12 @@ it never makes, applies, waits for or returns one.
   `SIGSYS`); one refusal seen by both is one row. Every other failure
   (`ENOENT`, `ECONNREFUSED`, a nonzero exit, `SIGKILL`) stays a field and is
   never a row. A row says the kernel refused, not which mechanism did, and
-  is not a policy statement.
+  is not a policy statement. A failed `execve` (a `PATH` search, a refused
+  exec) is an event of the process that tried it, so it never makes the
+  `corroboration` chain partial as unexplained; a report may list `exit`
+  host events (the reconstruction schema's `event_class` gains `exit`); a
+  local-profile record's `failed:EACCES` or `failed:EPERM` is a refusal
+  too.
 - **Spawn errors carry the errno name.** When `subprocess` raises an
   `OSError` (for example on a non-executable file), the exec record now has
   `errno` (`EACCES`, `EPERM`, `ENOENT`, ...) beside `error_class`.
