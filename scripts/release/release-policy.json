@@ -296,7 +296,19 @@
     "extras": [
       "cli",
       "otlp"
-    ]
+    ],
+    "services_comment": "Spec 058 section 10.4: the chart runs the opt-in pod injector from this image as a Python module, not a fabric command (the I1 command list is unchanged). check_cli_image.py runs each probe and requires its marker in the answer.",
+    "services": {
+      "injector": {
+        "probe": [
+          "/opt/fabric/bin/python",
+          "-m",
+          "fabric.cli._injector",
+          "--help"
+        ],
+        "marker": "--tls-dir"
+      }
+    }
   },
   "forbidden_capability_terms": {
     "comment": "AGENTS.md: no release artifact advertises capabilities outside Capture -> Protect -> Deliver. Case-insensitive regular expressions matched against image labels and annotations and packaged metadata fields (descriptions, titles, keywords, summaries).",

@@ -14,7 +14,8 @@ refuses it unless:
   extras, and none of ``python_distribution``'s forbidden wheel paths or prefixes;
 - no installed distribution's name or summary, and no label, names a forbidden capability
   (``forbidden_capability_terms``); the title and description are the policy's;
-- the clients of ``cli_image.clients`` (Docker, the Compose plugin, Helm) answer;
+- the clients of ``cli_image.clients`` (Docker, the Compose plugin, Helm) answer, and so
+  does each Python module of ``cli_image.services`` (the chart's pod injector);
 - the image runs as a non-root user and its entry point is ``fabric``.
 
     python scripts/release/check_cli_image.py --policy scripts/release/release-policy.json \\
@@ -160,6 +161,12 @@ def check(policy: Mapping[str, Any], image: str, version: str | None) -> list[st
             "run", "--rm", "--entrypoint", argv[0], image, *argv[1:]
         ).strip()
         done.append(f"{label}: {answer.splitlines()[0] if answer else '?'}")
+    for name, service in (policy["cli_image"].get("services") or {}).items():
+        probe = list(service["probe"])
+        answer = _docker("run", "--rm", "--entrypoint", probe[0], image, *probe[1:])
+        if service["marker"] not in answer:
+            raise ImageError(f"the {name} ({' '.join(probe[1:])}) did not answer")
+        done.append(f"{name}: {' '.join(probe[1:3])} answers")
     inspected = json.loads(_docker("image", "inspect", image))
     check_config(policy, inspected[0]["Config"])
     done.append("non-root user, entry point and labels")
