@@ -275,9 +275,14 @@ def _pod_name(request: Mapping[str, Any]) -> str:
 
 
 class _Handler(BaseHTTPRequestHandler):
+    # HTTP/1.1 with Content-Length on every answer: the API server keeps the connection
+    # and closes it itself. Closing after each answer (HTTP/1.0) races the client's read
+    # through a proxy and can turn a delivered answer into a reset, which the API server
+    # treats as a webhook failure (the pod is then admitted uninjected).
+    protocol_version = "HTTP/1.1"
     server_version = "fabric-injector"
     sys_version = ""
-    timeout = 5
+    timeout = 30  # an idle kept-alive connection is closed after this
     config: Config
 
     def log_message(self, format: str, *args: Any) -> None:

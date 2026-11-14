@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import base64
 import copy
+import http.client
 import json
 import os
 import socket
@@ -320,6 +321,33 @@ def test_server_answers_reviews_over_tls(server: tuple[int, Path]) -> None:
     assert answer["response"]["patchType"] == "JSONPatch"
     assert _call(port, ca, "/mutate", b"not json")[0] == 400
     assert _call(port, ca, "/elsewhere", b"{}")[0] == 404
+
+
+def test_server_keeps_the_connection_so_the_answer_is_never_cut_off(
+    server: tuple[int, Path],
+) -> None:
+    """Regression: answering HTTP/1.0 and closing first raced the client's read through a
+    proxy (curl saw a TLS EOF, the API server would see a failed call and admit the pod
+    uninjected). HTTP/1.1 keeps the connection: two reviews on one connection."""
+    port, ca = server
+    connection = http.client.HTTPSConnection(
+        "localhost", port, context=ssl.create_default_context(cafile=str(ca)), timeout=5
+    )
+    review = json.dumps(
+        {
+            "apiVersion": "admission.k8s.io/v1",
+            "kind": "AdmissionReview",
+            "request": _request(_pod()),
+        }
+    )
+    for _ in range(2):
+        connection.request(
+            "POST", "/mutate", body=review, headers={"Content-Type": "application/json"}
+        )
+        response = connection.getresponse()
+        assert (response.version, response.status) == (11, 200)
+        assert json.loads(response.read())["response"]["allowed"] is True
+    connection.close()
 
 
 def test_main_without_its_certificate_exits_and_says_why(
