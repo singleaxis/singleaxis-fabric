@@ -350,6 +350,14 @@ def test_server_keeps_the_connection_so_the_answer_is_never_cut_off(
     connection.close()
 
 
+def test_a_client_that_never_finishes_its_handshake_blocks_no_one(
+    server: tuple[int, Path],
+) -> None:
+    port, ca = server
+    with socket.create_connection(("127.0.0.1", port), timeout=5):  # connects, sends nothing
+        assert _call(port, ca, "/healthz") == (200, b"ok\n")
+
+
 def test_main_without_its_certificate_exits_and_says_why(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

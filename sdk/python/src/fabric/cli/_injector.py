@@ -354,7 +354,12 @@ def build_server(
     server.daemon_threads = True
     if tls_dir is not None:
         context = _tls_context(tls_dir)
-        server.socket = context.wrap_socket(server.socket, server_side=True)
+        # The handshake runs in each connection's own thread (on its first read, under
+        # the handler's timeout), never in the accept loop: one slow client cannot hold
+        # up the reviews of others.
+        server.socket = context.wrap_socket(
+            server.socket, server_side=True, do_handshake_on_connect=False
+        )
         stop = threading.Event()
         threading.Thread(
             target=_reload_certificate, args=(context, tls_dir, stop), daemon=True
