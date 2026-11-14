@@ -218,6 +218,13 @@ jobs:
       - name: Audit this build and compare with the qualification table
         run: node scripts/typescript/audit-undici-channels.mjs --check sdk/typescript/wire-qualification.json
 
+  typescript-native:
+    # Spec 055 §4.4, §9.2: the Node-API lock module, built and tested on the six targets
+    # (Linux x64/arm64 on glibc and musl, macOS x64/arm64), with the loader's SHA-256
+    # table checked against the built files and the exported symbols against §4.4.
+    name: TypeScript native lock module
+    uses: ./.github/workflows/typescript-native-prebuilds.yml
+
   fabric-node:
     name: Fabric Node processor
     runs-on: ubuntu-latest
