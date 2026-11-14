@@ -1,0 +1,36 @@
+{
+  "schema_version": "fabric.otlp-mapping-profile/v1",
+  "profile_id": "example-approval-service",
+  "profile_version": 3,
+  "rules": [
+    {
+      "match": {"span_name": "approvals.decision"},
+      "record": "control",
+      "assertion_origin": "service",
+      "map": [
+        {
+          "source": "approval.outcome",
+          "target": "fabric.control.decision",
+          "values": [
+            {"from": "approved", "to": "allow"},
+            {"from": "rejected", "to": "deny"}
+          ]
+        },
+        {"source": "approval.engine", "target": "fabric.control.engine.name"},
+        {"source": "approval.engine_release", "target": "fabric.control.engine.version"},
+        {
+          "source": "approval.tool_call",
+          "target": "fabric.control.gated_tool_call_id",
+          "pseudonymise": "provider"
+        },
+        {"source": "approval.elapsed_ms", "target": "fabric.control.latency_ms"}
+      ],
+      "set": [
+        {"target": "fabric.control.kind", "value": "policy"},
+        {"target": "fabric.control.phase", "value": "observation"},
+        {"target": "fabric.control.stage", "value": "pre_tool"},
+        {"target": "fabric.control.gated_kind", "value": "tool_call"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,210 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "approval-service"
+            }
+          },
+          {
+            "key": "tenant.org_id",
+            "value": {
+              "stringValue": "org-4471"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "approval-service"
+          },
+          "spans": [
+            {
+              "attributes": [
+                {
+                  "key": "approval.outcome",
+                  "value": {
+                    "stringValue": "rejected"
+                  }
+                },
+                {
+                  "key": "approval.engine",
+                  "value": {
+                    "stringValue": "tool-access"
+                  }
+                },
+                {
+                  "key": "approval.engine_release",
+                  "value": {
+                    "stringValue": "2026.11.0"
+                  }
+                },
+                {
+                  "key": "approval.tool_call",
+                  "value": {
+                    "stringValue": "call_7Hq2mXb41TzK"
+                  }
+                },
+                {
+                  "key": "approval.elapsed_ms",
+                  "value": {
+                    "intValue": 12
+                  }
+                },
+                {
+                  "key": "enduser.email",
+                  "value": {
+                    "stringValue": "jane.doe@example.com"
+                  }
+                },
+                {
+                  "key": "approval.input_text",
+                  "value": {
+                    "stringValue": "Refund order 8841 to the card ending 4242"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "droppedEventsCount": 0,
+              "droppedLinksCount": 0,
+              "endTimeUnixNano": "1794639660983692750",
+              "events": [
+                {
+                  "attributes": [
+                    {
+                      "key": "note.text",
+                      "value": {
+                        "stringValue": "jane.doe@example.com asked twice"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "name": "reviewer.note",
+                  "timeUnixNano": "1794639660983588000"
+                }
+              ],
+              "flags": 257,
+              "kind": 1,
+              "links": [],
+              "name": "approvals.decision",
+              "spanId": "67f1d66c057c8980",
+              "startTimeUnixNano": "1794639660983000000",
+              "status": {
+                "code": 0
+              },
+              "traceId": "71f9fa2664dc34200a94083fea00f508"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "approval-service"
+            }
+          },
+          {
+            "key": "tenant.org_id",
+            "value": {
+              "stringValue": "org-4471"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "approval-service"
+          },
+          "spans": [
+            {
+              "attributes": [
+                {
+                  "key": "approval.outcome",
+                  "value": {
+                    "stringValue": "approved"
+                  }
+                },
+                {
+                  "key": "approval.engine",
+                  "value": {
+                    "stringValue": "tool-access"
+                  }
+                },
+                {
+                  "key": "approval.engine_release",
+                  "value": {
+                    "stringValue": "2026.11.0"
+                  }
+                },
+                {
+                  "key": "approval.tool_call",
+                  "value": {
+                    "stringValue": "call_9Lp0cVd77WeR"
+                  }
+                },
+                {
+                  "key": "approval.elapsed_ms",
+                  "value": {
+                    "intValue": 3
+                  }
+                },
+                {
+                  "key": "enduser.email",
+                  "value": {
+                    "stringValue": "jane.doe@example.com"
+                  }
+                },
+                {
+                  "key": "approval.input_text",
+                  "value": {
+                    "stringValue": "Refund order 8841 to the card ending 4242"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "droppedEventsCount": 0,
+              "droppedLinksCount": 0,
+              "endTimeUnixNano": "1794639661066122834",
+              "events": [
+                {
+                  "attributes": [
+                    {
+                      "key": "note.text",
+                      "value": {
+                        "stringValue": "jane.doe@example.com asked twice"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "name": "reviewer.note",
+                  "timeUnixNano": "1794639661066114084"
+                }
+              ],
+              "flags": 257,
+              "kind": 1,
+              "links": [],
+              "name": "approvals.decision",
+              "spanId": "b49e30a880d91fbc",
+              "startTimeUnixNano": "1794639661066000000",
+              "status": {
+                "code": 0
+              },
+              "traceId": "ea635bbc64b4981cd90164afbfc5d004"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

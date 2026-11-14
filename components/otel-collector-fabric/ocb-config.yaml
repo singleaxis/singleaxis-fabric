@@ -4,7 +4,8 @@
 #   ocb --config ocb-config.yaml
 #
 # This produces a custom collector binary at ./dist/otelcol-fabric that
-# includes only the recorder's metadata protection processor, content
+# includes only the recorder's metadata protection processor, attribute
+# mapping processor (spec 057 §4.5), content
 # writer (spec 048), redirect-refusing client middleware and queue envelope
 # (spec 049 §7.8) alongside the standard contrib receiver, durable storage,
 # and exporter components.
@@ -54,6 +55,13 @@ processors:
   # Fabric's exact metadata allowlist and native-field scrubber.
   - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor v0.1.0
     path: ./processor/fabricguardprocessor
+  # Spec 057 §4.5: rewrites security-context telemetry from emitters that use
+  # their own attribute names into Fabric's neutral attribute families, by a
+  # customer-supplied mapping profile, before fabricguard. Off unless a
+  # configuration names it; the image holds no profile (fabric-gate keeps it
+  # in front of the guard).
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricmapprocessor v0.1.0
+    path: ./processor/fabricmapprocessor
 
 exporters:
   - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.164.0
@@ -73,6 +81,7 @@ providers:
 # Resolve the recorder components to their on-disk sources for reproducible builds.
 replaces:
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor => ./processor/fabricguardprocessor
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricmapprocessor => ./processor/fabricmapprocessor
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver => ./receiver/auditreceiver
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter => ./exporter/fabriccontentexporter
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension => ./extension/noredirectextension

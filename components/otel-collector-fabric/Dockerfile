@@ -40,6 +40,7 @@ RUN go install go.opentelemetry.io/collector/cmd/builder@${OCB_VERSION} \
 # The OCB manifest uses local `replaces:` entries for the in-repo components.
 COPY ocb-config.yaml ./
 COPY processor/fabricguardprocessor ./processor/fabricguardprocessor
+COPY processor/fabricmapprocessor ./processor/fabricmapprocessor
 COPY receiver/auditreceiver ./receiver/auditreceiver
 COPY hostrecords ./hostrecords
 COPY exporter/fabriccontentexporter ./exporter/fabriccontentexporter

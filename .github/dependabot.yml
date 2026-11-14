@@ -120,6 +120,7 @@ updates:
       - "/components/otel-collector-fabric/gate"
       - "/components/otel-collector-fabric/hostrecords"
       - "/components/otel-collector-fabric/processor/fabricguardprocessor"
+      - "/components/otel-collector-fabric/processor/fabricmapprocessor"
       - "/components/otel-collector-fabric/receiver/auditreceiver"
       - "/components/otel-collector-fabric/exporter/fabriccontentexporter"
       - "/components/otel-collector-fabric/extension/noredirectextension"
