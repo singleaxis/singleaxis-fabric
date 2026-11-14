@@ -207,7 +207,7 @@ func TestAStepWidensTheSourceManifest(t *testing.T) {
 		t.Fatal("no manifest declares the widened uncertainty")
 	}
 	ts := uint64(f.monotonic())
-	ev, ok := hostEvent(&event{Type: evExec, TsNs: ts, Pid: 7, Ppid: 1, Comm: "sh"})
+	ev, ok := hostEvent(&event{Type: evExec, TsNs: ts, Pid: 7, Ppid: 1, Comm: "sh"}, nil)
 	if !ok || int64(ev.TimeUnixNano) != f.trueWall(ts) {
 		t.Fatalf("event time %d, want %d", ev.TimeUnixNano, f.trueWall(ts))
 	}
@@ -370,7 +370,7 @@ func TestASettledStepNarrowsTheManifestAfterPendingRecords(t *testing.T) {
 		if err := prod.declareClockFor(sensorClock, ts, flush); err != nil {
 			t.Fatal(err)
 		}
-		ev, ok := hostEvent(&event{Type: evExec, TsNs: ts, Pid: pid, Ppid: 1, Comm: "sh", Scope: scopeAgent})
+		ev, ok := hostEvent(&event{Type: evExec, TsNs: ts, Pid: pid, Ppid: 1, Comm: "sh", Scope: scopeAgent}, nil)
 		if !ok {
 			t.Fatal("event not translated")
 		}

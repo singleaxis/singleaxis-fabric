@@ -5406,6 +5406,27 @@
         ],
         "source": "validator"
       }
+    },
+    {
+      "key": "fabric.sensor.watch_id",
+      "change": "new",
+      "field": "X21",
+      "validator": "ID: `pth-` + 32 hex (the `pth-` v2 pseudonym of the matched `watched_paths` entry's configured path, under the sensor's id key; omitted without a key; never the path)",
+      "phase": "P2 (spec 057)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 057 OD-13 amendment; WP7-11 (the keyed id of a watched open, the §6.1 path_ref join key).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^pth-[0-9a-f]{32}$",
+        "examples": [
+          "pth-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
     }
   ],
   "manifest_span": "fabric.capture_manifest",

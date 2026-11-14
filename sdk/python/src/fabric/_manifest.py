@@ -149,6 +149,9 @@ POINTS: Mapping[str, PointSpec] = MappingProxyType({
     "reconstruct.parse": PointSpec("P", False, False),
     "reconstruct.infer": PointSpec("I", False, False),
     "host.ebpf": PointSpec("S", False, False),
+    # spec 057 §6.4 (WP7-11): manifest rows of an eBPF source's optional sensor classes
+    "host.ebpf.exit": PointSpec("S", False, False),
+    "host.ebpf.syscall_result": PointSpec("S", False, False),
     "host.auditd": PointSpec("S", False, False),
     "feed.independent": PointSpec("S", False, False),
     "delivery.receipts": PointSpec("S", False, False),

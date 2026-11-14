@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -94,6 +95,36 @@ func readProductionKeys(p *ProductionConfig) (productionKeys, error) {
 		return productionKeys{}, fmt.Errorf("audit receiver: production.state_key_file: %w", err)
 	}
 	return productionKeys{id: id, state: state}, nil
+}
+
+// maxWatchedPathsFile bounds the watched paths file the receiver reads.
+const maxWatchedPathsFile = 4 << 20
+
+// readWatchedPaths loads production.watched_paths_file into a frozen table
+// (nil when unset). Errors name the setting, the cause and the fix, never a
+// listed path or label.
+func readWatchedPaths(path string) (*hostrecords.WatchTable, error) {
+	if path == "" {
+		return nil, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, errors.New("audit receiver: production.watched_paths_file cannot be opened: check that the file exists and the collector's user can read it")
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxWatchedPathsFile+1))
+	if err != nil || len(data) > maxWatchedPathsFile {
+		return nil, errors.New("audit receiver: production.watched_paths_file is unreadable or larger than 4 MiB: give the watched_paths list alone")
+	}
+	entries, err := hostrecords.ParseWatchedPaths(data)
+	if err != nil {
+		return nil, fmt.Errorf("audit receiver: production.watched_paths_file: %w", err)
+	}
+	table, err := hostrecords.NewWatchTable(entries)
+	if err != nil {
+		return nil, fmt.Errorf("audit receiver: production.watched_paths_file: %w", err)
+	}
+	return table, nil
 }
 
 // prepareStateDir creates or checks the private state directory and its
@@ -344,6 +375,9 @@ func (r *auditReceiver) startProduction() error {
 func (r *auditReceiver) openProduction() (err error) {
 	keys, err := readProductionKeys(&r.cfg.Production)
 	if err != nil {
+		return err
+	}
+	if r.watch, err = readWatchedPaths(r.cfg.Production.WatchedPathsFile); err != nil {
 		return err
 	}
 	restarted, err := prepareStateDir(r.cfg.Production.StateDir)

@@ -6,7 +6,7 @@
     {"path": "schema/content-log-record-v1.schema.json", "sha256": "b8ce9af20eb9499b418698792e67fa9447b1f1d57369ff28af24e15aa3fb178b", "expectation": "schema", "expected_error": null},
     {"path": "schema/llm-exchange-v1.schema.json", "sha256": "93c96c072b2239d094b5574035476ee9888a7b62d90c6df9dc4c13ea081dec74", "expectation": "schema", "expected_error": null},
     {"path": "schema/loss-record-v1.schema.json", "sha256": "4a9f58dae5ba25c2a5e4f81ebed2544678834fd91d8ff340fb621e1a96a74bce", "expectation": "schema", "expected_error": null},
-    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "73bcf0c91f5d8e5c661cfdca6f9c615849fda1aa889df7be5b43acf8522b3ab8", "expectation": "schema", "expected_error": null},
+    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "d6cf3b3fb80b037d9b3a44a934c1c26dd58ed11fe04f0a359233f4691add4aa1", "expectation": "schema", "expected_error": null},
     {"path": "schema/spool-record-v1.schema.json", "sha256": "55087c488bc8acb2c3e6a0a39bba37abdbd7be0263371a7eb529cc64d27b9658", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/valid/content-log-record-request.json", "sha256": "aca0284cba0d0b41d9fa98200400ac46711878fda2bc9f69e1e74b2eb67a19cd", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/content-log-record-truncated.json", "sha256": "a105468714387effbd1ee6609103885f2d52f9cd93c0af54b01f63de45adaae8", "expectation": "valid", "expected_error": null},
@@ -176,6 +176,9 @@
     {"path": "fixtures/valid/spool-record-exchange-typescript-split-redacted.json", "sha256": "b0c7325e9b37a85eeb48a6752a494d809040d43c231a9d54bcadb9cdacf581ae", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/spool-record-exchange-typescript.json", "sha256": "c78d96ce0d8b294f56dfc133cb972e3b418ab077f5e3a46aeb80c3df68a9684d", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/spool-record-record-typescript.json", "sha256": "52ba2f42ff134f3f3d2641580b25e43934face4514510aef3a2e480e6e710b87", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/vectors/spool-bytes-v1.json", "sha256": "7c3539cad01513dad3e46bbc9f50fed0371929b0ecd48bddbb441e008c24be64", "expectation": "vectors", "expected_error": null}
+    {"path": "fixtures/vectors/spool-bytes-v1.json", "sha256": "7c3539cad01513dad3e46bbc9f50fed0371929b0ecd48bddbb441e008c24be64", "expectation": "vectors", "expected_error": null},
+    {"path": "fixtures/host/valid/manifest-sensor-classes.json", "sha256": "d453d714b25116a237d31ff3bd85c535604502531e4102a853452ce3e7fc5a35", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/host/valid/record-exit.json", "sha256": "6bfaa713b2eff7278f786076e3b13025b13870761c1a1f9741c24bd6111958d7", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/host/valid/record-file-watched.json", "sha256": "402751e5049d9dc626746fb8ca04f56c0d24ceb95e12828b36e8af4d26320bc0", "expectation": "valid", "expected_error": null}
   ]
 }

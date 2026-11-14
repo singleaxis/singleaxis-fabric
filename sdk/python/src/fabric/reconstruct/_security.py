@@ -67,7 +67,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
-from fabric.reconstruct._controls import AUTHENTICATION, invariant_conflict
+from fabric.reconstruct._controls import AUTHENTICATION, ENFORCED_BY_FABRIC, invariant_conflict
 from fabric.reconstruct._report import LIST_MAX, chain, not_observed
 
 __all__ = [
@@ -599,6 +599,38 @@ def _contact(source: Mapping[str, Any]) -> dict[str, Any]:
     return item
 
 
+def _os_refusal(source: Mapping[str, Any]) -> dict[str, Any]:
+    """A control row for one kernel refusal of the closed set (§4.3, OD-14; WP7-12):
+    ``os_access``, ``observation``, ``deny``, engine ``kernel``. It is derived from a
+    record's literal errno name or signal, so it is no record of its own (no projection
+    step) and carries both D11 constants. The link is §6.1's: ``process_anchor``,
+    inferred, with the confidence 056 gives the evidence; one call gates, several are
+    ``ambiguous`` candidates, none leaves the row unlinked (never F3: it is an
+    observation, not a pre- or post-tool record)."""
+    item = {key: source[key] for key in _POSITION_KEYS if key in source}
+    item.update(
+        derived=True, kind="os_access", phase="observation", stage="effect", decision="deny",
+        derivation="literal", engine_name="kernel", gated_kind="process",
+        reason_code=str(source["reason_code"]), evidence_ref=[str(source["event_id"])],
+        attrs={_C + "enforced_by_fabric": ENFORCED_BY_FABRIC,
+               _C + "authentication": AUTHENTICATION},
+        invariant_conflict=False, os_refusal=True, method="none", unmatched=False,
+    )  # fmt: skip
+    for key in ("syscall", "via", "host_events", "own_attempt"):
+        if key in source:
+            item[key] = source[key]
+    calls = list(source.get("calls", ()))
+    confidence = "certain" if source.get("confidence") == "certain" else "tentative"
+    if len(calls) == 1:
+        item["link"] = _gates(calls[0], "process_anchor", "inferred", confidence, "resolved")
+        item.update(method="process_anchor", gated=calls[0])
+    elif calls:
+        item["link"] = _gates(calls[0], "process_anchor", "inferred", "tentative",
+                              "ambiguous", pool=calls)  # fmt: skip
+        item.update(method="process_anchor", candidates=calls[:LIST_MAX])
+    return item
+
+
 def _link_window(item: dict[str, Any], window: Sequence[str]) -> None:
     """The 056 window rule for a derived row, in place: one open tool call ->
     ``sequence_bracket`` (inferred, tentative), which gates it; several -> ambiguous."""
@@ -696,13 +728,16 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
                                       *inp.get("sensor_contacts", ()))]  # fmt: skip
     for item in (*derived_hooks, *contacts):
         _link_window(item, windows.get(item["attempt_uid"], ()))
+    # Kernel refusals of the closed set (WP7-12), linked by their evidence's 056 grade.
+    refusals = [_os_refusal(r) for r in inp.get("os_refusals", ())]
     hooks += derived_hooks
-    controls += contacts
-    by_uid.update((c["attempt_uid"], c) for c in contacts)
+    controls += [*contacts, *refusals]
+    by_uid.update((c["attempt_uid"], c) for c in (*contacts, *refusals))
 
     facts: dict[str, list[str]] = defaultdict(list)
     observed = (present(sec) or bool(sec.get("active_points")) or bool(derived_hooks)
-                or bool(contacts) or bool(sec.get("mcp_calls")))  # fmt: skip
+                or bool(contacts) or bool(refusals)
+                or bool(sec.get("mcp_calls")))  # fmt: skip
     declared = [g for g in grants if g["basis"] == "declared"]
     if observed and not declared:
         facts["no_declared_grant"] = []
@@ -743,7 +778,10 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         target = item.get("gated")
         if not deny or not isinstance(target, str):
             continue
-        attributed = effects.get(target, [])
+        # An OS refusal's own evidence (the refused spawn, the killed child) is not an
+        # effect of the call it gates: it is what the row was read from.
+        attributed = [e for e in effects.get(target, [])
+                      if e["attempt_uid"] != item.get("own_attempt")]  # fmt: skip
         if not attributed and target not in absent:
             continue
         if attributed:
@@ -827,9 +865,12 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         reasons.append("control_unmatched")
     if facts.get("control_pending_at_end"):
         reasons.append("control_pending_at_end")
-    if any(c["method"] == "pending_set" for c in controls) or any(
-        i.get("link", {}).get("state") == "ambiguous" for i in (*derived_hooks, *contacts)
-    ):
+    # §6.4: ``ambiguous_attribution`` is a control linked by ``pending_set`` (4.10.3), which
+    # the caller can resolve by passing the id (the capture validator checks exactly this).
+    # A derived row (hook program, contact, OS refusal) in several open windows inherits
+    # 056's ambiguity, which the effects and corroboration chains already report; it gates
+    # no call and does not lower this chain.
+    if any(c["method"] == "pending_set" for c in controls):
         reasons.append("ambiguous_attribution")
     if GRANT_POINT in set(sec.get("active_points", ())) and not declared:
         reasons.append("grant_not_recorded")
@@ -1060,6 +1101,7 @@ def view_events(  # noqa: PLR0912, PLR0915 - one branch per row kind and optiona
                           ("gated_kind", "gated_kind"), ("status", "status"),
                           ("via", "via"), ("body_not_retained", "body_not_retained"),
                           ("host_connects", "host_connects"),
+                          ("syscall", "syscall"), ("host_events", "host_events"),
                           ("error_class", "error_class"),
                           ("signal", "signal"), ("evidence_ref", "evidence"),
                           ("map_row", "map_row")):  # fmt: skip
@@ -1158,6 +1200,11 @@ def resolve_refs(rows: list[dict[str, Any]]) -> None:
             row["later_allow_refs"] = [numbers[u] for u in row["later_allows"] if u in numbers]
 
 
+def _refusal_name(control: Mapping[str, Any]) -> str:
+    reason = str(control.get("reason_code", "unknown"))
+    return f"{control['syscall']} {reason}" if "syscall" in control else reason
+
+
 def fact_rows(security: SecurityResult, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """The facts block: each fact's id, code, count, plain text and the row numbers of the
     records it names (F13 adds its counts by reason code)."""
@@ -1178,8 +1225,17 @@ def fact_rows(security: SecurityResult, rows: Sequence[Mapping[str, Any]]) -> li
             "refs": [numbers[e] for e in fact["event_ids"] if e in numbers],
         }
         if fact["code"] == "os_denied":
-            reasons = Counter(str(c.get("reason_code", "unknown")) for c in security.controls
-                              if c.get("kind") == "os_access")  # fmt: skip
+            # §6.3 F13: by syscall and reason code, each with its attribution method and
+            # confidence (a reported row names no syscall: the reason code alone).
+            refused = [c for c in security.controls if c.get("kind") == "os_access"]
+            reasons = Counter(_refusal_name(c) for c in refused)
             item["by_reason"] = dict(sorted(reasons.items()))
+            links = Counter((_refusal_name(c), c["method"],
+                             c.get("link", {}).get("confidence", "none"),
+                             c.get("link", {}).get("state", "none")) for c in refused)  # fmt: skip
+            item["by_link"] = [{"refusal": name, "method": method, "confidence": confidence,
+                                "state": state, "count": count}
+                               for (name, method, confidence, state), count
+                               in sorted(links.items())]  # fmt: skip
         out.append(item)
     return out

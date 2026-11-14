@@ -8,14 +8,6 @@
   },
   "files": [
     {
-      "path": "messages-v1.json",
-      "sha256": "6e503f94ea466e75ce22f22ffac1b5dfb1b275ae6021bb1d26162209d6c660fa"
-    },
-    {
-      "path": "schema/wire-status-v1.schema.json",
-      "sha256": "0585a1c18e122e0e0b43e866469bf75a85f2f0fe127419e527410596d3d23fcc"
-    },
-    {
       "path": "fixtures/wire-status/invalid/bad-warning-id.json",
       "sha256": "2238e483908e1ee175e89ee8227fe422c31a5bd62f037ddc6d3f3412d7c75021"
     },
@@ -78,6 +70,14 @@
     {
       "path": "fixtures/wire-status/valid/typescript-unqualified-runtime.json",
       "sha256": "679d9f5b02bc5dc3692591c142703f34f1b1ded02b2dba660529a485e62bf2ab"
+    },
+    {
+      "path": "messages-v1.json",
+      "sha256": "934a09f879be7d445ae429dd588a364cf83b1c7edf13b406c44c7c232baad0e3"
+    },
+    {
+      "path": "schema/wire-status-v1.schema.json",
+      "sha256": "0585a1c18e122e0e0b43e866469bf75a85f2f0fe127419e527410596d3d23fcc"
     }
   ]
 }

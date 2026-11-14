@@ -655,3 +655,78 @@ func TestHostAdmissionIsIdempotent(t *testing.T) {
 		}
 	}
 }
+
+// Spec 057 OD-13 and §6.4 (WP7-11): a host source's exit records, its watched
+// opens and the manifest rows of its sensor classes.
+func TestHostSensorClassesAmendment(t *testing.T) {
+	manifest := map[string]any{
+		"fabric.event_id": "2434aa1d-8f1d-4a58-a380-79712ccbf700", "fabric.source_id": testHostSource,
+		"fabric.source.epoch": int64(6917529027641081857),
+	}
+	rows := func(r ...any) map[string]any {
+		return with(manifest, map[string]any{"fabric.manifest.capture_points": r})
+	}
+	t.Run("manifest rows of the source's own sensor classes are bound", func(t *testing.T) {
+		td := makeSpans("fabric.capture_manifest", rows("host.ebpf@0.12.1:S:active:0:1:-",
+			"host.ebpf.exit@0.12.1:S:active:0:1:-", "host.ebpf.syscall_result@0.12.1:S:active:0:1:-"))
+		out, err := hostGuard(t, sourceKindEBPF, "").processTraces(context.Background(), td)
+		if err != nil || len(allSpans(out)) != 1 {
+			t.Fatalf("manifest with sensor-class rows: %v", err)
+		}
+	})
+	for name, r := range map[string][]any{
+		"another kind's class": {"host.ebpf@0.12.1:S:active:0:1:-", "host.auditd.exit@0.12.1:S:active:0:1:-"},
+		"an unknown class":     {"host.ebpf@0.12.1:S:active:0:1:-", "host.ebpf.fork@0.12.1:S:active:0:1:-"},
+		"no own row":           {"host.ebpf.exit@0.12.1:S:active:0:1:-"},
+	} {
+		t.Run("refused: "+name, func(t *testing.T) {
+			_, err := hostGuard(t, sourceKindEBPF, "").processTraces(context.Background(), makeSpans("fabric.capture_manifest", rows(r...)))
+			assertRefused(t, err, hostRefusalBinding)
+		})
+	}
+	exit := with(hostRecordAttrs(), map[string]any{
+		"fabric.sensor.event_class": "exit", "fabric.sensor.syscall": nil, "fabric.sensor.result": "unknown",
+		"fabric.sensor.signal": int64(31),
+	})
+	t.Run("an exit record names no syscall and keeps its signal", func(t *testing.T) {
+		g := hostGuard(t, sourceKindEBPF, "")
+		out, err := g.processTraces(context.Background(), makeSpans("fabric.sensor_event", exit,
+			"with syscall", with(exit, map[string]any{"fabric.sensor.syscall": "execve"})))
+		if err != nil {
+			t.Fatal(err)
+		}
+		spans := allSpans(out)
+		if len(spans) != 1 || g.stats.snapshot().HostSpanDropped != 1 {
+			t.Fatalf("admitted %d, dropped %d", len(spans), g.stats.snapshot().HostSpanDropped)
+		}
+		if v, ok := spans[0].Attributes().Get("fabric.sensor.signal"); !ok || v.Int() != 31 {
+			t.Fatal("exit signal not kept")
+		}
+	})
+	t.Run("a watched open keeps its label, class and keyed id, a failed one its errno", func(t *testing.T) {
+		g := hostGuard(t, sourceKindEBPF, "")
+		open := with(hostRecordAttrs(), map[string]any{
+			"fabric.sensor.event_class": "file", "fabric.sensor.syscall": "openat",
+			"fabric.sensor.result": "failed", "fabric.sensor.errno": "EACCES",
+			"fabric.sensor.watch_label": "agent-acl", "fabric.sensor.watch_class": "permission_config",
+			"fabric.sensor.watch_id": "pth-875b09fc4634c7e05603363c094de106",
+		})
+		out, err := g.processTraces(context.Background(), makeSpans("fabric.sensor_event", open,
+			"bad id", with(open, map[string]any{"fabric.sensor.watch_id": "/etc/agent/acl.json"})))
+		if err != nil {
+			t.Fatal(err)
+		}
+		spans := allSpans(out)
+		if len(spans) != 2 {
+			t.Fatalf("admitted %d", len(spans))
+		}
+		for _, key := range []string{"fabric.sensor.watch_label", "fabric.sensor.watch_class", "fabric.sensor.watch_id", "fabric.sensor.errno"} {
+			if _, ok := spans[0].Attributes().Get(key); !ok {
+				t.Errorf("watched open lost %s", key)
+			}
+		}
+		if _, ok := spans[1].Attributes().Get("fabric.sensor.watch_id"); ok {
+			t.Error("a path in place of the keyed id was kept")
+		}
+	})
+}

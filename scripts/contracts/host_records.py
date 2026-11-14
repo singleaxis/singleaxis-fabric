@@ -81,6 +81,13 @@ def sbx(clear: str, key: str = KEY) -> str:
     return out
 
 
+def pth(path: str, key: str = KEY) -> str:
+    """The ``pth-`` v2 pseudonym of a watched entry's configured path (spec 057 §4.3)."""
+    out = coverage.pseudonym_v2("pth", "path_rule", path, key)
+    assert out is not None
+    return out
+
+
 def hst(text: str, key: str = KEY) -> str:
     out = coverage.pseudonym_v2("hst", "host", text, key)
     assert out is not None
@@ -669,8 +676,13 @@ def admit(
         if point is not None and str(point).split("@", 1)[0] != kind:
             raise HostRefusal("binding", where)
         if cls == "manifest":
-            rows = attrs.get("fabric.manifest.capture_points", [])
-            if not rows or any(not str(r).startswith(f"{kind}@") for r in rows):
+            # the source's own row, plus its spec 057 §6.4 sensor-class rows
+            ids = [
+                str(r).split("@", 1)[0]
+                for r in attrs.get("fabric.manifest.capture_points", [])
+            ]
+            allowed_ids = {kind, f"{kind}.exit", f"{kind}.syscall_result"}
+            if kind not in ids or any(i not in allowed_ids for i in ids):
                 raise HostRefusal("binding", where)
     out: list[dict[str, Any]] = []
     stripped: dict[str, int] = {}
@@ -680,9 +692,17 @@ def admit(
     for (name, attrs), cls in zip(decoded, classes, strict=True):
         attrs = dict(attrs)
         attrs.pop("fabric.source.authenticated", None)  # step 2: never the sender's
+        exit_record = (
+            cls == "record" and attrs.get("fabric.sensor.event_class") == "exit"
+        )
         if cls == "record":
             allowed = record_keys
-            required: Iterable[str] = HOST_RECORD_REQUIRED
+            # spec 057 OD-13: a process exit names no syscall
+            required: Iterable[str] = tuple(
+                k
+                for k in HOST_RECORD_REQUIRED
+                if not (exit_record and k == "fabric.sensor.syscall")
+            )
         elif cls == "manifest":
             allowed = {r["key"] for r in rows.values() if "manifest_property" in r} | {
                 "fabric.event_id"
@@ -720,10 +740,13 @@ def admit(
                 kept[key] = value
             else:
                 stripped[key] = stripped.get(key, 0) + 1
-        if cls == "record" and SYSCALL_CLASS.get(
-            kept.get("fabric.sensor.syscall")
-        ) != kept.get("fabric.sensor.event_class"):
-            dropped += 1
+        if cls == "record" and (
+            ("fabric.sensor.syscall" in kept or "fabric.sensor.syscall" in attrs)
+            if exit_record
+            else SYSCALL_CLASS.get(kept.get("fabric.sensor.syscall"))
+            != kept.get("fabric.sensor.event_class")
+        ):
+            dropped += 1  # a syscall of another class, none, or one on an exit
             continue
         kept["fabric.source.authenticated"] = True  # step 8
         out.append({"name": name, "attributes": kept})
@@ -854,11 +877,14 @@ def host_manifest(
     *,
     classes: Sequence[str] = ("exec", "connect", "file"),
     unsealed: Sequence[int] = (),
+    sensor_classes: Sequence[str] = (),
 ) -> dict[str, Any]:
     """A host source's capture manifest (053 §6.2.3): one capture-point row of kind S,
     inputs ``records``, ``source_auth`` ``bound``, content disabled (a host group has no
     content ingress), the sensor's disabled event classes as ``sensor_*`` uncaptured
-    classes, ``sdk.language`` ``go`` (the host-records library)."""
+    classes, ``sdk.language`` ``go`` (the host-records library). ``sensor_classes`` adds
+    one row per enabled spec 057 §6.4 sensor class (``exit``, ``syscall_result``) as
+    ``<kind>.<class>``, after the source's own row (the library's ``capturePoints``)."""
     doc: dict[str, Any] = {
         "schema_version": "fabric.capture-manifest/v1",
         "manifest_id": manifest_id,
@@ -896,7 +922,20 @@ def host_manifest(
                 "process_global": False,
                 "opt_in": True,
                 "fields": ["C41"],
-            }
+            },
+            *(
+                {
+                    "id": f"{kind}.{c}",
+                    "version": VERSION,
+                    "kind": "S",
+                    "state": "active",
+                    "process_global": False,
+                    "opt_in": True,
+                    "fields": [],
+                }
+                for c in ("exit", "syscall_result")
+                if c in sensor_classes
+            ),
         ],
         "uncaptured_classes": [
             f"sensor_{c}" for c in ("exec", "connect", "file") if c not in classes
@@ -1056,6 +1095,55 @@ def host_fixtures(
         "argv marker.",
         _guard("host.auditd"),
         [[audit_exec]],
+    )
+    # spec 057 OD-13 (WP7-11): a process exit, a watched open, the sensor-class rows
+    exit_rec = ebpf.record(
+        1217.5, event_class="exit", result="unknown", pid=CHILD_PID, ppid=AGENT_PID,
+        ns_pid=CHILD_NS_PID, ns_ppid=AGENT_NS_PID, pid_ns=AGENT_PID_NS,
+        process_start_ns=60_123_217_448, cgroup_id="9123", scope="agent", signal=31,
+    )  # fmt: skip
+    put(
+        "valid/record-exit.json",
+        "record-exit",
+        "A process exit (spec 057 OD-13, 053 §6.2.3 amendment; sched_process_exit when the "
+        "thread group's last thread exits): event class exit, no syscall key, result "
+        "unknown, the terminating signal (31, SIGSYS: a seccomp kill) and no exit code. The "
+        "pids and start time are the exec record's, so the reader joins the two.",
+        _guard("host.ebpf"),
+        [[exit_rec]],
+    )
+    watched = ebpf.record(
+        1218.0, event_class="file", syscall="openat", result="failed", errno="EACCES",
+        pid=CHILD_PID, ppid=AGENT_PID, ns_pid=CHILD_NS_PID, ns_ppid=AGENT_NS_PID,
+        pid_ns=AGENT_PID_NS, cgroup_id="9123", scope="agent",
+        watch_label="agent-acl", watch_class="permission_config",
+        watch_id=pth("/etc/agent/acl.json"),
+    )  # fmt: skip
+    put(
+        "valid/record-file-watched.json",
+        "record-file-watched",
+        "An open of a watched path that the kernel refused with EACCES (spec 057 §4.3, "
+        "WP7-11): the customer's label and class and the pth- v2 id of the watched entry's "
+        "configured path, labelled in the sensor's user space; the path never appears.",
+        _guard("host.ebpf"),
+        [[watched]],
+    )
+    classes_src = HostSource("host.ebpf", "classes")
+    put(
+        "valid/manifest-sensor-classes.json",
+        "manifest-sensor-classes",
+        "Manifest 0 of an eBPF source with process exits and syscall results enabled "
+        "(spec 057 §6.4): the source's own row, then host.ebpf.exit and "
+        "host.ebpf.syscall_result. fabricguard binds rows of the source's own kind and its "
+        "sensor classes only.",
+        _guard("host.ebpf"),
+        [
+            [
+                classes_src.manifest(
+                    1000.0, reg, sensor_classes=("exit", "syscall_result")
+                )
+            ]
+        ],
     )
     manifest_src = HostSource("host.ebpf", "markers")
     manifest = manifest_src.manifest(1000.0, reg, unsealed=[6917529027641081601])

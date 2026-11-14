@@ -41,8 +41,8 @@ privilege and already approved.
 | `EMIT_CGROUP_PATH` | — | cgroup dir to scope observation to |
 | `EMIT_ALL_HOST` | `false` | explicit opt-in to unscoped collection |
 | `EMIT_EXEC` | `true` | sched_process_exec tracepoint |
-| `EMIT_CONNECT` | `true` | sys_enter_connect tracepoint |
-| `EMIT_FILE_ACCESS` | `false` | sys_enter_openat — host-scale volume, keep off unless scoped |
+| `EMIT_CONNECT` | `true` | connect, seen at the raw `sys_enter` syscall tracepoint |
+| `EMIT_FILE_ACCESS` | `false` | openat, seen at the raw `sys_enter` syscall tracepoint — host-scale volume, keep off unless scoped |
 | `EMIT_MAX_EVENTS_PER_SEC` | `0` | optional token-bucket cap; `0` disables deliberate rate loss |
 | `EMIT_DEDUPE_WINDOW` | `0s` | optional repeat collapse; `0s` preserves individual observed events |
 | `EMIT_SPOOL_DIR` | `/var/lib/fabric-host-emitter` | required pre-existing persistent directory, owned by emitter UID and mode `0700` |
@@ -186,6 +186,9 @@ own ingress group on the Node. Local mode is unchanged.
 | `EMIT_ALL_HOST` | `false` | every event outside a sandbox root is scope `agent` |
 | `EMIT_DIGESTS` | `omitted` | `permitted` emits executable, argv and path digests (the Node's group must permit them too) |
 | `EMIT_HEARTBEAT_INTERVAL` | `10s` | 1s to 60s |
+| `EMIT_SYSCALL_RESULTS` | `false` | spec 057 OD-13: pairs `connect`, `openat` and `execve` with their `sys_exit` tracepoints, so a record carries `fabric.sensor.result` (`success`/`failed`) and, when failed, `fabric.sensor.errno`; a failed `execve` becomes an `exec` record. The syscall is never delayed: its event is held in a kernel map until the syscall returns and is emitted then (result `unknown` for a non-blocking or interrupted connect, a full map, or a call still running at shutdown). Local mode too (`audit.result`) |
+| `EMIT_EXIT` | `false` | spec 057 OD-13: production only; every process exit in scope as event class `exit` with `fabric.sensor.exit_code` or `fabric.sensor.signal` (`sched_process_exit`) |
+| `EMIT_WATCHED_PATHS_FILE` | — | spec 057 §4.3: production only, needs `EMIT_FILE_ACCESS=true`. The customer's `watched_paths` list as JSON (the list, or a deployment policy in JSON whose `security_context` holds it; at most 256 entries). An open of a listed path (exact, or below a `prefix` entry, as the process passed it) carries `fabric.sensor.watch_label`, `fabric.sensor.watch_class` and the keyed `fabric.sensor.watch_id` (`pth-`); the path never leaves the emitter. Unlisted opens are unchanged. The emitter never opens, stats or reads a watched file |
 | `EMIT_CLOCK_STEP_MIN` | `20ms` | 0 to 10s (below the 1 ms sampling floor: the floor); a smaller offset change is followed but is not a step. Local mode too |
 | `EMIT_CLOCK_SETTLE` | `60s` | 0 to 1h; how long the offset stays stable after a step before the declared uncertainty returns to the base. Local mode too |
 

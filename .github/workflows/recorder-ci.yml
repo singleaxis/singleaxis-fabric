@@ -351,6 +351,27 @@ jobs:
         with:
           sarif_file: trivy-fabric-host-emitter.sarif
 
+  host-emitter-kernels:
+    # Spec 057 WP7-11 kernel matrix: the privileged BPF e2e (sys_exit pairing,
+    # process exits, EPERM and SIGSYS refusals) on another runner kernel than
+    # the host-emitter job's. The CO-RE programs must load and pass on each.
+    name: Host emitter eBPF e2e (${{ matrix.os }} kernel)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Runner kernel
+        run: uname -srm
+      - name: Production-mode eBPF e2e (privileged)
+        run: bash components/host-emitter/e2e-emitter.sh --production
+
   helm:
     name: Fabric Node Helm contracts
     runs-on: ubuntu-latest

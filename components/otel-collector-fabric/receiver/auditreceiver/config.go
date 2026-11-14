@@ -90,6 +90,12 @@ type ProductionConfig struct {
 	// must also permit them (053 §6.2.5).
 	Digests           string        `mapstructure:"digests"`
 	HeartbeatInterval time.Duration `mapstructure:"heartbeat_interval"`
+	// WatchedPathsFile is the customer's watched_paths list (spec 057 §4.3,
+	// WP7-11 auditd parity): a JSON list, or a deployment policy in JSON
+	// whose security_context holds it, read once at Start. A file record of
+	// a listed path carries the entry's label, class and keyed pth- id; the
+	// path never leaves the receiver. Needs file_access.
+	WatchedPathsFile string `mapstructure:"watched_paths_file"`
 }
 
 const (
@@ -134,6 +140,14 @@ func (c *Config) Validate() error {
 		if c.StateDirectory != "" {
 			return fmt.Errorf("audit receiver: state_directory is the local-mode state; production keeps its state in production.state_dir")
 		}
+		if c.Production.WatchedPathsFile != "" {
+			if !filepath.IsAbs(c.Production.WatchedPathsFile) || filepath.Clean(c.Production.WatchedPathsFile) != c.Production.WatchedPathsFile {
+				return fmt.Errorf("audit receiver: production.watched_paths_file must be an absolute, clean path")
+			}
+			if !c.FileAccess {
+				return fmt.Errorf("audit receiver: production.watched_paths_file labels file opens: set file_access: true (with audit rules scoped to the agent), or remove production.watched_paths_file")
+			}
+		}
 	default:
 		return fmt.Errorf("audit receiver: mode must be local or production, got %q", c.Mode)
 	}
@@ -173,7 +187,7 @@ func (c *Config) Validate() error {
 // validateUnset refuses production settings outside production mode, so a
 // configuration never looks like a production source while it is not one.
 func (p *ProductionConfig) validateUnset() error {
-	if p.TenantID != "" || p.SourceLabel != "" || p.HostLabel != "" || p.IDKeyFile != "" || p.StateKeyFile != "" || p.StateDir != "" || (p.Digests != "" && p.Digests != "omitted") {
+	if p.TenantID != "" || p.SourceLabel != "" || p.HostLabel != "" || p.IDKeyFile != "" || p.StateKeyFile != "" || p.StateDir != "" || p.WatchedPathsFile != "" || (p.Digests != "" && p.Digests != "omitted") {
 		return fmt.Errorf("audit receiver: production settings require mode: production")
 	}
 	return nil

@@ -59,12 +59,14 @@ def test_all_pinned_capture_artifacts_validate() -> None:
     #   fixtures (mapping profiles, the controls chain and security_context counts)
     # + spec 057 WP7-2 (1.9.0, unreleased): two refusals (a run verdict a partial controls
     #   chain does not bound; a fact-backed controls reason without its fact)
+    # + spec 057 WP7-11: three host fixtures (an exit record, a watched open, a manifest
+    #   with the sensor-class rows)
     # + 1.10.0 (spec 055 §8, unit 055-t1): three TypeScript spool records (an exchange and
     #   a records-input record of one source, a split exchange with a redacted review
     #   copy) and three refusals (an unregistered point, an agent-stamped authentication
     #   flag, a review copy that keeps the original's digest)
     # + 1.11.0 (spec 055 §6.2, unit 055-t2): the spool-bytes-v1 vectors
-    assert len(validated) == 174
+    assert len(validated) == 177
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
@@ -1076,7 +1078,8 @@ def test_053_host_record_fixtures() -> None:
                 classes.add(attrs["fabric.sensor.event_class"])
             else:
                 markers.add(attrs.get("fabric.heartbeat.kind") or span["name"])
-    assert classes == {"exec", "connect", "file"}
+    # exit: spec 057 OD-13 (WP7-11)
+    assert classes == {"exec", "connect", "file", "exit"}
     assert {
         "fabric.capture_manifest",
         "periodic",
