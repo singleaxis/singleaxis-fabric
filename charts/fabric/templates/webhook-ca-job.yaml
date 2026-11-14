@@ -1,0 +1,145 @@
+{{- /*
+Spec 058 §10.4: the injector's webhook needs the generated CA as its
+caBundle, and on a first install the CA exists only once the pre-install
+secrets Job has run, after the templates were rendered. This post-install and
+post-upgrade hook Job (the same CLI image) reads the CA certificate and sets
+the caBundle of this release's webhook configuration, and nothing else. Its
+RBAC is deleted when it succeeds. Not rendered when injector.caBundle is set
+or the secrets Job is off.
+*/ -}}
+{{- $plan := include "fabric.secretsPlan" . | fromYaml -}}
+{{- if and .Values.injector.enabled $plan.render (not .Values.injector.caBundle) }}
+{{- $name := include "fabric.objectName" (dict "root" . "suffix" "fabric-webhook-ca") }}
+{{- $webhook := include "fabric.webhookName" . }}
+{{- $hook := dict "helm.sh/hook" "post-install,post-upgrade" "helm.sh/hook-delete-policy" "before-hook-creation,hook-succeeded" }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fabric.componentLabels" (dict "root" . "component" "secrets-job") | nindent 4 }}
+  annotations:
+    {{- toYaml (merge (dict "helm.sh/hook-weight" "-10") $hook) | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fabric.componentLabels" (dict "root" . "component" "secrets-job") | nindent 4 }}
+  annotations:
+    {{- toYaml (merge (dict "helm.sh/hook-weight" "-10") $hook) | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ .Values.secretsJob.caSecretName | quote }}]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fabric.componentLabels" (dict "root" . "component" "secrets-job") | nindent 4 }}
+  annotations:
+    {{- toYaml (merge (dict "helm.sh/hook-weight" "-10") $hook) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $webhook }}-ca
+  labels:
+    {{- include "fabric.componentLabels" (dict "root" . "component" "secrets-job") | nindent 4 }}
+  annotations:
+    {{- toYaml (merge (dict "helm.sh/hook-weight" "-10") $hook) | nindent 4 }}
+rules:
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [mutatingwebhookconfigurations]
+    resourceNames: [{{ $webhook | quote }}]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $webhook }}-ca
+  labels:
+    {{- include "fabric.componentLabels" (dict "root" . "component" "secrets-job") | nindent 4 }}
+  annotations:
+    {{- toYaml (merge (dict "helm.sh/hook-weight" "-10") $hook) | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $webhook }}-ca
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fabric.componentLabels" (dict "root" . "component" "secrets-job") | nindent 4 }}
+  annotations:
+    {{- toYaml (merge (dict "helm.sh/hook-weight" "0") $hook) | nindent 4 }}
+spec:
+  backoffLimit: {{ .Values.secretsJob.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.secretsJob.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fabric-webhook-ca
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: secrets-job
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      securityContext:
+        {{- include "fabric.restrictedPod" . | nindent 8 }}
+      {{- with .Values.cliImagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: fabric-webhook-ca
+          image: {{ include "fabric.cliImage" . | quote }}
+          imagePullPolicy: {{ .Values.cliImage.pullPolicy }}
+          args:
+            - init
+            - --kubernetes
+            - --in-cluster
+            - --namespace={{ .Release.Namespace }}
+            - --release={{ .Release.Name }}
+            - --secret-name=ca={{ .Values.secretsJob.caSecretName }}
+            - --webhook={{ $webhook }}
+          env:
+            - name: HOME
+              value: /tmp
+          securityContext:
+            {{- include "fabric.restrictedContainer" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.secretsJob.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+{{- end }}

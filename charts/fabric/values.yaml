@@ -1,6 +1,18 @@
 # Fabric Node is the OSS passive recorder: CAPTURE -> PROTECT -> DELIVER.
 # It records passively and never alters, blocks or delays the monitored system.
 
+# One value instead of a profile file (spec 058 section 10.1):
+#   local                   = -f profiles/shadow-dev.yaml
+#   production              = -f profiles/shadow-production.yaml
+#   production-host-sensor  = production, then
+#                             -f profiles/shadow-production-host-ingress.yaml
+# Empty: no preset (the profile files keep working with -f). A preset sits
+# between the chart defaults and your own values: whatever you set with --set
+# or -f wins. One limit: a value you set back to its chart default on purpose
+# is read as "not set" and takes the preset's value; pass the profile file
+# with -f in that case.
+preset: ""
+
 tenant:
   # Required by shadow-production; optional for a local trial.
   id: ""
@@ -35,3 +47,119 @@ otel-collector: {}
 
 profile:
   name: shadow-dev
+
+# The DNS domain of the cluster, for the names in generated certificates and
+# the Node address given to agents.
+clusterDomain: cluster.local
+
+# Namespaces whose agents send to this Node (spec 058 section 10.3). Each
+# entry is a namespace name, or {name, tenantId, source}:
+#   agentNamespaces: [agents]
+#   agentNamespaces: [{name: agents, tenantId: customer-a, source: support}]
+# The namespaces must exist. For each one the secrets Job creates the Secret
+# `secretsJob.agentSecretName` there (CA certificate, id key, ingest
+# credential, spool key and, when the Node asks for client certificates, a
+# client certificate) and its Node-side Secret in the release namespace. On a
+# production Node each namespace is one ingress group: its own token, ports
+# and source binding (tenantId defaults to tenant.id, source to the namespace
+# name). Add new namespaces at the end of the list: a namespace's position
+# fixes its ports, and running pods keep the address they started with.
+agentNamespaces: []
+
+agentIngress:
+  # Agent namespace number i (from 0) listens on basePort + 3i (OTLP/gRPC),
+  # + 1 (OTLP/HTTP) and + 2 (content, when content delivery is on).
+  basePort: 4517
+
+# The Fabric CLI image: it runs the secrets Job and the injector. Empty tag:
+# global.fabric.version. A digest wins over the tag.
+cliImage:
+  repository: ghcr.io/singleaxis/fabric-cli
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+cliImagePullSecrets: []
+
+# Generated Secrets (spec 058 section 10.2). A pre-install and pre-upgrade
+# hook Job runs the Fabric CLI image, which creates each Secret that is
+# missing and never overwrites, prints or logs one. The values are created in
+# the cluster and are never part of the Helm release. The Job renders only
+# when there is something to generate: a production preset, agentNamespaces
+# or the injector. An install from the profile files alone is unchanged and
+# keeps using the Secrets you created.
+#
+# Generated in the release namespace, under the names the Collector values
+# already reference: the CA (`caSecretName`), the Node's TLS certificate and
+# client CA, the content key (with content delivery), ingest tokens of agent
+# groups, and the injector's serving certificate. Never generated: the
+# credential of your own destination (otel-collector.exporter.auth.secret).
+#
+# A cluster that forbids hook Jobs: set enabled=false and run
+# `fabric init --kubernetes` from a workstation, or `fabric init --kubernetes
+# --render DIR` to write the manifests for a GitOps pipeline.
+secretsJob:
+  enabled: true
+  caSecretName: fabric-ca
+  agentSecretName: fabric-agent
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 96Mi
+  # With networkPolicy.denyDefault the Job's pod may reach only the API
+  # server. Empty: read from the cluster at install, as
+  # otel-collector.networkPolicy.hostSensorEgress.apiServer does; an offline
+  # render (helm template, GitOps) must set both lists.
+  apiServer:
+    to: []
+    ports: []
+
+# Opt-in pod injection (spec 058 section 10.4). Off by default. When on, a
+# mutating admission webhook acts only on pods that are in a namespace
+# labelled `fabric.singleaxis.ai/injection=enabled` AND carry the annotation
+# `fabric.singleaxis.ai/inject: "python"` (or "env": variables and mounts
+# only, for any runtime). The namespace must also be in agentNamespaces,
+# which is what gives it its Secret.
+#
+# It adds, and changes nothing else: FABRIC_* environment variables (never one
+# the container already sets), a read-only mount of the namespace's Secret at
+# /var/run/fabric/secrets, a spool volume at /var/lib/fabric and, for "python", the
+# standard-library autoload shim on PYTHONPATH. The SDK itself must be in the
+# agent image. The webhook has failurePolicy Ignore and a 2 second timeout:
+# when it is down, pods start as they would without Fabric, uncaptured.
+injector:
+  enabled: false
+  replicas: 2
+  port: 8443
+  tlsSecretName: fabric-injector-tls
+  # The webhook's caBundle: the base64 of the CA certificate (PEM) that signed
+  # the serving certificate. Empty: read from the CA Secret on an upgrade, and
+  # written by a post-install hook Job on the first install. With
+  # secretsJob.enabled=false, `fabric init --kubernetes --injector` says how to
+  # read it.
+  caBundle: ""
+  # Extra label selector for pods (the namespace label and the annotation
+  # always apply). Kubernetes selects pods for a webhook by label only, so a
+  # pod without the annotation in a labelled namespace still passes through
+  # the webhook, unchanged. Set a label selector here to keep such pods away
+  # from it altogether.
+  objectSelector: {}
+  spool:
+    # The emptyDir spool of an injected pod. The annotation
+    # `fabric.singleaxis.ai/spool: pvc` uses the PersistentVolumeClaim
+    # `fabric-spool` of the pod's namespace instead (you create it).
+    sizeLimit: 1Gi
+  # Extra FABRIC_* variables for every injected container, e.g.
+  #   env: {FABRIC_WIRE_EXEC: "1"}
+  env: {}
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 96Mi

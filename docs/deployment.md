@@ -79,6 +79,11 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
 ### Helm
 
+The commands use `charts/fabric`, the chart in a clone of this repository.
+Without a clone, pull the published chart (its profiles are inside it) and
+use `./fabric` instead:
+`helm pull oci://ghcr.io/singleaxis/charts/fabric --version 0.12.1 --untar`.
+
 ```bash
 helm upgrade --install fabric charts/fabric \
   --namespace fabric-system --create-namespace \
@@ -407,6 +412,151 @@ Issue each agent a client certificate from `client-ca`
 a subdirectory of a volume (the agent must own the directory); an
 `emptyDir` survives container restarts but not Pod deletion, a PVC on an
 encrypted StorageClass survives both.
+
+## Kubernetes without hand work
+
+Spec 058 section 10. Three opt-in chart values remove the hand-made Secrets
+and the per-pod setup above. Nothing changes for an install from the
+profile files: no value below is set by default.
+
+### Presets
+
+`preset` selects a profile as a chart value, so the published chart
+installs without a pulled profile file:
+
+```bash
+helm install fabric oci://ghcr.io/singleaxis/charts/fabric --version <release> \
+  --namespace fabric-system --create-namespace --set preset=local
+```
+
+| `preset` | Same as |
+|---|---|
+| `local` | `-f profiles/shadow-dev.yaml` |
+| `production` | `-f profiles/shadow-production.yaml` |
+| `production-host-sensor` | `-f profiles/shadow-production.yaml -f profiles/shadow-production-host-ingress.yaml` |
+
+Your own values still win over the preset. One limit: a value you set back
+to its chart default on purpose reads as "not set" and takes the preset's;
+pass the profile file with `-f` in that case. A production preset still
+needs your deployment's own values (tenant, Node image digest,
+destination, encrypted StorageClass): the render names each one it lacks.
+
+### Agent namespaces and generated Secrets
+
+`agentNamespaces` lists the namespaces whose agents send to this Node. The
+namespaces must exist. A `pre-install`/`pre-upgrade` hook Job runs the
+Fabric CLI image (`fabric init --kubernetes --in-cluster`) and creates every
+Secret that is missing; it never overwrites, prints or logs one, and the
+values are never part of the Helm release (`helm uninstall` keeps them).
+
+```bash
+kubectl create namespace agents
+helm install fabric oci://ghcr.io/singleaxis/charts/fabric --version <release> \
+  --namespace fabric-system --create-namespace \
+  --set preset=local --set 'agentNamespaces={agents}'
+```
+
+| Where | Secret | Keys |
+|---|---|---|
+| release namespace | `fabric-ca` | `ca.crt`, `ca.key` (the cluster CA) |
+| release namespace | `fabric-node-receiver-tls` | the Node's server certificate for its Service names |
+| release namespace | `fabric-node-client-ca`, `fabric-node-content-key` | production only (the content key with content delivery) |
+| release namespace | `fabric-ingress-<namespace>` | production only: the namespace's ingest `token` and `source-id` |
+| release namespace | `fabric-injector-tls` | with the injector |
+| each agent namespace | `fabric-agent` | `ca.crt`, `id.key`, `spool.key`; production adds `headers` (the bearer token as `FABRIC_OTLP_HEADERS_FILE` reads it), `tls.crt`, `tls.key` (a client certificate) |
+
+On a production Node each agent namespace is one ingress group: its own
+token, its own ports (`agentIngress.basePort` + 3 per namespace in list
+order: gRPC, HTTP, content) and its own source binding. The Node reads the
+source id from `fabric-ingress-<namespace>` when it starts: it is the `s-`
+pseudonym of the namespace's source label (`source`, default the namespace
+name) under that namespace's id key, which is what its agents emit. Add new
+namespaces at the end of the list; a namespace's position fixes its ports.
+
+Clusters that forbid hook Jobs set `secretsJob.enabled=false` and create the
+same Secrets from a workstation with the same generator:
+
+```bash
+fabric init --kubernetes --namespace fabric-system --agent-namespace agents          # current kube context
+fabric init --kubernetes --agent-namespace agents --render ./fabric-secrets          # manifests for GitOps
+```
+
+Add `--profile production` (and `--content` with content delivery) for a
+production Node, and `--injector` with the injector. `--render` writes one
+private file per Secret; apply them with `kubectl create -f DIR --recursive`
+(`create`, not `apply`: `apply` copies each Secret into an annotation).
+Under `networkPolicy.denyDefault` the Job may reach only the API server; an
+offline render (`helm template`) that cannot read its address opens TCP 443
+and 6443 for the Job's pod only, so set `secretsJob.apiServer.to` and
+`.ports` to narrow it.
+
+### Opt-in pod injection
+
+`injector.enabled=true` installs a mutating admission webhook (the CLI
+image) that sets up the agents of the namespaces in `agentNamespaces`. It
+acts only on a pod that is in a namespace labelled
+`fabric.singleaxis.ai/injection=enabled` **and** carries the annotation
+`fabric.singleaxis.ai/inject: "python"` (or `"env"` for any runtime:
+variables and mounts only):
+
+```bash
+kubectl label namespace agents fabric.singleaxis.ai/injection=enabled
+# in the pod template of your Deployment:
+#   metadata:
+#     annotations:
+#       fabric.singleaxis.ai/inject: "python"
+```
+
+It adds, and changes nothing else:
+
+- the `FABRIC_*` variables of the namespace (the Node's address and CA, the
+  id key, the spool and its key, the source label; on a production Node the
+  headers file and client certificate), never one the container already
+  sets in `env`;
+- the namespace's `fabric-agent` Secret, read-only at
+  `/var/run/fabric/secrets`, and a spool volume at `/var/lib/fabric`
+  (`emptyDir` with `injector.spool.sizeLimit`, or the claim `fabric-spool`
+  with the annotation `fabric.singleaxis.ai/spool: pvc`; a one-shot pod
+  with an `emptyDir` spool can lose what it did not deliver before it
+  ended);
+- for `python`: a standard-library `sitecustomize.py` (a ConfigMap) on
+  `PYTHONPATH` with `FABRIC_WIRE_AUTOLOAD=1`. It hands over to the Fabric
+  SDK **in your image** (add `singleaxis-fabric[otlp]` to its dependencies)
+  and then runs the image's own `sitecustomize`. Without the SDK it records
+  why in `/var/lib/fabric/autoload-status.json` and the program runs as
+  before;
+- the annotation `fabric.singleaxis.ai/injected: <version>`, or
+  `fabric.singleaxis.ai/inject-skipped: <reason>` when it left the pod alone
+  (`namespace_not_served`, `volume_name_taken`, `mount_path_taken`,
+  `unknown_mode`).
+
+It never changes the image, command, arguments, resources, probes, security
+context, service account or any existing variable, volume, mount or
+container, and adds no container. The webhook has `failurePolicy: Ignore`
+and a 2 second timeout: when the injector is down, a pod is admitted after
+at most 2 seconds, without capture. It holds no API token and its
+NetworkPolicy allows it no egress. Pods that were running before stay as
+they are until your own next rollout.
+
+Two `PYTHONPATH` cases: a container that sets `PYTHONPATH` in its pod spec
+keeps it and gets no autoload (the annotation
+`fabric.singleaxis.ai/inject-note` says so); an image that sets
+`PYTHONPATH` with `ENV` loses it to the injected one (Kubernetes replaces
+image variables), so give that value in the annotation
+`fabric.singleaxis.ai/pythonpath` and it is kept after the shim. Variables
+a container takes through `envFrom` cannot be read at admission: a
+`FABRIC_*` variable set that way is overridden, so set it in `env`.
+
+Without the injector, `fabric run --print-env --format k8s` prints an
+environment and volume patch to apply yourself.
+
+### Worked example: host sensors and content
+
+[`charts/fabric/examples/production-host-sensor-content.yaml`](../charts/fabric/examples/production-host-sensor-content.yaml)
+is a complete production values file with the host-sensor ingress groups,
+content delivery to an S3-compatible store behind a private CA
+(`content.s3.caSecret`), and one agent namespace; its header lists every
+command. CI renders it with real `host-bindings.py` output.
 
 ## One source per production Node
 

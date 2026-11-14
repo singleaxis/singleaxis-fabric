@@ -48,6 +48,8 @@ jobs:
               - 'scripts/qualification/synthetic_agent_tool.py'
               - 'scripts/qualification/verify_synthetic_sink_readback.py'
               - 'examples/agent-orchestration/**'
+              - 'components/fabric-cli/**'
+              - 'scripts/ttfr/**'
               - '.github/workflows/e2e.yml'
       # Manual dispatch has no diff context for paths-filter — always run the
       # smoke rather than silently skipping the only end-to-end gate.
@@ -386,3 +388,85 @@ jobs:
           kubectl logs --namespace "${NAMESPACE}" \
             -l app=fabric-test-sink --tail=500 || true
           kubectl get events --namespace "${NAMESPACE}" --sort-by=.lastTimestamp || true
+
+  kind-secrets-injector:
+    # Spec 058 E2 (WP8-11 to WP8-13): the chart's secrets hook Job, the opt-in pod
+    # injector and the webhook outage case on a real cluster, with the Node, CLI and
+    # agent images built from this change (charts/fabric/tests/kind/).
+    name: kind secrets Job, injector and webhook outage
+    needs: detect
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KIND_CLUSTER: f058-e2-${{ github.run_id }}-${{ github.run_attempt }}
+      NODE_IMAGE: fabric-otelcol:e2e
+      CLI_IMAGE: fabric-cli:e2e
+      AGENT_IMAGE: fabric-agent:e2e
+    steps:
+      - name: Short-circuit unrelated changes
+        if: needs.detect.outputs.relevant != 'true'
+        run: echo "No chart, CLI or SDK changes; not required."
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        if: needs.detect.outputs.relevant == 'true'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: needs.detect.outputs.relevant == 'true'
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+        if: needs.detect.outputs.relevant == 'true'
+      - name: Install the CLI under test (workstation route)
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          scripts/ci/install-python-locked.sh --extra cli --no-default-groups --group ci
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: needs.detect.outputs.relevant == 'true'
+      - name: Build the Node image
+        if: needs.detect.outputs.relevant == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: components/otel-collector-fabric
+          file: components/otel-collector-fabric/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.NODE_IMAGE }}
+          cache-from: type=gha
+      - name: Build the CLI image
+        if: needs.detect.outputs.relevant == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: components/fabric-cli/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.CLI_IMAGE }}
+          cache-from: type=gha,scope=fabric-cli-image
+      - name: Build the test agent image
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          charts/fabric/tests/kind/build-agent-context.sh "${RUNNER_TEMP}/agent"
+          docker build -q -f charts/fabric/tests/kind/agent.Dockerfile -t "${AGENT_IMAGE}" "${RUNNER_TEMP}/agent"
+      - name: Create kind cluster
+        if: needs.detect.outputs.relevant == 'true'
+        uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with:
+          cluster_name: ${{ env.KIND_CLUSTER }}
+          node_image: kindest/node:v1.30.0
+          version: v0.23.0
+          kubectl_version: v1.30.0
+          wait: 120s
+      - name: Set up Helm
+        if: needs.detect.outputs.relevant == 'true'
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.15.0
+      - name: Secrets Job, injector and webhook outage
+        if: needs.detect.outputs.relevant == 'true'
+        run: bash charts/fabric/tests/kind/e2e-secrets-injector.sh
+      - name: Diagnostics
+        if: failure() && needs.detect.outputs.relevant == 'true'
+        run: |
+          kubectl get pods,jobs,secrets -A -o wide || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -80 || true
+          kubectl logs -n fabric-system -l app.kubernetes.io/name=fabric-injector --tail=200 || true
+          kubectl logs -n fabric-system -l app.kubernetes.io/name=otel-collector --tail=200 || true

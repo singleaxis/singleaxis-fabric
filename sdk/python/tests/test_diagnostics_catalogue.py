@@ -22,6 +22,8 @@ from ._diagnostics_doc import render
 REPO = Path(__file__).resolve().parents[3]
 CONTRACT = REPO / "contracts" / "diagnostics" / "v1"
 SOURCE = REPO / "sdk" / "python" / "src" / "fabric"
+#: The npm launcher (spec 058 §1.4) prints catalogue ids of its own (FC-098, FC-099).
+LAUNCHER = REPO / "sdk" / "typescript" / "src" / "cli"
 _ID = re.compile(r"\bF[CWERN]-[0-9]{3}\b")
 
 
@@ -35,6 +37,8 @@ def _emitted_ids() -> set[str]:
     for path in SOURCE.rglob("*.py"):
         if path.name != "_catalogue_data.py":  # the catalogue itself, not an emitter
             ids.update(_ID.findall(path.read_text("utf-8")))
+    for path in LAUNCHER.glob("*.ts"):
+        ids.update(_ID.findall(path.read_text("utf-8")))
     return ids
 
 

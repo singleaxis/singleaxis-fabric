@@ -25,6 +25,9 @@ export const PACKAGE_NAME = "@singleaxis/fabric";
 export const EXPECTED_PACKAGE_FILES = Object.freeze([
     "LICENSE",
     "README.md",
+    "bin/fabric.mjs",
+    "dist/cli.js",
+    "dist/cli.js.map",
     "dist/index.cjs",
     "dist/index.cjs.map",
     "dist/index.d.cts",
@@ -333,6 +336,10 @@ function smokeInstall(artifact) {
         );
 
         run(process.execPath, [join(fixture, "smoke.mjs")]);
+        // The `fabric` bin (spec 058 §1.4): the launcher answers, and points at the full CLI.
+        const launcher = join(fixture, "node_modules", ".bin", "fabric");
+        const version = run(launcher, ["version"], { capture: true, cwd: fixture });
+        if (!version.includes("npm launcher")) fail(`fabric version printed ${version}`);
         run(process.execPath, [join(fixture, "smoke.cjs")]);
         run(join(PACKAGE_ROOT, "node_modules", ".bin", "tsc"), [
             "--project",

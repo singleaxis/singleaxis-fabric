@@ -94,3 +94,5 @@ e7f51825264e116a36e00ce4b29d26e8fbb4f975:components/otel-collector-fabric/proces
 9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:681
 9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:705
 9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:1084
+# Spec 058 E2a chart test: a render-only source id (feature branch of PR #311); see triage document.
+63f7326c314c7bbc81f3bcf4ec4f2dea5c516022:charts/fabric/tests/test-secrets-and-injector.sh:generic-api-key:120

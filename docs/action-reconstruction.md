@@ -89,18 +89,29 @@ Before using the hook on real workloads, set a capture policy that redacts
 
 ## Turn on the subprocess hook
 
-The hook needs wire capture installed in the same process. With zero-code
-capture, add two variables:
+The hook needs wire capture installed in the same process. With the
+`fabric` CLI, `fabric init --exec` turns it on and `fabric run` passes the
+generated id key; nothing below is needed.
+
+By hand, start from the [quickstart's](quickstart.md#4-capture-an-unmodified-program-zero-code)
+zero-code environment (its first five variables below) and add three: the
+id key, the hook switch and a host label. The id key is 32 random bytes,
+written once to a file only you can read:
 
 ```bash
+python -c 'import secrets, sys; sys.stdout.write(secrets.token_hex(32))' > id-key
+chmod 600 id-key
+
+# The quickstart's environment:
 export PYTHONPATH="$(python -m fabric.wire --print-autoload-path)"
 export FABRIC_WIRE_AUTOLOAD=1
 export FABRIC_TENANT_ID=demo
 export FABRIC_WIRE_STORE="file://$PWD/store"
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-export FABRIC_WIRE_ID_KEY="$(cat id-key)"   # 16+ bytes; also keys the host id
-export FABRIC_WIRE_EXEC=1                   # the exec.subprocess hook
-export FABRIC_HOST_LABEL=build-host-7       # names this host for the host join
+# The three this page adds:
+export FABRIC_WIRE_ID_KEY_FILE="$PWD/id-key"  # also keys the host id
+export FABRIC_WIRE_EXEC=1                     # the exec.subprocess hook
+export FABRIC_HOST_LABEL=build-host-7         # names this host for the host join
 python agent.py
 ```
 
@@ -141,7 +152,7 @@ content into observed content.
 ## Read a run: `python -m fabric.reconstruct actions`
 
 ```bash
-export FABRIC_WIRE_ID_KEY="$(cat id-key)"
+export FABRIC_WIRE_ID_KEY="$(cat id-key)"   # the reader takes the key by value
 python -m fabric.reconstruct actions spans.jsonl \
   --store-root store --tenant demo \
   --host-records node-export.jsonl --host-label build-host-7 \

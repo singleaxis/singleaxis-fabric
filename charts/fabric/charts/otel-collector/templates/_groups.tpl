@@ -69,6 +69,18 @@ Diagnostics name the field and index only, never a configured value.
 {{- fail (printf "%s requires a valid nonempty tenantId" $field) -}}
 {{- end -}}
 {{- $source := $g.sourceId | default "" | toString -}}
+{{- if hasKey $g "sourceIdSecret" -}}
+{{- /* Spec 058 §10.3: the source id is read from a Secret key when the pod
+     starts (the id key it derives from is generated in the cluster, so the
+     chart cannot know it). The Node validates the value it reads. */ -}}
+{{- $ref := $g.sourceIdSecret | default dict -}}
+{{- if $source -}}
+{{- fail (printf "%s sets both sourceId and sourceIdSecret; give the source id once" $field) -}}
+{{- end -}}
+{{- if or (gt (len ($ref.name | default "" | toString)) 63) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" ($ref.name | default "" | toString))) (not (regexMatch "^[A-Za-z0-9._-]+$" ($ref.key | default "" | toString))) -}}
+{{- fail (printf "%s.sourceIdSecret requires the name and key of a Secret in the release namespace" $field) -}}
+{{- end -}}
+{{- else -}}
 {{- if and $clear (eq $kind "agent") -}}
 {{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" $source) -}}
 {{- fail (printf "%s requires a valid nonempty sourceId" $field) -}}
@@ -81,6 +93,7 @@ Diagnostics name the field and index only, never a configured value.
 {{- fail (printf "%s binds the same (tenantId, sourceId) as another group; no two groups bind one source (spec 053 §6.1 rule 7)" $field) -}}
 {{- end -}}
 {{- $_ := set $pairs $pair true -}}
+{{- end -}}
 {{- $secret := $g.tokenSecret | default dict -}}
 {{- $secretName := $secret.name | default "" | toString -}}
 {{- $secretKey := $secret.key | default "" | toString -}}
@@ -152,6 +165,21 @@ Diagnostics name the field and index only, never a configured value.
 {{- if and .Values.content.enabled .Values.content.allowMultipleTenants -}}
 {{- fail "content.allowMultipleTenants is refused with receiver.sourceBindings: each content group allows exactly its own tenantId" -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/* The environment variable a group's source id arrives in (sourceIdSecret). */}}
+{{- define "otel-collector.groupSourceIdEnv" -}}
+FABRIC_GROUP_SOURCE_ID_{{ .name | upper | replace "-" "_" }}
+{{- end -}}
+
+{{/* A group's source id in the Collector configuration: the literal, or the
+     variable the Deployment fills from sourceIdSecret. */}}
+{{- define "otel-collector.groupSourceId" -}}
+{{- if hasKey . "sourceIdSecret" -}}
+{{- printf "${env:%s}" (include "otel-collector.groupSourceIdEnv" .) | quote -}}
+{{- else -}}
+{{- .sourceId | quote -}}
 {{- end -}}
 {{- end -}}
 
@@ -288,7 +316,7 @@ processors:
     {{- end }}
     evidence_source_binding:
       tenant_id: {{ $g.tenantId | quote }}
-      source_id: {{ $g.sourceId | quote }}
+      source_id: {{ include "otel-collector.groupSourceId" $g }}
     capture_labels: {{ $.Values.fabric.guard.captureLabels | default "pseudonymous" | quote }}
     identity_mode: {{ $.Values.fabric.guard.identityMode | default "pseudonymous" | quote }}
     {{- with $.Values.fabric.guard.extraAllowedFields }}
@@ -355,7 +383,7 @@ exporters:
     profile: "production"
     source_binding:
       tenant_id: {{ $g.tenantId | quote }}
-      source_id: {{ $g.sourceId | quote }}
+      source_id: {{ include "otel-collector.groupSourceId" $g }}
     allowed_tenants:
       - {{ $g.tenantId | quote }}
     backend: {{ $content.backend | quote }}

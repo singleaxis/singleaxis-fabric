@@ -290,18 +290,22 @@ def _new_ca(api: Any, project: str) -> tuple[bytes, bytes]:
 
 
 def _new_leaf(api: Any, ca_cert_pem: bytes, ca_key_pem: bytes, names: Sequence[str],
-              addresses: Sequence[str]) -> tuple[bytes, bytes]:  # fmt: skip
+              addresses: Sequence[str], *, common_name: str = NODE_SERVICE, client: bool = False,
+              valid_days: int = LEAF_VALID_DAYS) -> tuple[bytes, bytes]:  # fmt: skip
+    """A leaf certificate from the CA: a server certificate for ``names``/``addresses``, or
+    (``client``) a client certificate. Never valid beyond the CA."""
     x509 = api.x509
     ca_cert = x509.load_pem_x509_certificate(ca_cert_pem)
     ca_key = api.serialization.load_pem_private_key(ca_key_pem, password=None)
     key = api.ec.generate_private_key(api.ec.SECP256R1())
     now = _now()
-    not_after = min(now + dt.timedelta(days=LEAF_VALID_DAYS), ca_cert.not_valid_after_utc)
+    not_after = min(now + dt.timedelta(days=valid_days), ca_cert.not_valid_after_utc)
     sans = [x509.DNSName(name) for name in names]
     sans += [x509.IPAddress(ipaddress.ip_address(address)) for address in addresses]
-    certificate = (
+    usage = api.ExtendedKeyUsageOID.CLIENT_AUTH if client else api.ExtendedKeyUsageOID.SERVER_AUTH
+    builder = (
         x509.CertificateBuilder()
-        .subject_name(x509.Name([x509.NameAttribute(api.NameOID.COMMON_NAME, NODE_SERVICE)]))
+        .subject_name(x509.Name([x509.NameAttribute(api.NameOID.COMMON_NAME, common_name)]))
         .issuer_name(ca_cert.subject).public_key(key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(now - dt.timedelta(minutes=5)).not_valid_after(not_after)
@@ -310,13 +314,13 @@ def _new_leaf(api: Any, ca_cert_pem: bytes, ca_key_pem: bytes, names: Sequence[s
             digital_signature=True, content_commitment=False, key_encipherment=False,
             data_encipherment=False, key_agreement=False, key_cert_sign=False, crl_sign=False,
             encipher_only=False, decipher_only=False), critical=True)
-        .add_extension(x509.ExtendedKeyUsage([api.ExtendedKeyUsageOID.SERVER_AUTH]),
-                       critical=False)
-        .add_extension(x509.SubjectAlternativeName(sans), critical=False)
+        .add_extension(x509.ExtendedKeyUsage([usage]), critical=False)
         .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
                        critical=False)
-        .sign(ca_key, api.hashes.SHA256())
     )  # fmt: skip
+    if sans:  # a client certificate names no host
+        builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
+    certificate = builder.sign(ca_key, api.hashes.SHA256())
     return certificate.public_bytes(api.serialization.Encoding.PEM), _key_pem(api, key)
 
 

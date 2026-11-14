@@ -37,6 +37,7 @@ WORKFLOW = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 DOCKERFILES = {
     "fabric-otelcol": ROOT / "components/otel-collector-fabric/Dockerfile",
     "fabric-host-emitter": ROOT / "components/host-emitter/Dockerfile",
+    "fabric-cli": ROOT / "components/fabric-cli/Dockerfile",
 }
 # What v0.11.0's images carried (UAT, 2026-11-05).
 LEAKED = (

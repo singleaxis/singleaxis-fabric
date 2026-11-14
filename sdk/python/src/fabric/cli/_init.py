@@ -24,8 +24,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from ..wire._config import parse_endpoints
-from . import _config, _project, _providers, _secrets
-from ._report import CliError, Finding, Report
+from . import _config, _kube, _project, _providers, _secrets
+from ._report import EXIT_FINDINGS, CliError, Finding, Report
 
 _HEADER = (
     "# SingleAxis Fabric project configuration (fabric.config/v1).\n"
@@ -115,19 +115,52 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="rewrite fabric.yaml from the defaults and flags (keeps a backup, the project "
         "name and where its secrets are)",
     )
+    kube = parser.add_argument_group("Kubernetes (spec 058 §10.2): Secrets instead of files")
+    kube.add_argument("--kubernetes", action="store_true",
+                      help="create the missing Secrets in the current kube context")  # fmt: skip
+    kube.add_argument("--namespace", metavar="NS",
+                      help="the release namespace (default fabric-system)")  # fmt: skip
+    kube.add_argument("--agent-namespace", action="append", metavar="NS[=SOURCE]",
+                      help="a namespace whose agents send to the Node (repeatable); SOURCE is "
+                      "their source label (default the namespace name)")  # fmt: skip
+    kube.add_argument("--render", metavar="DIR",
+                      help="write the Secrets as manifests into DIR instead (GitOps)")  # fmt: skip
+    kube.add_argument("--release", metavar="NAME", help="the Helm release name (default fabric)")
+    kube.add_argument("--injector", action="store_true",
+                      help="also the pod injector's serving certificate")  # fmt: skip
+    kube.add_argument("--content", action="store_true",
+                      help="with --profile production: also the Node's content key")  # fmt: skip
+    kube.add_argument("--cluster-domain", metavar="DOMAIN", help="default cluster.local")
+    # Set by the chart's hook Jobs, which know the rendered names.
+    kube.add_argument("--in-cluster", action="store_true", help=argparse.SUPPRESS)
+    kube.add_argument("--node-service", help=argparse.SUPPRESS)
+    kube.add_argument("--injector-service", help=argparse.SUPPRESS)
+    kube.add_argument("--secret-name", action="append", metavar="ROLE=NAME", help=argparse.SUPPRESS)
+    kube.add_argument("--webhook", metavar="NAME", help=argparse.SUPPRESS)
     # Accepted so the answer is FC-011 with the manual route, not an argparse error.
-    parser.add_argument("--kubernetes", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--namespace", help=argparse.SUPPRESS)
-    parser.add_argument("--agent-namespace", action="append", help=argparse.SUPPRESS)
-    parser.add_argument("--render", metavar="DIR", help=argparse.SUPPRESS)
     parser.add_argument("--from-env-file", metavar="FILE", help=argparse.SUPPRESS)
     parser.add_argument("--from-values", metavar="FILE", help=argparse.SUPPRESS)
 
 
+_KUBERNETES_ONLY = ("namespace", "agent_namespace", "render", "release", "injector", "content",
+                    "cluster_domain", "in_cluster", "node_service", "injector_service",
+                    "secret_name", "webhook")  # fmt: skip
+
+
 def _refuse_unbuilt(options: argparse.Namespace) -> None:
+    for name in _KUBERNETES_ONLY:
+        if getattr(options, name, None) and not options.kubernetes:
+            raise CliError([Finding("FC-106", "--" + name.replace("_", "-"))])
+    if options.kubernetes:
+        local_only = [("--from-env", options.from_env), ("--rotate", options.rotate),
+                      ("--force", options.force), ("--provider", options.provider),
+                      ("--from-env-file", options.from_env_file),
+                      ("--from-values", options.from_values)]  # fmt: skip
+        for name, given in local_only:
+            if given:
+                raise CliError([Finding("FC-011", f"{name} with --kubernetes")])
+        return
     unbuilt = [
-        ("--kubernetes", options.kubernetes), ("--namespace", options.namespace),
-        ("--agent-namespace", options.agent_namespace), ("--render", options.render),
         ("--from-env-file", options.from_env_file), ("--from-values", options.from_values),
         ("--profile production", options.profile == "production"),
         (f"--destination {options.destination}",
@@ -622,6 +655,8 @@ def run(options: argparse.Namespace, environ: Mapping[str, str] | None = None,
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
     _refuse_unbuilt(options)
+    if options.kubernetes:
+        return run_kubernetes(options, environ)
     located, document, happened, to_store, findings, lines = write_config(options, environ, cwd)
     project = _project.load(located, {}, environ, document)
     secrets_now, more, compiled_changed = prepare(project, rotate=options.rotate,
@@ -655,4 +690,50 @@ def run(options: argparse.Namespace, environ: Mapping[str, str] | None = None,
     if sys.platform == "win32":  # pragma: no cover
         lines.append("note: file modes are not enforced on Windows; keep the secrets directory "
                      "in your own profile")  # fmt: skip
+    return report, lines
+
+
+def run_kubernetes(
+    options: argparse.Namespace, environ: Mapping[str, str]
+) -> tuple[Report, list[str]]:
+    """``fabric init --kubernetes`` (§10.2): the Secrets the chart references, created where
+    they are missing in the current kube context, in this cluster (``--in-cluster``, the
+    chart's hook Job) or as manifests (``--render DIR``). No ``fabric.yaml`` is read or
+    written: the chart's values are the Kubernetes configuration."""
+    plan, store = _kube.from_options(options, environ)
+    generator = _kube.Generator(plan, store)
+    lines: list[str] = []
+    if options.webhook:
+        _kube.check_object(options.webhook, "webhook configuration")
+        generator.patch_webhook(options.webhook)
+        lines.append(f"set the caBundle of mutatingwebhookconfiguration {options.webhook}")
+    else:
+        generator.run()
+    findings = list(generator.findings)
+    for outcome in generator.outcomes:
+        about = ", ".join(outcome.keys) + (
+            f"; {outcome.fingerprint}" if outcome.fingerprint else ""
+        )
+        lines.append(f"{outcome.action} Secret {outcome.namespace}/{outcome.name} ({about})")
+    if isinstance(store, _kube.RenderStore):
+        lines.append(f"manifests: {store.where} (private; values are never printed)")
+        lines.append(
+            f"apply with: kubectl create -f {store.where} --recursive "
+            "(create, not apply: apply copies each Secret into an annotation)"
+        )
+    if plan.injector and not options.in_cluster:
+        findings.append(Finding("FC-107", f"{plan.namespace}/{plan.name('ca')}"))
+    report = Report("init", findings=findings)
+    report.data = {
+        "kubernetes": {
+            "namespace": plan.namespace,
+            "release": plan.release,
+            "where": store.where,
+            "production": plan.production,
+            "agent_namespaces": [a.name for a in plan.agents],
+        },
+        "secrets": [outcome.to_json() for outcome in generator.outcomes],
+    }
+    if any(f.severity == "error" for f in findings):
+        report.exit_code = EXIT_FINDINGS
     return report, lines
