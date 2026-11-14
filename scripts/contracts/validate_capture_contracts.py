@@ -1283,7 +1283,8 @@ _NEVER_MAPPED = frozenset(
 
 def _validate_mapping_profile(document: Mapping[str, Any]) -> None:
     """Rules a schema cannot state: one target per rule, never an invariant key, and a
-    pseudonymised source names an id key (``*.id``, ``*_id``, ``*_ref``)."""
+    pseudonymised source names an id key (``*.id``, ``*_id``, ``*_ref`` and
+    ``fabric.control.resolves``)."""
     for index, rule in enumerate(document["rules"]):
         targets = [m["target"] for m in rule["map"]] + [
             s["target"] for s in rule.get("set", [])
@@ -1296,7 +1297,10 @@ def _validate_mapping_profile(document: Mapping[str, Any]) -> None:
             )
         for mapping in rule["map"]:
             target = mapping["target"]
-            is_id = target.endswith((".id", "_id", "_ref", ".previous_id"))
+            # fabric.control.resolves is a control id without the suffix.
+            is_id = target.endswith((".id", "_id", "_ref", ".previous_id")) or (
+                target == "fabric.control.resolves"
+            )
             if is_id and "pseudonymise" not in mapping:
                 raise CaptureContractError(
                     "capture.mapping_profile.identity",
