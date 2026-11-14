@@ -533,6 +533,84 @@ ghcr.io/singleaxis/fabric-cli:VERSION COMMAND.
 Fix: nothing to do for a Node.js agent, which records through the explicit API; for a Python agent,
 put its interpreter on PATH or create the project's .venv and run `fabric doctor` again.
 
+### FC-100
+
+`kubectl_missing`, error: kubectl is not installed or not on PATH, so the Secrets cannot be written
+to the cluster.
+
+Fix: install kubectl and select the cluster's context (kubectl config use-context NAME), or write
+the Secrets as manifests with `fabric init --kubernetes --render DIR` and apply them with your own
+tooling.
+
+### FC-101
+
+`kube_namespace_missing`, error: a namespace the Secrets belong in does not exist.
+
+Fix: create it (kubectl create namespace NAME) and run the command again; neither the chart's
+secrets Job nor `fabric init --kubernetes` creates a namespace.
+
+### FC-102
+
+`kube_forbidden`, error: the Kubernetes API refused the request: the identity may not read or create
+Secrets there.
+
+Fix: use a kube context that may get and create Secrets in the release namespace and every agent
+namespace; for the chart's secrets Job, check that every agent namespace is listed in
+agentNamespaces (its Role is created there).
+
+### FC-103
+
+`kube_api_unreachable`, error: the Kubernetes API server could not be reached.
+
+Fix: check the kube context (kubectl cluster-info); in the chart's secrets Job, check that a
+NetworkPolicy lets the Job reach the API server (set secretsJob.apiServer.to and .ports when the
+chart cannot read them).
+
+### FC-104
+
+`kube_secret_incomplete`, warning: an existing Secret lacks keys this setup needs; it is kept
+unchanged.
+
+Fix: delete the Secret the message names and run the command again to generate it (a new id key
+changes the namespace's pseudonyms), or add the missing keys it lists yourself.
+
+### FC-105
+
+`kube_ingress_secret_orphaned`, error: an agent namespace's ingress Secret exists in the release
+namespace but its agent Secret does not, so a new token and source id would not match it.
+
+Fix: delete the ingress Secret the message names (kubectl delete secret -n RELEASE-NAMESPACE NAME)
+and run the command again; both are then generated together.
+
+### FC-106
+
+`kube_option_needs_kubernetes`, error: this option belongs to `fabric init --kubernetes`.
+
+Fix: add --kubernetes, or remove the option.
+
+### FC-107
+
+`injector_ca_bundle`, info: the injector's webhook needs the CA certificate as its caBundle.
+
+Fix: the chart's secrets Job sets it; with secretsJob.enabled=false, set injector.caBundle to the
+ca.crt entry of the CA Secret's data, which is base64 already (kubectl get secret fabric-ca -n
+RELEASE-NAMESPACE -o yaml).
+
+### FC-108
+
+`kube_webhook_missing`, error: the injector's webhook configuration was not found, so its caBundle
+cannot be set.
+
+Fix: install or upgrade the chart with injector.enabled=true first; the post-install hook then sets
+the caBundle.
+
+### FC-109
+
+`kube_name_invalid`, error: a namespace, release, source or Secret name is not valid for Kubernetes.
+
+Fix: use lowercase letters, digits and '-' (at most 63 characters for a namespace); a source label
+may also use '.', '_' and ':'.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001
