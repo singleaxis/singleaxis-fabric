@@ -4,3 +4,4 @@ node_modules
 dist-package
 src/wire/*.generated.ts
 test/wire/fixtures/*.json
+prebuilds-build
