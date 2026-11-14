@@ -15,6 +15,24 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: the native lock module (spec 055, unit
+  055-t3).** Still no Node.js capture. Node has no file-lock or shared-memory
+  API, so the TypeScript SDK gains a small C module (Node-API 8, no other
+  dependency) that gives the future recorder kernel file locks, positional
+  file I/O and one shared counter page, and nothing else: no threads,
+  network, crypto or logging. Its locks are the same kernel locks Python's
+  `fcntl.flock` and `fcntl.lockf` take, so Node and Python processes sharing
+  a spool exclude each other; every descriptor is close-on-exec, so a child
+  process never inherits a lock. Prebuilt files for Linux x64/arm64 (glibc
+  2.28+ and musl) and macOS x64/arm64 (13+) are built and tested in CI
+  (`typescript-native-prebuilds.yml`); nothing compiles or downloads at
+  install or startup. The loader checks each file's SHA-256 against a table
+  in the package before loading it, then runs a lock self-test in the spool
+  directory. When the module cannot be used, capture stays off and the
+  status names one reason (`platform_unsupported`, `native_missing`,
+  `native_digest_mismatch`, `native_load_failed`, `native_abi_mismatch` or
+  `native_selftest_failed`) with its fix; there is no lockfile fallback.
+
 - **Node.js capture groundwork: settings, endpoint matching and run ids
   (spec 055, unit 055-t2).** Still no Node.js capture; this is the shared
   core it will run on. The TypeScript SDK now reads every Python capture
