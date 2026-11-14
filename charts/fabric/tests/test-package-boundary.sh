@@ -37,6 +37,13 @@ if ! grep -Fq 'fabric/charts/otel-collector/Chart.yaml' <<<"${listing}"; then
   exit 1
 fi
 
+# Spec 058 §10.4: the injector's autoload shim ships in the package (a ConfigMap
+# renders it into each agent namespace).
+if ! grep -Fxq 'fabric/files/autoload/sitecustomize.py' <<<"${listing}"; then
+  printf 'FAIL: the package lacks the injector autoload shim\n' >&2
+  exit 1
+fi
+
 if ! grep -Fxq 'fabric/charts/otel-collector/templates/tests/test-connection.yaml' <<<"${listing}"; then
   printf 'FAIL: packaged Collector health-test hook is missing\n' >&2
   exit 1
@@ -79,6 +86,13 @@ production=(
     --values "${packaged}/profiles/shadow-production.yaml" \
     --values "${packaged}/profiles/shadow-production-host-ingress.yaml" \
     --values "${fixtures}/common.yaml" --values "${fixtures}/agent-ebpf-auditd.yaml"
+  printf -- '---\n'
+  # Spec 058 §10.2-10.4: the secrets hook Jobs and the opt-in injector.
+  helm template boundary "${packaged}" --set preset=local --set 'agentNamespaces={agents}' \
+    --set injector.enabled=true
+  printf -- '---\n'
+  helm template boundary "${packaged}" --set preset=production "${production[@]:2}" \
+    --set 'agentNamespaces={agents}' --set injector.enabled=true
 } >"${tmp}/renders.yaml"
 python3 - "${tmp}/renders.yaml" <<'PY'
 import sys
