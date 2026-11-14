@@ -1,0 +1,68 @@
+# Worked example (spec 058 section 10.1, audit D13): a production Node with the
+# host-sensor ingress groups AND content delivery to an S3-compatible store
+# signed by a private CA, for agents in the namespace "agents".
+#
+#   kubectl create namespace agents
+#   python3 deploy/kubernetes/host-bindings.py --nodes nodes.txt --tenant acme-prod \
+#     --id-key-file host-id.key --base-port 4417 --out bindings
+#   kubectl create namespace fabric-system
+#   kubectl -n fabric-system create secret generic fabric-node-host-ingress \
+#     --from-file=bindings/node-secret
+#   kubectl -n fabric-system create secret generic fabric-node-export-auth \
+#     --from-file=authorization=<file holding "Bearer <destination token>">
+#   kubectl -n fabric-system create secret generic fabric-node-s3-ca --from-file=ca.crt=store-ca.crt
+#   kubectl -n fabric-system create secret generic fabric-node-s3 \
+#     --from-file=AWS_ACCESS_KEY_ID=<file> --from-file=AWS_SECRET_ACCESS_KEY=<file>
+#   helm upgrade --install fabric oci://ghcr.io/singleaxis/charts/fabric --version <release> \
+#     --namespace fabric-system --set preset=production-host-sensor \
+#     -f production-host-sensor-content.yaml -f bindings/source-bindings.yaml
+#
+# The secrets hook Job generates everything else: the CA, the Node's
+# certificate and client CA, the content key, and for "agents" its ingress
+# token, source id, client certificate, id key and spool key (spec 058
+# section 10.2). agentNamespaces turns the generated agent group of
+# source-bindings.yaml (the one whose sourceId is empty) into one group per
+# agent namespace, on ports 4517 (gRPC), 4518 (HTTP) and 4519 (content).
+#
+# What you still provide is your own deployment's: the tenant, the approved
+# Node image digest, your destination and its credential, an encrypted
+# StorageClass for the delivery queue, the store and its credential and CA,
+# the per-node host-sensor bindings, and the egress peers of both.
+
+tenant:
+  id: acme-prod
+
+agentNamespaces:
+  - agents
+
+otel-collector:
+  image:
+    digest: sha256:<approved Fabric Node image digest>
+  exporter:
+    endpoint: https://otlp.example.internal:4318
+    sendingQueue:
+      persistence:
+        storageClass: <encrypted StorageClass>
+        encryptionAttestationRef: <your storage/KMS review record>
+  content:
+    enabled: true
+    backend: s3
+    s3:
+      bucket: acme-fabric-content
+      region: us-east-1
+      endpoint: https://s3.storage.internal:9000
+      usePathStyle: true
+      sse: AES256
+      credentialsSecret:
+        name: fabric-node-s3
+      # The store's certificate is signed by a private CA (audit F6).
+      caSecret:
+        name: fabric-node-s3-ca
+        key: ca.crt
+  networkPolicy:
+    exporterEgress:
+      to: [{ipBlock: {cidr: 10.20.0.0/16}}]
+      ports: [{port: 4318, protocol: TCP}]
+    contentEgress:
+      to: [{ipBlock: {cidr: 10.30.0.0/16}}]
+      ports: [{port: 9000, protocol: TCP}]

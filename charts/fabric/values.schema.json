@@ -5,6 +5,10 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "preset": {
+      "enum": ["", "local", "production", "production-host-sensor"],
+      "description": "Spec 058 10.1: one value instead of a profile file (local, production, production-host-sensor)."
+    },
     "tenant": {
       "type": "object",
       "additionalProperties": false,
@@ -58,6 +62,79 @@
         "name": {"enum": ["shadow-dev", "shadow-production"]}
       }
     },
+    "clusterDomain": {"type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"},
+    "agentNamespaces": {
+      "type": "array",
+      "maxItems": 64,
+      "description": "Spec 058 10.3: namespaces whose agents send to this Node.",
+      "items": {
+        "oneOf": [
+          {"$ref": "#/definitions/namespaceName"},
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": {"$ref": "#/definitions/namespaceName"},
+              "tenantId": {"$ref": "#/definitions/identifier"},
+              "source": {"$ref": "#/definitions/identifier"}
+            }
+          }
+        ]
+      }
+    },
+    "agentIngress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basePort"],
+      "properties": {"basePort": {"type": "integer", "minimum": 1024, "maximum": 65000}}
+    },
+    "cliImage": {"$ref": "#/definitions/image"},
+    "cliImagePullSecrets": {"$ref": "#/definitions/pullSecrets"},
+    "secretsJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "caSecretName", "agentSecretName"],
+      "description": "Spec 058 10.2: the hook Job that creates missing Secrets with the Fabric CLI image.",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "caSecretName": {"$ref": "#/definitions/objectName"},
+        "agentSecretName": {"$ref": "#/definitions/objectName"},
+        "backoffLimit": {"type": "integer", "minimum": 0, "maximum": 10},
+        "activeDeadlineSeconds": {"type": "integer", "minimum": 30, "maximum": 3600},
+        "resources": {"$ref": "#/definitions/resources"},
+        "apiServer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"to": {"type": "array"}, "ports": {"type": "array"}}
+        }
+      }
+    },
+    "injector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "description": "Spec 058 10.4: opt-in pod injection (environment and mounts only).",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "replicas": {"type": "integer", "minimum": 1, "maximum": 10},
+        "port": {"type": "integer", "minimum": 1024, "maximum": 65535},
+        "tlsSecretName": {"$ref": "#/definitions/objectName"},
+        "caBundle": {"type": "string", "maxLength": 65536},
+        "objectSelector": {"type": "object"},
+        "spool": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"sizeLimit": {"type": "string", "pattern": "^[0-9]+(Ki|Mi|Gi|Ti|k|M|G|T)?$"}}
+        },
+        "env": {
+          "type": "object",
+          "propertyNames": {"pattern": "^FABRIC_[A-Z0-9_]{1,120}$"},
+          "additionalProperties": {"type": "string", "maxLength": 4096}
+        },
+        "resources": {"$ref": "#/definitions/resources"}
+      }
+    },
     "tags": {
       "type": "object",
       "description": "Standard Helm dependency tags; extension keys are intentional.",
@@ -73,6 +150,34 @@
     "profile"
   ],
   "definitions": {
+    "namespaceName": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+    "objectName": {"type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"},
+    "identifier": {"type": "string", "maxLength": 128, "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"},
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag", "digest", "pullPolicy"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[a-z0-9][a-z0-9._/:-]*$"},
+        "tag": {"type": "string", "pattern": "^(?:|[A-Za-z0-9_][A-Za-z0-9._-]{0,127})$"},
+        "digest": {"type": "string", "pattern": "^(?:|sha256:[0-9a-f]{64})$"},
+        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+      }
+    },
+    "pullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 253}}
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"limits": {"type": "object"}, "requests": {"type": "object"}}
+    },
     "toggle": {
       "type": "object",
       "additionalProperties": false,

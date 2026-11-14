@@ -128,6 +128,11 @@ receiver:
   #       ingressFrom: []             # NetworkPolicy peers of this group's
   #                                   # ports; default networkPolicy.ingressFrom
   #
+  # sourceIdSecret: {name: <Secret>, key: <key>} with sourceId: "" reads the
+  # group's source id from a Secret of the release namespace when the pod
+  # starts, for an id derived from a key that is generated in the cluster
+  # (the umbrella chart's agentNamespaces does this, spec 058 §10.3).
+  #
   # A host.auditd group listens on OTLP/HTTP (http: <port>): the sensor
   # collector exports with otlp_http. Tokens mount at
   # /etc/fabric/ingress/<name>/token from operator-created Secrets; the chart
