@@ -15,6 +15,32 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Kubernetes install with one value.** The Helm chart takes
+  `--set preset=local`, `production` or `production-host-sensor` instead of
+  a profile file, so the published chart installs without pulling it first.
+  Your own values still win; the profile files keep working with `-f`.
+- **No hand-made Secrets on Kubernetes.** List your agent namespaces in
+  `agentNamespaces` and a hook Job creates every Secret the Node and the
+  agents need (CA, Node certificate, id keys, spool keys and, on a
+  production Node, per-namespace ingest tokens, source ids and client
+  certificates). Existing Secrets are never overwritten, and no value is
+  ever part of the Helm release. Each agent namespace on a production Node
+  gets its own ingress group. Clusters without hook Jobs run the same
+  generator with `fabric init --kubernetes`, or write manifests for GitOps
+  with `--render DIR`.
+- **Opt-in pod injection.** With `injector.enabled=true`, a pod in a
+  labelled namespace with the annotation `fabric.singleaxis.ai/inject:
+  "python"` gets Fabric's settings, the namespace's Secret, a spool volume
+  and a standard-library autoload file, and nothing else: no existing
+  variable, mount or container changes, and the SDK stays the one in your
+  image. If the injector is down, pods start after at most 2 seconds,
+  uncaptured.
+- **A worked production example** with host sensors and content delivery to
+  an S3-compatible store behind a private CA:
+  `charts/fabric/examples/production-host-sensor-content.yaml`.
+- New diagnostics `FC-100` to `FC-109` say what went wrong with Kubernetes
+  Secrets (no kubectl, missing namespace, no permission, API unreachable, an
+  incomplete or orphaned Secret) and how to fix it.
 - **Get started with your own Python agent.**
   [docs/get-started/python.md](docs/get-started/python.md) is one install
   and three commands: `pip install "singleaxis-fabric[cli]"`, `fabric up`,

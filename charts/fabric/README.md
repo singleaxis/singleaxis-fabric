@@ -31,6 +31,25 @@ The commands below use `charts/fabric`, the chart's path in a clone of this
 repository. With the pulled chart, use `./fabric` and
 `./fabric/profiles/<profile>.yaml` instead.
 
+## Presets, generated Secrets and opt-in injection
+
+Spec 058 section 10; details in
+[docs/deployment.md](../../docs/deployment.md#kubernetes-without-hand-work).
+
+- `preset=local|production|production-host-sensor` selects a profile as a
+  chart value (the profile files below keep working with `-f`).
+- `agentNamespaces: [ns, ...]` gives each listed namespace its Secrets and,
+  on a production Node, its own ingress group. A pre-install/pre-upgrade
+  hook Job (the `fabric-cli` image, `cliImage`) creates every missing
+  Secret; none is ever part of the Helm release. `secretsJob.enabled=false`
+  and `fabric init --kubernetes [--render DIR]` do the same from a
+  workstation.
+- `injector.enabled=true` (off by default) adds Fabric's variables and
+  mounts to annotated pods of those namespaces: `failurePolicy: Ignore`,
+  2 s timeout, no API token, no egress.
+- [`examples/production-host-sensor-content.yaml`](examples/production-host-sensor-content.yaml)
+  is a worked production example with host sensors and content delivery.
+
 ## Profiles
 
 ### `shadow-dev`
