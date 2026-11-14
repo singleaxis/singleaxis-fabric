@@ -28,7 +28,9 @@ UNSUPPORTED = (
     "(only e2b); remote.sandbox is disabled (unsupported_provider), the other hooks are "
     "unaffected"
 )
-INVALID_HOOKS = "fabric.hooks: invalid hook configuration (ValueError); every hook is disabled"
+INVALID_HOOKS = (
+    "fabric.hooks: FABRIC_WIRE_EXEC is malformed, so every hook is disabled; set it to 1 or 0"
+)
 INVALID_WIRE = (
     "fabric.wire: capture not installed (ValueError): FABRIC_WIRE_TRACER must be 'private' "
     "or 'global' [FW-001]"

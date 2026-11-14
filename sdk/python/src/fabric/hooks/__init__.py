@@ -82,6 +82,7 @@ from ._config import (
     HooksConfig,
     config_from_args,
     config_from_env,
+    malformed_env,
 )
 from ._patches import PatchSet
 from ._producer import CHANNEL_ENTRY, HookChannel, HookProducer, Switch, UnsupportedChannel
@@ -101,6 +102,18 @@ _LOG = logging.getLogger("fabric.hooks")
 # status``) reports the same lines without installing anything.
 _MSG_NO_HANDLE = "fabric.hooks: no capture handle is installed; nothing is patched"
 _MSG_INVALID = "fabric.hooks: invalid hook configuration (ValueError); every hook is disabled"
+
+
+def _invalid_message(environ: Mapping[str, str]) -> str:
+    """The malformed-configuration warning, naming the variable and the format it must
+    have (never its value); the generic text when no single variable is at fault."""
+    found = malformed_env(environ)
+    if found is None:
+        return _MSG_INVALID
+    name, fix = found
+    return f"fabric.hooks: {name} is malformed, so every hook is disabled; {fix}"
+
+
 _MSG_UNSUPPORTED = ("fabric.hooks: FABRIC_WIRE_REMOTE_SANDBOX names a provider this build "
                     "does not have (only e2b); remote.sandbox is disabled "
                     "(unsupported_provider), the other hooks are unaffected")  # fmt: skip
@@ -500,7 +513,7 @@ def install_from_env(environ: Mapping[str, str] | None = None) -> HooksHandle | 
             return None
         config, not_in_build = config_from_env(env)
         if config is None:
-            safe_log(_LOG, logging.WARNING, _MSG_INVALID)
+            safe_log(_LOG, logging.WARNING, "%s", _invalid_message(env))
             return HooksHandle(None, state="invalid_configuration", not_in_build=not_in_build)
         if config.remote_sandbox_unsupported:
             safe_log(_LOG, logging.WARNING, _MSG_UNSUPPORTED)
@@ -523,7 +536,7 @@ def env_status(environ: Mapping[str, str], *, capturing: bool = True) -> dict[st
     out: dict[str, Any] = {"configuration": "invalid" if config is None else "valid"}
     warnings: list[str] = []
     if config is None:
-        warnings.append(_MSG_INVALID)
+        warnings.append(_invalid_message(environ))
     else:
         channels: dict[str, dict[str, Any]] = {}
         for slot in CHANNELS:
