@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/schemas/fabric/coverage/v1/wire-qualification-v1.schema.json",
+  "title": "TypeScript wire capture qualification table (spec 055 §3.1, §9.4)",
+  "description": "The single source for which Node.js runtime builds may run a TypeScript wire capture point. `audits` records what scripts/typescript/audit-undici-channels.mjs observed on each exact build for one local fetch POST. A tuple names a build where a capture point may run: `audited` means its body publications were observed (capture still reports unsupported in a release), `active` means its own passivity and parity report exists (report_sha256). A gate is `passed` only in the unit that qualifies it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "gates", "audit_script", "audits", "tuples"],
+  "properties": {
+    "schema_version": {"const": "fabric.wire-qualification/v1"},
+    "comment": {"type": "string", "maxLength": 2000},
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["TS-1U", "TS-1D", "TS-1H"],
+      "properties": {
+        "TS-1U": {"$ref": "#/$defs/gate"},
+        "TS-1D": {"$ref": "#/$defs/gate"},
+        "TS-1H": {"$ref": "#/$defs/gate"}
+      }
+    },
+    "audit_script": {"const": "scripts/typescript/audit-undici-channels.mjs"},
+    "audits": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {"$ref": "#/$defs/audit"}
+    },
+    "tuples": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {"$ref": "#/$defs/tuple"}
+    }
+  },
+  "$defs": {
+    "gate": {"enum": ["passed", "not_passed"]},
+    "node_version": {"type": "string", "pattern": "^(0|[1-9][0-9]{0,3})\\.(0|[1-9][0-9]{0,3})\\.(0|[1-9][0-9]{0,3})$"},
+    "package_version": {"type": "string", "pattern": "^(0|[1-9][0-9]{0,3})\\.(0|[1-9][0-9]{0,3})\\.(0|[1-9][0-9]{0,3})([-+][0-9A-Za-z.-]{1,32})?$"},
+    "platform": {
+      "enum": ["linux-x64-glibc", "linux-arm64-glibc", "linux-x64-musl", "linux-arm64-musl", "darwin-x64", "darwin-arm64"]
+    },
+    "boundary": {"enum": ["pre_decompression", "post_decompression"]},
+    "channel": {
+      "enum": [
+        "undici:request:create",
+        "undici:request:bodyChunkSent",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:bodyChunkReceived",
+        "undici:request:trailers",
+        "undici:request:error",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected",
+        "undici:client:connectError"
+      ]
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "undici",
+        "undici_origin",
+        "platform",
+        "published",
+        "request_body_published",
+        "response_body_published",
+        "boundary",
+        "result"
+      ],
+      "properties": {
+        "node": {"$ref": "#/$defs/node_version"},
+        "undici": {"$ref": "#/$defs/package_version"},
+        "undici_origin": {"enum": ["bundled", "external"]},
+        "platform": {"$ref": "#/$defs/platform"},
+        "published": {"type": "array", "uniqueItems": true, "maxItems": 11, "items": {"$ref": "#/$defs/channel"}},
+        "request_body_published": {"type": "boolean"},
+        "response_body_published": {"type": "boolean"},
+        "boundary": {"oneOf": [{"$ref": "#/$defs/boundary"}, {"type": "null"}]},
+        "result": {"enum": ["both_body_channels", "missing_body_channels"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"result": {"const": "both_body_channels"}}},
+          "then": {
+            "properties": {
+              "request_body_published": {"const": true},
+              "response_body_published": {"const": true},
+              "boundary": {"$ref": "#/$defs/boundary"},
+              "published": {"allOf": [
+                {"contains": {"const": "undici:request:bodyChunkSent"}},
+                {"contains": {"const": "undici:request:bodyChunkReceived"}}
+              ]}
+            }
+          },
+          "else": {
+            "not": {"properties": {"request_body_published": {"const": true}, "response_body_published": {"const": true}}}
+          }
+        }
+      ]
+    },
+    "tuple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["point", "node", "platform", "boundary", "claim"],
+      "properties": {
+        "point": {"enum": ["wire.ts.undici", "wire.ts.node_http"]},
+        "node": {"$ref": "#/$defs/node_version"},
+        "undici": {"$ref": "#/$defs/package_version"},
+        "undici_origin": {"enum": ["bundled", "external"]},
+        "platform": {"$ref": "#/$defs/platform"},
+        "boundary": {"$ref": "#/$defs/boundary"},
+        "claim": {"enum": ["audited", "active"]},
+        "report_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"claim": {"const": "active"}}},
+          "then": {"required": ["report_sha256"]}
+        },
+        {
+          "if": {"properties": {"point": {"const": "wire.ts.undici"}}},
+          "then": {"required": ["undici", "undici_origin"]},
+          "else": {"not": {"anyOf": [{"required": ["undici"]}, {"required": ["undici_origin"]}]}}
+        }
+      ]
+    }
+  }
+}

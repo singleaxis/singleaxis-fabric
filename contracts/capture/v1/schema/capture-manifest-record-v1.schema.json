@@ -365,6 +365,7 @@
               "axios",
               "custom_fetch",
               "node_below_24",
+              "node_worker_unattached",
               "stdio_mcp",
               "direct_pipe_reads",
               "provider_batch_files",

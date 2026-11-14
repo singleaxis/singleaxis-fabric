@@ -1,0 +1,16 @@
+{
+  "capture": "disabled",
+  "notice_ids": [],
+  "phase": "install",
+  "pid": 4244,
+  "schema": "fabric.wire-status/v1",
+  "sdk_version": "0.12.1",
+  "status": {
+    "capture": "disabled",
+    "capture_reason": "otel_sdk_disabled"
+  },
+  "warning_ids": [
+    "FW-007"
+  ],
+  "written_at": "2026-11-12T19:32:36.290Z"
+}

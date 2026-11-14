@@ -158,7 +158,7 @@ _LAYER_OF_PREFIX: Mapping[str, str] = {
     "X": "cross_cutting", "C": "context", "S": "structure", "N": "content",
     "D": "decisions_effects", "G": "context", "E": "structure",
 }  # fmt: skip
-_WIRE = ("wire.py.httpx", "wire.py.aiohttp")
+_WIRE = ("wire.py.httpx", "wire.py.aiohttp", "wire.ts.undici", "wire.ts.node_http")
 _ROWS: tuple[tuple[str, tuple[str, ...], bool, str, tuple[str, ...]], ...] = (
     ("X01", ("schema_version",), True, "always", ("fabric.self",)),
     ("X02", ("event_id",), True, "always", ("fabric.self",)),
@@ -225,7 +225,7 @@ _ROWS: tuple[tuple[str, tuple[str, ...], bool, str, tuple[str, ...]], ...] = (
     ("S34", ("scope.exit_status",), True, "not_captured(not_instrumented)", ("run.scope",)),
     ("N01", ("model.exchange.request", "model.exchange.response"), True,
      "not_captured(not_instrumented)",
-     (*_WIRE, "wire.ts.undici", "explicit.call_recorder", "explicit.byte_boundary")),
+     (*_WIRE, "explicit.call_recorder", "explicit.byte_boundary")),
     ("N02", ("model.exchange.parts",), True, "not_applicable", _WIRE),
     ("N03", ("input.messages",), True, "not_captured(not_instrumented)",
      ("reconstruct.parse", "explicit.call_recorder")),
