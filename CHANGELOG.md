@@ -553,7 +553,9 @@ it never makes, applies, waits for or returns one.
   warning, in the log and in `python -m fabric.wire status`, now names the
   variable and the format it needs, for example `FABRIC_WIRE_HTTP_HOSTS is
   malformed, so every hook is disabled; use a JSON array of hosts, for example
-  ["mcp.internal:8443"] ...`. It never shows the value. Found by SC-RA-1.
+  ["mcp.internal:8443"] ...`. For a host list it also names the limits (at
+  most 256 hosts, none named twice), which refuse a well-formed array too. It
+  never shows the value. Found by SC-RA-1.
 
 - **eBPF host emitter: file access and failed execs were missing on Linux
   6.19+ kernels such as Ubuntu's 7.0.** On those kernels, an eBPF program

@@ -429,6 +429,20 @@ def test_a_malformed_m2_switch_disables_every_hook(
     assert "use a JSON array of hosts" in warning
 
 
+@pytest.mark.parametrize(
+    "value",
+    ['["tools.corp:9443", "TOOLS.corp:9443"]',
+     json.dumps([f"h{i}.internal" for i in range(257)])],
+)  # fmt: skip
+def test_a_valid_array_refused_for_its_content_names_the_limits(value: str) -> None:
+    """A JSON array that names one host twice or holds more than 256 is refused too; the
+    fix must name those limits, not only "use a JSON array" (which it already is)."""
+    (warning,) = hooks.env_status({"FABRIC_WIRE_HTTP_HOSTS": value})["warnings"]
+    assert warning.startswith("fabric.hooks: FABRIC_WIRE_HTTP_HOSTS is malformed")
+    assert warning.endswith("at most 256 and none named twice")
+    assert "tools.corp" not in warning and "h256" not in warning
+
+
 def test_a_hosts_list_given_as_a_plain_string_names_the_variable_and_the_fix(
     fake: FakeModule, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -446,7 +460,7 @@ def test_a_hosts_list_given_as_a_plain_string_names_the_variable_and_the_fix(
     expected = ("fabric.hooks: FABRIC_WIRE_HTTP_HOSTS is malformed, so every hook is disabled; "
                 'use a JSON array of hosts, for example ["mcp.internal:8443"] or '
                 '["http://127.0.0.1:8080"], each host or host:port with an optional http:// or '
-                "https:// and no path")  # fmt: skip
+                "https:// and no path, at most 256 and none named twice")  # fmt: skip
     assert [r.getMessage() for r in caplog.records if r.name == "fabric.hooks"] == [expected]
     assert hooks.env_status(env)["warnings"] == [expected]
     assert "5555" not in caplog.text

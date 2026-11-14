@@ -328,9 +328,10 @@ _ENV_FORMATS: tuple[tuple[str, str], ...] = (
     (HOST_LABEL_ENV, "use 1-128 letters, digits and ._:/-, starting with a letter or digit"),
     (HTTP_HOSTS_ENV, 'use a JSON array of hosts, for example ["mcp.internal:8443"] or '
                      '["http://127.0.0.1:8080"], each host or host:port with an optional '
-                     "http:// or https:// and no path"),
+                     f"http:// or https:// and no path, at most {MAX_HOSTS} and none named twice"),
     (SANDBOX_HOSTS_ENV, 'use a JSON array of hosts, for example ["api.e2b.app"], each host '
-                        "or host:port with an optional http:// or https:// and no path"),
+                        "or host:port with an optional http:// or https:// and no path, "
+                        f"at most {MAX_HOSTS} and none named twice"),
 )  # fmt: skip
 
 
