@@ -261,8 +261,9 @@ func validEvidenceIDString(value string) bool {
 }
 
 // Check the whole request before mutating or forwarding any record. In the
-// dedicated profile, non-AEEP logs are also refused so a caller cannot choose
-// another class to bypass the bound evidence identity.
+// dedicated profile, logs of any class but AEEP evidence and security context
+// are also refused, and both must name the bound tenant and source, so a
+// caller cannot choose another class to bypass the bound identity.
 func (g *guard) boundEvidenceBatch(ld plog.Logs) bool {
 	bound := g.cfg.EvidenceSourceBinding
 	for ri := 0; ri < ld.ResourceLogs().Len(); ri++ {
@@ -272,7 +273,9 @@ func (g *guard) boundEvidenceBatch(ld plog.Logs) bool {
 			for li := 0; li < records.Len(); li++ {
 				a := records.At(li).Attributes()
 				class, ok := a.Get(g.cfg.EventClassAttribute)
-				if !ok || class.Type() != pcommon.ValueTypeStr || class.Str() != "evidence" {
+				// A security-context record (spec 057 §4.5) is the only other
+				// class a bound ingress carries, under the same identity rule.
+				if !ok || class.Type() != pcommon.ValueTypeStr || class.Str() != "evidence" && class.Str() != securityContextClass {
 					return false
 				}
 				tenant, tenantOK := a.Get("tenant_id")

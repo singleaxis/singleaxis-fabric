@@ -181,6 +181,40 @@ var BuiltInAllowedFields = map[string]map[string]struct{}{
 	"cost_usage_aggregate": toSet(
 		"window_start", "window_end", "model", "input_tokens", "output_tokens", "cost_usd", "request_count",
 	),
+	// Spec 057 §4.5 (WP7-14): a security-context record an emitter reports as
+	// an OTLP log record. Only the neutral families and the record markers;
+	// every value keeps its closed registry check (validCaptureValue).
+	securityContextClass: securityContextLogFields(),
+}
+
+// securityContextClass is the event_class of a grant, control, hook or
+// extension record carried on a log record (spec 057 §4.5).
+const securityContextClass = "security_context"
+
+// securityContextFamilies are the neutral attribute families of spec 057 §4.5.
+var securityContextFamilies = []string{
+	"fabric.grant.", "fabric.control.", "fabric.hook.", "fabric.extension.", "fabric.mcp.",
+}
+
+// securityContextLogFields is every registry key of the neutral families, the
+// spec 022 hook keys the hook record reuses (E24-E27) and the record markers.
+func securityContextLogFields() map[string]struct{} {
+	fields := toSet(
+		"fabric.hook.name", "fabric.hook.phase", "fabric.hook.modified",
+		"fabric.hook.input_hash", "fabric.hook.output_hash",
+		"fabric.capture.point", "fabric.capture.source", "fabric.step.kind", "fabric.actor.type",
+		// The ingress identity a bound Node requires on every log record
+		// (tenant_id is an envelope field).
+		"source_id",
+	)
+	for key := range coverageKeyValidators {
+		for _, family := range securityContextFamilies {
+			if strings.HasPrefix(key, family) {
+				fields[key] = struct{}{}
+			}
+		}
+	}
+	return fields
 }
 
 func toSet(items ...string) map[string]struct{} {

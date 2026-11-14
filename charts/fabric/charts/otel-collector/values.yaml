@@ -231,6 +231,39 @@ fabric:
     # agt-<32 hex>). `clear` is the counterpart of agents running
     # FABRIC_IDENTITY_MODE=clear; you guarantee the ids hold no personal data.
     identityMode: pseudonymous
+  # Mapping of security-context telemetry from emitters that use their own
+  # attribute names (spec 057 §4.5): a gateway, policy service or approval
+  # system that already emits OpenTelemetry. Off by default. When enabled the
+  # Node runs the fabricmap processor directly before fabricguard: a span or
+  # log record that matches a rule of YOUR mapping profile is rewritten to
+  # Fabric's neutral fabric.control.* / fabric.grant.* / fabric.hook.* /
+  # fabric.extension.* / fabric.mcp.* keys, every attribute the profile does
+  # not map is dropped, and the identifiers it names become keyed pseudonyms.
+  # Records that match no rule are untouched. The chart and the image hold no
+  # profile: you write one (the profile schema is in the repository under
+  # contracts/capture/v1/schema) and supply it as a ConfigMap. Not available
+  # together with receiver.sourceBindings.
+  mapping:
+    enabled: false
+    # Your mapping profile: an existing ConfigMap in the release namespace and
+    # the key holding the profile JSON. Mounted read-only at
+    # /etc/fabric/mapping/profile.json. Leave name empty to run
+    # genaiSourceKeys alone.
+    profileConfigMap:
+      name: ""
+      key: profile.json
+    # The agents' id key (the same bytes as their FABRIC_WIRE_ID_KEY, with no
+    # trailing newline), as an existing Secret. Required when the profile
+    # pseudonymises an identifier or genaiSourceKeys is set, so the ids join
+    # the agents' own records. Mounted as a file, never an env var or a value.
+    idKeySecret:
+      name: ""
+      key: key
+    # Accept the OpenTelemetry GenAI semantic-convention keys of this one
+    # pinned version as sources on records that already use the neutral keys
+    # (gen_ai.tool.call.id, gen_ai.operation.name). The only supported value
+    # is "1.42.0"; empty turns it off. They are never written as Fabric keys.
+    genaiSourceKeys: ""
 
 # OTLP/HTTP egress target.
 #

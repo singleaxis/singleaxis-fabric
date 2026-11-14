@@ -311,7 +311,18 @@ func TestShippedHelmProductionProfilePassesTheGate(t *testing.T) {
 		"--set", "otel-collector.networkPolicy.contentEgress.ports[0].protocol=TCP",
 		"--set", "otel-collector.networkPolicy.contentEgress.ports[0].port=443",
 	}
-	for name, args := range map[string][]string{"telemetry": base, "content": append(append([]string{}, base...), content...)} {
+	// Spec 057 §4.5: the chart's mapping values render fabricmap directly
+	// before the guard with the guard's binding.
+	mapping := []string{
+		"--set", "otel-collector.fabric.mapping.enabled=true",
+		"--set", "otel-collector.fabric.mapping.profileConfigMap.name=gateway-mapping",
+		"--set", "otel-collector.fabric.mapping.idKeySecret.name=fabric-id-key",
+	}
+	for name, args := range map[string][]string{
+		"telemetry": base,
+		"content":   append(append([]string{}, base...), content...),
+		"mapping":   append(append([]string{}, base...), mapping...),
+	} {
 		t.Run(name, func(t *testing.T) {
 			out, err := exec.Command("helm", args...).CombinedOutput()
 			if err != nil {
@@ -336,6 +347,9 @@ func TestShippedHelmProductionProfilePassesTheGate(t *testing.T) {
 			}
 			if production, err := declaredProduction(renderedCollectorConfig(t, out)); err != nil || !production {
 				t.Fatalf("render does not declare the production profile: %v", err)
+			}
+			if name == "mapping" && !strings.Contains(text, "- fabricmap\n") {
+				t.Fatalf("the mapping render does not wire fabricmap:\n%s", text)
 			}
 		})
 	}

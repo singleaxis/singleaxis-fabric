@@ -1,0 +1,119 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "neutral-emitter"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "neutral-emitter"
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1763164800008000000",
+              "eventName": "refund.approval",
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "approved by jane.doe@example.com"
+              },
+              "attributes": [
+                {
+                  "key": "event_class",
+                  "value": {
+                    "stringValue": "security_context"
+                  }
+                },
+                {
+                  "key": "fabric.control.kind",
+                  "value": {
+                    "stringValue": "approval"
+                  }
+                },
+                {
+                  "key": "fabric.control.phase",
+                  "value": {
+                    "stringValue": "resolution"
+                  }
+                },
+                {
+                  "key": "fabric.control.decision",
+                  "value": {
+                    "stringValue": "allow"
+                  }
+                },
+                {
+                  "key": "fabric.control.gated_tool_call_id",
+                  "value": {
+                    "stringValue": "p-9f86d081884c7d659a2feaa0c55ad015"
+                  }
+                },
+                {
+                  "key": "fabric.control.authentication",
+                  "value": {
+                    "stringValue": "unverified_caller_report"
+                  }
+                },
+                {
+                  "key": "fabric.control.enforced_by_fabric",
+                  "value": {
+                    "boolValue": false
+                  }
+                },
+                {
+                  "key": "user.email",
+                  "value": {
+                    "stringValue": "jane.doe@example.com"
+                  }
+                }
+              ]
+            },
+            {
+              "timeUnixNano": "1763164800009000000",
+              "eventName": "refund.approval",
+              "attributes": [
+                {
+                  "key": "event_class",
+                  "value": {
+                    "stringValue": "security_context"
+                  }
+                },
+                {
+                  "key": "fabric.control.kind",
+                  "value": {
+                    "stringValue": "approval"
+                  }
+                },
+                {
+                  "key": "fabric.control.decision",
+                  "value": {
+                    "stringValue": "allow"
+                  }
+                },
+                {
+                  "key": "fabric.control.enforced_by_fabric",
+                  "value": {
+                    "boolValue": true
+                  }
+                },
+                {
+                  "key": "fabric.control.authentication",
+                  "value": {
+                    "stringValue": "verified"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

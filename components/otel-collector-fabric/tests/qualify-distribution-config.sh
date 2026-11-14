@@ -99,6 +99,28 @@ else
   config_root="${runtime}"
 fi
 
+# Spec 057 §4.5: a throwaway mapping profile, written here because no
+# artifact ships one. Starting the artifact proves the built fabricmap
+# processor loads a profile of the published schema.
+cat >"${runtime}/mapping-profile.json" <<'EOF'
+{
+  "schema_version": "fabric.otlp-mapping-profile/v1",
+  "profile_id": "qualify-config",
+  "profile_version": 1,
+  "rules": [
+    {
+      "match": {"span_name": "qualify.check"},
+      "record": "control",
+      "map": [
+        {"source": "qualify.result", "target": "fabric.control.decision",
+         "values": [{"from": "ok", "to": "allow"}]}
+      ]
+    }
+  ]
+}
+EOF
+chmod 0644 "${runtime}/mapping-profile.json"
+
 cat >"${runtime}/config.yaml" <<EOF
 extensions:
   health_check:
@@ -159,6 +181,9 @@ processors:
   memory_limiter:
     check_interval: 1s
     limit_mib: 128
+  # Spec 057 §4.5: the mapping processor, directly before the guard.
+  fabricmap:
+    profile_file: ${config_root}/mapping-profile.json
   fabricguard:
     event_class_attribute: event_class
     drop_unknown_classes: true
@@ -217,7 +242,7 @@ service:
       exporters: [otlp_http/fabric]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, fabricguard]
+      processors: [memory_limiter, fabricmap, fabricguard]
       exporters: [otlp_http/fabric]
     logs/content:
       receivers: [otlp/content]
@@ -279,6 +304,8 @@ for processor in fabricguard; do
   count="$(grep -o "${processor}" "${runtime}/config.yaml" | wc -l | tr -d ' ')"
   [[ "${count}" -ge 3 ]] || fail "${processor} is not configured and wired into both pipelines"
 done
+grep -qF 'processors: [memory_limiter, fabricmap, fabricguard]' "${runtime}/config.yaml" \
+  || fail "fabricmap is not wired directly before fabricguard in the traces pipeline"
 
 if [[ "${mode}" == "image" ]]; then
   container_name="fabric-config-test-${RANDOM}-${RANDOM}"
@@ -364,7 +391,11 @@ content_violation_configs() {
   # J4: the OTLP/HTTP exporter without the noredirect middleware.
   printf 'exporters:\n  otlp_http/fabric:\n    middlewares: []\n' \
     >"${dir}/bad-redirect.yaml"
-  chmod 0644 "$1" "${dir}"/bad-content-*.yaml "${dir}/bad-redirect.yaml"
+  # Spec 057 §4.5: the mapping processor after the guard could re-introduce
+  # values the guard removed.
+  printf 'service:\n  pipelines:\n    traces:\n      processors: [memory_limiter, fabricguard, fabricmap]\n' \
+    >"${dir}/bad-mapping-order.yaml"
+  chmod 0644 "$1" "${dir}"/bad-content-*.yaml "${dir}/bad-redirect.yaml" "${dir}/bad-mapping-order.yaml"
 }
 
 # The shipped image's fabric-gate entrypoint must refuse configurations the
@@ -448,6 +479,8 @@ if [[ "${mode}" == "image" ]]; then
     "is not a literal mapping" --config=/fabric-config-test/bad-content-block.yaml
   gate_expect_refusal "${container_name}-redirect" "an OTLP/HTTP exporter without the noredirect middleware" \
     "does not list the noredirect middleware" --config=/fabric-config-test/bad-redirect.yaml
+  gate_expect_refusal "${container_name}-mapping-order" "the mapping processor after fabricguard" \
+    "must run fabricmap directly before fabricguard" --config=/fabric-config-test/bad-mapping-order.yaml
   # Diagnostics identify sources by position and never echo them: a
   # malformed inline yaml: source carrying an Authorization header.
   gate_expect_refusal "${container_name}-inline-secret" "a malformed inline config source" \
@@ -502,10 +535,12 @@ elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
     --config="${runtime}/bad-content-block.yaml"
   gate_expect_refusal_bin "an OTLP/HTTP exporter without the noredirect middleware" "does not list the noredirect middleware" \
     --config="${runtime}/bad-redirect.yaml"
+  gate_expect_refusal_bin "the mapping processor after fabricguard" "must run fabricmap directly before fabricguard" \
+    --config="${runtime}/bad-mapping-order.yaml"
   gate_expect_refusal_bin "a malformed inline config source" "--config #2 is not a valid YAML mapping" \
     '--config=yaml:exporters: {otlp_http/x: {headers: {Authorization: "Bearer QUALIFY_SECRET"}'
   printf '%s PASS: fabric-gate binary refused unprotected pipelines, content misrouting, split tenants, unreadable content blocks, missing redirect refusal, credential URLs, unsafe token material and --set overrides without echoing sources\n' "${prefix}"
 fi
 
-printf '%s PASS: recorder artifact accepted mTLS ingress, protection, durable OTLP/HTTP export and the content path\n' "${prefix}"
+printf '%s PASS: recorder artifact accepted mTLS ingress, attribute mapping, protection, durable OTLP/HTTP export and the content path\n' "${prefix}"
 printf '%s NOTE: configuration compatibility only; no telemetry delivery was attempted\n' "${prefix}"

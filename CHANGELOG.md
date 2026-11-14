@@ -15,6 +15,33 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Security context from other systems' OpenTelemetry (spec 057 P3a).** A
+  gateway, policy service, approval system or agent runtime that already
+  emits OpenTelemetry can report grants, control decisions, hook outcomes and
+  extensions to the Fabric Node. Writing the published `fabric.grant.*`,
+  `fabric.control.*`, `fabric.hook.*`, `fabric.extension.*` and `fabric.mcp.*`
+  attributes on a span, or on a log record with
+  `event_class=security_context`, needs nothing else: the Node keeps each
+  key only with a valid value, refuses a forged
+  `fabric.control.enforced_by_fabric` or `fabric.control.authentication`,
+  and drops everything else. The contract is in
+  `docs/security-context-otlp.md`.
+- **Mapping profiles on the Node (spec 057 P3a, off by default).** An
+  emitter that uses its own attribute names can keep them: you write a
+  mapping profile (`fabric.otlp-mapping-profile/v1`) and the Node's new
+  `fabricmap` processor, directly before `fabricguard`, rewrites matching
+  spans and log records to the neutral keys. Every attribute the profile
+  does not map is dropped, and the ids it names become keyed pseudonyms
+  that join the agents' own records. Helm: `fabric.mapping.enabled`,
+  `fabric.mapping.profileConfigMap`, `fabric.mapping.idKeySecret`. Fabric
+  ships no profile. A profile error stops the Node at startup with the
+  place and the fix; `fabric-gate` refuses `fabricmap` anywhere but
+  directly before `fabricguard`.
+- **OpenTelemetry GenAI keys as sources (spec 057 OD-12).** With
+  `fabric.mapping.genaiSourceKeys: "1.42.0"`, `gen_ai.tool.call.id` and
+  `gen_ai.operation.name` on a neutral control or hook record fill its gated
+  tool call (as a `p-` pseudonym) and gated kind; Fabric never writes them as
+  its own keys.
 - **MCP servers as security context (spec 057 P1, second part).** For an MCP
   server reached over Streamable HTTP, the request and response bodies the
   non-model HTTP hook already records are now read as MCP by

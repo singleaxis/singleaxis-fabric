@@ -55,10 +55,13 @@ jobs:
           - name: typescript-sdk
             path: sdk/typescript
           - name: fabric-node
-            # Go-module scan for the only first-party processor in the image.
+            # Go-module scan for the guard processor of the image.
             # The assembled OCB dependency graph is scanned on the built image
             # in recorder-ci.yml.
             path: components/otel-collector-fabric/processor/fabricguardprocessor
+          - name: mapping-processor
+            # Spec 057 §4.5: the Node's attribute mapping processor.
+            path: components/otel-collector-fabric/processor/fabricmapprocessor
           - name: audit-receiver
             path: components/otel-collector-fabric/receiver/auditreceiver
           - name: content-exporter
@@ -110,6 +113,7 @@ jobs:
           sdk/python/src/fabric
           sdk/typescript/src
           components/otel-collector-fabric/processor/fabricguardprocessor
+          components/otel-collector-fabric/processor/fabricmapprocessor
           components/otel-collector-fabric/receiver/auditreceiver
           components/otel-collector-fabric/exporter/fabriccontentexporter
           components/otel-collector-fabric/extension/noredirectextension
@@ -147,6 +151,7 @@ jobs:
             --lockfile=sdk/python/uv.lock
             --lockfile=sdk/typescript/package-lock.json
             --lockfile=components/otel-collector-fabric/processor/fabricguardprocessor/go.mod
+            --lockfile=components/otel-collector-fabric/processor/fabricmapprocessor/go.mod
             --lockfile=components/otel-collector-fabric/receiver/auditreceiver/go.mod
             --lockfile=components/otel-collector-fabric/exporter/fabriccontentexporter/go.mod
             --lockfile=components/otel-collector-fabric/extension/noredirectextension/go.mod

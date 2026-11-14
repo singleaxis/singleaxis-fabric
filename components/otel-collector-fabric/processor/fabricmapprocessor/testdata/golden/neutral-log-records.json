@@ -1,0 +1,4 @@
+[
+  {"name":"fabric.activity","attributes":{"event_class":"security_context","fabric.control.authentication":"unverified_caller_report","fabric.control.decision":"allow","fabric.control.enforced_by_fabric":false,"fabric.control.gated_tool_call_id":"p-9f86d081884c7d659a2feaa0c55ad015","fabric.control.kind":"approval","fabric.control.phase":"resolution"}},
+  {"name":"fabric.activity","attributes":{"event_class":"security_context","fabric.control.decision":"allow","fabric.control.kind":"approval"}}
+]
