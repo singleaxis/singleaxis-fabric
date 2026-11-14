@@ -87,7 +87,9 @@ describe("loading", () => {
   it("loads the module whose digest matches, once per file", () => {
     const { dir, file } = prebuildsWith(build.release);
     const digests = { [build.target]: sha256(file) };
-    const first = loadNative({ prebuildsDir: dir, digests, selfTestDir: privateDir("selftest") });
+    const spool = privateDir("selftest");
+    const first = loadNative({ prebuildsDir: dir, digests, selfTestDir: spool });
+    rmSync(spool, { recursive: true, force: true });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
     expect(first.target).toBe(build.target);
