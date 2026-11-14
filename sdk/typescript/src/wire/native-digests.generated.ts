@@ -9,4 +9,6 @@ export const NATIVE_DIGESTS: Readonly<Record<string, string>> = {
   "linux-arm64-glibc": "da41894a43fd05a5b1c460145a9a719a5a3dc3fac5bf7d638f1f6b0147f008fe",
   "linux-x64-musl": "2b19cd2596420e9fd4f01329d7004d2cfbee009031d8b815c5a25eaada98a667",
   "linux-arm64-musl": "ca12a12fd42d7140275c5be52204b9183b1508593b3657592ce3e11d0a0fc464",
+  "darwin-x64": "6d7dfc54bfc625f402a0830ff175360b2ff04ad64ee974f675e6bc346cbc0a85",
+  "darwin-arm64": "58fadcf5ca6ee9d4ee99413ed237c19d9358a1ac68e9503db7fc1757a6d19249",
 };
