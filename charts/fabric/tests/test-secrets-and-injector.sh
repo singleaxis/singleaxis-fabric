@@ -114,12 +114,8 @@ render --set preset=local --set 'agentNamespaces={agents}' --set secretsJob.enab
 check "${tmp}/no-job.yaml" "assert not kinds('Job') and not kinds('Role')"
 
 # A production preset alone generates the Node's own material.
-render --set preset=production "${production[@]}" \
+render --set preset=production "${production[@]}" --values "${here}/fixtures/production-assertions.yaml" \
   --set otel-collector.receiver.workloadAuthentication.tenantId=acme-prod \
-  --set otel-collector.receiver.workloadAuthentication.workloadId=agent \
-  --set otel-collector.receiver.workloadAuthentication.sourceId=s-c5aedfd8a3ee415e277e335bf1517ff4 \
-  --set otel-collector.receiver.workloadAuthentication.identityAttestationRef=review \
-  --set otel-collector.receiver.workloadAuthentication.tokenSecret.name=token \
   --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.a=b' \
   --set otel-collector.content.enabled=true --set otel-collector.content.backend=s3 \
   --set otel-collector.content.s3.bucket=acme-content --set otel-collector.content.s3.region=eu-west-1 \

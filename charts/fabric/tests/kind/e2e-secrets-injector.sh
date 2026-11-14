@@ -112,7 +112,7 @@ jq -e '[.spec.containers[0].env[] | select(.name == "FABRIC_WIRE_ENDPOINTS")] | 
   || fail "the pod's own FABRIC_WIRE_ENDPOINTS was duplicated or replaced"
 jq -e '.spec.volumes | map(.name) | (index("fabric-secrets") and index("fabric-spool") and index("fabric-autoload"))' \
   <<<"${pod}" >/dev/null || fail "the injected volumes are missing"
-grep -q '"installed": true' "${tmp}/agent-python.log" || { cat "${tmp}/agent-python.log" >&2; fail "capture is not installed in the injected pod"; }
+grep -q '"capture": "enabled"' "${tmp}/agent-python.log" || { cat "${tmp}/agent-python.log" >&2; fail "capture is not installed in the injected pod"; }
 deadline=$((SECONDS + 60))
 until kubectl -n "${ns}" logs -l app.kubernetes.io/name=otel-collector --tail=-1 | grep -Eq 'spans"?: [1-9]'; do
   (( SECONDS < deadline )) || fail "no span reached the Node from the injected agent"

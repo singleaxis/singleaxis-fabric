@@ -190,3 +190,15 @@ SHA-256 digests of those test keys that the vectors expect. They are
 cross-language test vectors, never a deployment or service key. Only these exact
 commit/path/rule/line fingerprints are baselined; the squash merge of PR #305
 gets its own entry when it lands.
+
+## Spec 058 E2a chart render test source id (2026-11-15)
+
+The spec 058 E2a feature branch (PR #311) added
+`charts/fabric/tests/test-secrets-and-injector.sh`, which first rendered a
+production chart with `--set` of the render-only source id that
+`charts/fabric/tests/fixtures/production-assertions.yaml` already holds. The scan
+flags that line (rule `generic-api-key`) in the feature-branch commit `63f7326…`,
+line 120. A source id is the public `s-` pseudonym the Node binds a batch to, not
+a credential, and this one names no live resource. A later commit on the branch
+reads it from the fixture file instead, so the squash merge does not carry the
+line. Only this exact commit/path/rule/line fingerprint is baselined.
