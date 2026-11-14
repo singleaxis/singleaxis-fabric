@@ -1,10 +1,12 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Driver of the I4 (no phone-home) tests for ``fabric init``, ``up`` and ``down``.
+"""Driver of the I4 (no phone-home) tests for every E1 command: ``init``, ``up``, ``run``,
+``verify``, ``show``, ``doctor`` and ``down``.
 
-Runs the three commands in this process with every socket use recorded by an audit hook,
+Runs the commands in this process with every socket use recorded by an audit hook,
 against a fake ``docker`` command and a fake Fabric Node (a loopback TLS server with the
-certificate ``init`` generated). Prints one JSON line: exit codes, every connection
+certificate ``init`` generated, which writes what it receives into the project's data
+directory as the Node and the local-dir sink do). Prints one JSON line: exit codes, every connection
 attempt, every name lookup, and the ``docker`` commands issued.
 
 ``--netns``: the caller started this process in a fresh network namespace, whose only
@@ -14,6 +16,7 @@ command that needed anything else would fail."""
 from __future__ import annotations
 
 import fcntl
+import gzip
 import http.server
 import json
 import os
@@ -73,6 +76,27 @@ class _FakeNode(http.server.ThreadingHTTPServer):
         self.server_name, self.server_port = "localhost", self.server_address[1]
 
 
+def _node_handler(data_dir: Path) -> type[http.server.BaseHTTPRequestHandler]:
+    from fabric.cli import _localsink  # noqa: PLC0415
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            if self.headers.get("Content-Encoding") == "gzip":
+                body = gzip.decompress(body)
+            if self.path in _localsink.ROUTES:
+                _localsink.store(data_dir, self.path, body)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-protobuf")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    return Handler
+
+
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -80,7 +104,7 @@ def _free_port() -> int:
         return port
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str]) -> int:  # noqa: PLR0915 - one statement per command it drives
     work = Path(argv[0])
     netns = "--netns" in argv
     if netns:
@@ -127,11 +151,18 @@ def main(argv: list[str]) -> int:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(secrets / "secrets" / "node.crt", secrets / "secrets" / "node.key")
-    server = _FakeNode(("127.0.0.1", port), http.server.BaseHTTPRequestHandler)
+    server = _FakeNode(("127.0.0.1", port), _node_handler(project / "fabric-data"))
     server.socket = context.wrap_socket(server.socket, server_side=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     codes["up"] = fabric(["up", "--quiet", "--wait", "20"])
     codes["up again"] = fabric(["up", "--quiet", "--wait", "20"])
+    # The agent is a child (--no-exec keeps this process for the remaining commands); its
+    # own connections are the SDK's, to the configured Node.
+    codes["run"] = fabric(["run", "--no-exec", "--quiet", "--", sys.executable, "-c", "pass"])
+    codes["verify --canary-only"] = fabric(["verify", "--canary-only", "--quiet", "--wait",
+                                            "30"])  # fmt: skip
+    codes["show --list"] = fabric(["show", "--list", "--quiet"])
+    codes["doctor"] = fabric(["doctor", "--quiet"])
     codes["down"] = fabric(["down", "--quiet"])
     codes["down --purge"] = fabric(["down", "--purge", "--quiet"])
     server.shutdown()

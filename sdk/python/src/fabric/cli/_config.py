@@ -15,6 +15,7 @@ every variable that overrides the file, so an old shell export is never a hidden
 from __future__ import annotations
 
 import difflib
+import json
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -368,7 +369,19 @@ def _env_bool(text: str) -> bool:
 
 
 def _env_list(text: str) -> list[str]:
-    return [item.strip() for item in text.split(",") if item.strip()]
+    """A host list from the environment: the SDK's form, a JSON array of strings
+    (``FABRIC_WIRE_HTTP_HOSTS``), or a comma-separated list. A JSON value of another shape
+    is one entry as written, so the host check names it instead of dropping it."""
+    stripped = text.strip()
+    if stripped.startswith("["):
+        try:
+            value = json.loads(stripped)
+        except ValueError:
+            return [stripped]
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            return [item.strip() for item in value if item.strip()]
+        return [stripped]
+    return [item.strip() for item in stripped.split(",") if item.strip()]
 
 
 SETTINGS: tuple[Setting, ...] = (

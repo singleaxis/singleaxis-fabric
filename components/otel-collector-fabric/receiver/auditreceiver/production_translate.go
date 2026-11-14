@@ -100,13 +100,17 @@ func (r *auditReceiver) hostEvent(ev *auditEvent) (hostrecords.Event, hostOutcom
 		}
 	case "file":
 		fp := ""
-		if p := ev.find(recPath); p != nil {
+		if p := openedPath(ev); p != nil {
 			fp = p.fields["name"]
 		}
 		pathMissing = fp == ""
 		if digests && fp != "" {
 			out.PathSHA256 = sha256Hex(fp)
 		}
+		// Spec 057 §4.3 (WP7-11, parity with the eBPF emitter): the label of
+		// a watched path, applied here; the record carries the label, the
+		// class and the entry's keyed id, never the path.
+		out.Watch = r.watch.Match(auditPathName(fp))
 	}
 	switch {
 	case pathMissing && argsMissing:
@@ -117,6 +121,39 @@ func (r *auditReceiver) hostEvent(ev *auditEvent) (hostrecords.Event, hostOutcom
 		out.Incomplete = "args"
 	}
 	return out, hostRecord
+}
+
+// openedPath is the PATH record of the file an open named. An open that
+// creates the file logs its directory first (nametype=PARENT) and the file
+// after it (nametype=CREATE), so the first record that is not a PARENT is
+// the file; without one, the first record.
+func openedPath(ev *auditEvent) *auditRecord {
+	all := ev.findAll(recPath)
+	for _, p := range all {
+		if p.fields["nametype"] != "PARENT" {
+			return p
+		}
+	}
+	if len(all) > 0 {
+		return all[0]
+	}
+	return nil
+}
+
+// auditPathName is a PATH record's name as the process passed it: auditd
+// writes a name with a space, quote or control byte as unquoted hex, and
+// any other as quoted text (which the parser unquotes). A clear name of an
+// absolute path starts with '/', which is not a hex digit; "(null)" and a
+// name that does not decode give "", which matches nothing.
+func auditPathName(raw string) string {
+	if raw == "" || raw[0] == '/' {
+		return raw
+	}
+	b, err := hex.DecodeString(raw)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func sha256Hex(s string) string {

@@ -19,7 +19,7 @@ import (
 func TestTranslateExecHashesArgv(t *testing.T) {
 	argv := []byte("/tmp/agent-tool\x00--token\x00supersecret")
 	e := &event{
-		Type: evExec, TsNs: 1726000000000000000, Pid: 42, Ppid: 10,
+		Type: evExec, TsNs: 1726000000000000000, Pid: 42, Ppid: 10, Result: resultSuccess,
 		Comm: "agent-tool", Filename: "/tmp/agent-tool", Argv: argv,
 	}
 	lr := translate(e)

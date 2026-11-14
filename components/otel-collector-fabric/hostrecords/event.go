@@ -18,9 +18,9 @@ import (
 // JSON field names are the Go field names (the replay command's events file).
 type Event struct {
 	TimeUnixNano   uint64     // wall-clock nanoseconds; start = end of the span
-	Class          string     // exec, connect, file
-	Syscall        string     // execve, execveat, connect, accept, bind, socket, openat, open
-	Result         string     // success, failed, unknown
+	Class          string     // exec, connect, file, exit (spec 057 OD-13: a process exit)
+	Syscall        string     // execve, execveat, connect, accept, bind, socket, openat, open; empty for exit
+	Result         string     // success, failed, unknown (always unknown for exit: no syscall returned)
 	Errno          string     // an errno name; kept only when Result is failed; unknown names are "other"
 	Pid            int64      // init-namespace tgid, >= 1
 	Ppid           *int64     // init-namespace tgid of the real parent
@@ -41,7 +41,20 @@ type Event struct {
 	ExeSHA256      string     // bare 64 hex (a "sha256:" prefix is removed); only when digests are permitted
 	ArgvSHA256     string
 	PathSHA256     string
+
+	// Spec 057 OD-13 (053 §6.2.3 amendment). ExitCode and Signal are a
+	// process exit's status (class exit only): the exit code of a normal
+	// exit, or the signal that killed it; unknown and zero stay distinct.
+	ExitCode *int64
+	Signal   *int64
+	// Watch is the customer's watched_paths entry an open matched (class
+	// file only; Watch.Match in the sensor's user space): the label and class
+	// are emitted, the entry's path only as its keyed pth- id, never clear.
+	Watch *WatchedPath
 }
+
+// classExit is a process exit (sched_process_exit): no syscall, no result.
+const classExit = "exit"
 
 var syscallClass = map[string]string{
 	"execve": "exec", "execveat": "exec",
@@ -63,6 +76,7 @@ var (
 	errEventSyscall = errors.New("hostrecords: syscall is not one of the event class")
 	errEventResult  = errors.New("hostrecords: result must be success, failed or unknown")
 	errEventPid     = errors.New("hostrecords: pid must be at least 1")
+	errEventExit    = errors.New("hostrecords: an exit names no syscall, its result is unknown and it carries an exit code or a signal")
 )
 
 // check refuses an event whose required values are wrong; nothing of such a
@@ -73,6 +87,10 @@ func (e *Event) check(classes map[string]bool) error {
 		return errEventTime
 	case !classes[e.Class]:
 		return errEventClass
+	case e.Class == classExit:
+		if e.Syscall != "" || e.Result != "unknown" || (e.ExitCode == nil) == (e.Signal == nil) {
+			return errEventExit
+		}
 	case syscallClass[e.Syscall] != e.Class:
 		return errEventSyscall
 	case e.Result != "success" && e.Result != "failed" && e.Result != "unknown":
@@ -118,7 +136,9 @@ const maxInt64 = int64(^uint64(0) >> 1)
 // the identity keys. Invalid optional values are omitted, never emitted.
 func (s *Source) recordAttributes(m pcommon.Map, e *Event) {
 	m.PutStr("fabric.sensor.event_class", e.Class)
-	m.PutStr("fabric.sensor.syscall", e.Syscall)
+	if e.Class != classExit { // 053 §6.2.3 amendment: an exit names no syscall
+		m.PutStr("fabric.sensor.syscall", e.Syscall)
+	}
 	m.PutStr("fabric.sensor.result", e.Result)
 	if e.Result == "failed" && e.Errno != "" {
 		if errnoNames[e.Errno] {
@@ -152,6 +172,18 @@ func (s *Source) recordAttributes(m pcommon.Map, e *Event) {
 		m.PutStr("fabric.sensor.pod_id", V2("sbx", "k8s-pod:"+e.PodUID, s.cfg.IDKey))
 	}
 	putOptionalUint(m, "fabric.sensor.audit_serial", e.AuditSerial)
+	if e.Class == classExit {
+		putOptionalInt(m, "fabric.sensor.exit_code", e.ExitCode, -2147483648, 2147483647)
+		putOptionalInt(m, "fabric.sensor.signal", e.Signal, 1, 2147483647)
+	}
+	if e.Class == "file" && e.Watch != nil {
+		// The label, class and keyed id only; the path never leaves the sensor.
+		if id := V2("pth", e.Watch.Path, s.cfg.IDKey); id != "" && watchLabel.MatchString(e.Watch.Label) && watchClasses[e.Watch.Class] {
+			m.PutStr("fabric.sensor.watch_label", e.Watch.Label)
+			m.PutStr("fabric.sensor.watch_class", e.Watch.Class)
+			m.PutStr("fabric.sensor.watch_id", id)
+		}
+	}
 	putEnum(m, "fabric.sensor.incomplete", e.Incomplete, "path", "args", "path_and_args")
 	if s.cfg.Digests {
 		for _, d := range [...]struct{ key, value string }{
