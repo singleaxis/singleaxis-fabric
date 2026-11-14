@@ -3360,6 +3360,18 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
     "capture_point_kinds": [
       "S"
     ]
+  },
+  "fabric.sensor.watch_id": {
+    "check": {
+      "type": "string",
+      "pattern": "^pth-[0-9a-f]{32}$"
+    },
+    "placement": [
+      "record"
+    ],
+    "capture_point_kinds": [
+      "S"
+    ]
   }
 };
 
@@ -3449,6 +3461,12 @@ export const CAPTURE_POINT_KINDS: Readonly<Record<string, readonly string[]>> = 
     "I"
   ],
   "host.ebpf": [
+    "S"
+  ],
+  "host.ebpf.exit": [
+    "S"
+  ],
+  "host.ebpf.syscall_result": [
     "S"
   ],
   "host.auditd": [
