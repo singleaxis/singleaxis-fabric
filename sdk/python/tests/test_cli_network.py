@@ -33,7 +33,8 @@ def _drive(prefix: list[str], work: Path, *extra: str) -> dict[str, Any]:
 
 
 def _assert_only_configured_endpoints(outcome: dict[str, Any]) -> None:
-    assert outcome["codes"] == {"init": 0, "up": 0, "up again": 0, "run": 0,
+    assert outcome["codes"] == {"init": 0, "init --kubernetes --render": 0, "up": 0,
+                                "up again": 0, "run": 0,
                                 "verify --canary-only": 0, "show --list": 0, "doctor": 0,
                                 "down": 0, "down --purge": 0}  # fmt: skip
     attempts = outcome["attempts"]

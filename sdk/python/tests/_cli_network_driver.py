@@ -147,6 +147,11 @@ def main(argv: list[str]) -> int:  # noqa: PLR0915 - one statement per command i
     from fabric.cli import main as fabric  # noqa: PLC0415
 
     codes = {"init": fabric(["init", "--quiet"])}
+    # Spec 058 §10.2: rendering Kubernetes Secrets for GitOps touches no cluster and no network.
+    codes["init --kubernetes --render"] = fabric(
+        ["init", "--kubernetes", "--render", str(work / "render"), "--agent-namespace",
+         "agents", "--profile", "production", "--quiet"]
+    )  # fmt: skip
     (secrets,) = (work / "xdg" / "fabric").iterdir()
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
