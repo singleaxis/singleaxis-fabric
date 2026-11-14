@@ -25,11 +25,13 @@ and one directory per session and mode. It exits 1 when any check fails.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import subprocess
 import sys
 import time
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +42,7 @@ from sc_ra1 import check, model  # noqa: E402
 from sc_ra1.harness import BASE_URL_ENV, KEY_ENV, SESSIONS, Harness, Options, Result  # noqa: E402
 
 SDK = HERE.parents[1] / "sdk" / "python"
+CANARY_PLACES = ("telemetry", "spool", "export", "logs")
 B4_GATES = (
     (
         "wire.py.httpx",
@@ -87,15 +90,26 @@ def _safety_rows(name: str) -> list[dict[str, Any]]:
     return out
 
 
-def _load_key() -> None:
+def _load_key() -> str:
+    """The live model key, read from the file ``SC_RA1_MODEL_KEY_FILE`` names (or taken from
+    ``SC_RA1_MODEL_KEY``). The variable is removed from this process's environment, so only
+    the agent process is ever given the key: not the reader, the drain or the B4 gates."""
+    key = os.environ.pop(KEY_ENV, "").strip()
     path = os.environ.get("SC_RA1_MODEL_KEY_FILE")
-    if path and not os.environ.get(KEY_ENV):
-        os.environ[KEY_ENV] = Path(path).read_text(encoding="utf-8").strip()
-    if not os.environ.get(KEY_ENV):
+    if not key and path:
+        try:
+            key = Path(path).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise SystemExit(
+                f"--mode live could not read the model key file SC_RA1_MODEL_KEY_FILE names "
+                f"({type(exc).__name__}); point it at a readable file holding the key"
+            ) from None
+    if not key:
         raise SystemExit(
             f"--mode live needs the model key: set SC_RA1_MODEL_KEY_FILE to a file "
             f"holding it (or {KEY_ENV}); it is never printed"
         )
+    return key
 
 
 def run_b4(out: Path) -> tuple[bool, dict[str, Any]]:
@@ -146,6 +160,20 @@ def b4_rows(found: dict[str, Any]) -> list[dict[str, Any]]:
                 }
             )
     return rows
+
+
+def b4_measured_check(rows: list[dict[str, Any]]) -> check.Check:
+    """Every scenario this run lists has a measured value: a gate that was renamed, skipped
+    or not collected would otherwise pass with nothing measured."""
+    missing = [f"{r['point']}/{r['scenario']}" for r in rows if r["measured_ns"] is None]
+    detail = (
+        f"no measurement for {', '.join(missing)}; the gate's scenarios changed or it did "
+        "not run: update B4_GATES in run_sc_ra1.py to the gate's own BUDGETS and see "
+        "b4-pytest.txt"
+        if missing
+        else ""
+    )
+    return check.Check("b4", "b4.every_scenario_measured", not missing, detail)
 
 
 def _secs(result: Result) -> str:
@@ -200,16 +228,63 @@ def table(
         )
     lines += [
         "",
-        "Privacy canaries (never in clear in telemetry, spool or export; content store "
-        "only inside the bodies of the roles the policy names):",
+        "Privacy canaries (searched in clear in telemetry, the spool, the export and the "
+        "logs of every session; in the content store, the roles whose bodies hold them):",
         "",
     ]
-    for label, roles in sorted(canaries.items()):
-        lines.append(
-            f"- {label}: telemetry no, spool no, export no; store roles: "
-            f"{', '.join(roles) or 'none'}"
+    for label, row in sorted(canaries.items()):
+        places = ", ".join(
+            f"{place} {'FOUND' if place in row['found_in'] else 'no'}" for place in CANARY_PLACES
         )
+        lines.append(f"- {label}: {places}; store roles: {', '.join(row['roles']) or 'none'}")
     return "\n".join(lines) + "\n"
+
+
+def canary_summary(
+    labels: Iterable[str],
+    sessions: Iterable[check.SessionChecks],
+    roles: Mapping[str, Iterable[str]],
+) -> dict[str, dict[str, list[str]]]:
+    """Per canary, where any session's check found it (from the checks themselves, never
+    assumed) and the store roles that hold it."""
+    out: dict[str, dict[str, list[str]]] = {
+        label: {"found_in": [], "roles": sorted(roles.get(label, ()))} for label in labels
+    }
+    for session in sessions:
+        for c in session.checks:
+            label = c.name.removeprefix("canaries.")
+            if c.name.startswith("canaries.") and label in out:
+                found = json.loads(c.detail or "{}").get("found_in", [])
+                out[label]["found_in"] = sorted({*out[label]["found_in"], *found})
+    return out
+
+
+def script_coverage(sessions: Iterable[check.SessionChecks]) -> dict[str, bool]:
+    """Whether each scripted event (spec 057 §10.2) happened at least once, from the ground
+    truth. The provider safety signal must happen once for every provider dialect the run
+    has a safety session for, not once in total."""
+    sessions = list(sessions)
+    dialect = {s.name: s.dialect for s in SESSIONS}
+    safety_dialects = {dialect[s.session] for s in sessions if s.session.startswith("safety-")}
+    signalled = {dialect[s.session] for s in sessions if s.counts["safety"]}
+    return {
+        "offered_set_changes": any(s.counts["offered_grants"] > 1 for s in sessions),
+        "tool_choice_restricted": any(s.counts["tool_choice_restricted"] for s in sessions),
+        "error_flag_fed_back": any(s.counts["f14_wire"] for s in sessions),
+        "three_tools_one_destructive": any(
+            e.get("tools") == 3  # noqa: PLR2004 - spec 057 §10.2 event 4: three tools
+            and (e.get("annotations") or {}).get("destructive") == 1
+            for s in sessions
+            for e in s.truth.extensions
+        ),
+        "tool_list_changes_mid_run": any(s.counts["inventory_changes"] for s in sessions),
+        "elicitation_accept_and_decline": {
+            e.get("action") for s in sessions for e in s.truth.elicitations
+        }
+        >= {"accept", "decline"},
+        "safety_signal_per_provider": bool(safety_dialects) and safety_dialects <= signalled,
+        "unoffered_tool": any(s.counts["f12"] for s in sessions),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
@@ -229,15 +304,14 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
         help="skip the B4 passivity gates (they run in sdk/python CI too)",
     )
     args = parser.parse_args(argv)
-    if args.mode == "live":
-        if not args.base_url:
-            raise SystemExit(
-                f"--mode live needs the model endpoint: pass --base-url URL (an OpenAI and "
-                f"Anthropic compatible base URL ending in /v1) or set {BASE_URL_ENV}"
-            )
-        _load_key()
+    if args.mode == "live" and not args.base_url:
+        raise SystemExit(
+            f"--mode live needs the model endpoint: pass --base-url URL (an OpenAI and "
+            f"Anthropic compatible base URL ending in /v1) or set {BASE_URL_ENV}"
+        )
+    key = _load_key() if args.mode == "live" else ""
     args.out.mkdir(parents=True, exist_ok=True)
-    harness = Harness(Options(mode=args.mode, out=args.out, base_url=args.base_url))
+    harness = Harness(Options(mode=args.mode, out=args.out, base_url=args.base_url, model_key=key))
     names = [n for n in args.sessions.split(",") if n]
     results: dict[str, dict[str, Result]] = {}
     sessions: list[check.SessionChecks] = []
@@ -250,9 +324,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
         if args.mode == "live" and not session.replay_only:
             # the capture-off twin sees the responses the live run received
             harness.replies[name] = [
-                model.Reply(
-                    r["status"], r["content_type"], __import__("base64").b64decode(r["body_b64"])
-                )
+                model.Reply(r["status"], r["content_type"], base64.b64decode(r["body_b64"]))
                 for r in on.ledger
                 if r["event"] == "model_response"
             ]
@@ -277,41 +349,22 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
         )
     if args.record_cassette is not None and args.mode == "live":
         harness.record_cassette([r["on"] for r in results.values()], args.record_cassette)
-    covered = {
-        "offered_set_changes": any(s.counts["offered_grants"] > 1 for s in sessions),
-        "tool_choice_restricted": any(s.counts["tool_choice_restricted"] for s in sessions),
-        "error_flag_fed_back": any(s.counts["f14_wire"] for s in sessions),
-        "three_tools_one_destructive": any(
-            e.get("tools") == 3  # noqa: PLR2004 - spec 057 §10.2 event 4: three tools
-            and (e.get("annotations") or {}).get("destructive") == 1
-            for s in sessions
-            for e in s.truth.extensions
-        ),
-        "tool_list_changes_mid_run": any(s.counts["inventory_changes"] for s in sessions),
-        "elicitation_accept_and_decline": {
-            e.get("action") for s in sessions for e in s.truth.elicitations
-        }
-        >= {"accept", "decline"},
-        "safety_signal_per_provider": sum(s.counts["safety"] for s in sessions)
-        >= len([n for n in names if n.startswith("safety-")])
-        > 0,
-        "unoffered_tool": any(s.counts["f12"] for s in sessions),
-    }
     if set(names) == {s.name for s in SESSIONS}:
-        for event, happened in covered.items():
+        for event, happened in script_coverage(sessions).items():
             extra.append(check.Check("script", f"script.{event}", bool(happened)))
     b4_ok, b4 = (True, {}) if args.no_latency_gate else run_b4(args.out)
     if not args.no_latency_gate:
         extra.append(
             check.Check("b4", "b4.passivity_gates", b4_ok, "see b4-pytest.txt and b4-measured.json")
         )
+        extra.append(b4_measured_check(b4_rows(b4)))
     ok = check.write_report(args.out / "sc-ra1-result.json", sessions, extra)
     text = table(
         results,
         sessions,
         b4_ok,
         b4_rows(b4),
-        {k: sorted(v) for k, v in canary_roles.items()},
+        canary_summary(harness.canaries.needles(), sessions, canary_roles),
         args.mode,
     )
     (args.out / "sc-ra1-table.md").write_text(text)

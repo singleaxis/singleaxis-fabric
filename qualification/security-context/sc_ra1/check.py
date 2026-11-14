@@ -26,7 +26,10 @@ from typing import Any
 from . import truth as gt
 from .harness import ID_KEY, RETAINED_ROLES, Canaries, Result
 
+HTTP_OK = 200
 FORBIDDEN = ("violation", "unauthori", "non-compliant", "breach", "policy failure")
+# the spec 057 §6.3 facts this script produces, each compared with the ground truth below
+CHECKED_FACTS = ("F1", "F2", "F9", "F11", "F12", "F14")
 SECURITY_KINDS = ("grant", "extension", "control", "hook", "mcp_call")
 
 
@@ -80,6 +83,13 @@ def _facts(run: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     return {f["fact"]: f for f in run.get("facts", ())}
 
 
+def _transport(session: Any) -> str:
+    text = str(session or "")
+    if text.startswith("mcps-"):
+        return "stdio"
+    return "http" if text.startswith("hst-") else "unknown"
+
+
 def _multiset(items: Iterable[Any]) -> Counter[str]:
     return Counter(json.dumps(i, sort_keys=True) for i in items)
 
@@ -102,6 +112,25 @@ def check_session(  # noqa: PLR0915 - one block per pass criterion
         result.returncode == 0 and not result.exhausted,
         {"returncode": result.returncode, "exhausted": result.exhausted},
     )
+    # A model endpoint that answered an error ends the loop early; the ledgers and the
+    # records would still agree, so the run must say so itself (live mode: a wrong key, a
+    # cold or failing endpoint).
+    refused = [
+        {"turn": r["turn"], "status": r["status"]}
+        for r in result.ledger
+        if r["event"] == "model_response" and r["status"] != HTTP_OK
+    ]
+    out.add(
+        "model_responses_ok",
+        not refused,
+        {
+            "http_errors": refused,
+            "fix": "the model endpoint refused or failed; check --base-url, the key file "
+            "and that the endpoint is up, then run again",
+        }
+        if refused
+        else "",
+    )
     runs = _runs(result)
     main = [r for r in runs if any(row["kind"] == "model_call" for row in r.get("rows", ()))]
     out.add("one_agent_run", len(main) == 1, {"runs": len(runs), "with_model_calls": len(main)})
@@ -114,7 +143,6 @@ def check_session(  # noqa: PLR0915 - one block per pass criterion
     ]
     out.add("no_security_rows_outside_the_agent_run", not others, others)
     facts = _facts(run)
-    by_n = {row["n"]: row for row in rows if "n" in row}
 
     # -- model calls and offered grants (§4.1, G16) --------------------------------------
     calls = [row for row in rows if row["kind"] == "model_call"]
@@ -224,6 +252,7 @@ def check_session(  # noqa: PLR0915 - one block per pass criterion
             "decision": row.get("decision"),
             "stage": row.get("stage"),
             "reason_code": row.get("reason_code"),
+            "engine": row.get("engine"),
             "join": row.get("link", {}).get("method"),
             "confidence": row.get("link", {}).get("confidence"),
         }
@@ -235,6 +264,7 @@ def check_session(  # noqa: PLR0915 - one block per pass criterion
             "decision": e["decision"],
             "stage": "unknown",
             "reason_code": e.get("reason_code"),
+            "engine": e["server"],
             "join": "mcp_session" if e["phase"] == "request" else "rpc_id",
             "confidence": "certain",
         }
@@ -331,14 +361,37 @@ def check_session(  # noqa: PLR0915 - one block per pass criterion
         sorted(str(r["id"]) for r in found_listed) == sorted(str(g["id"]) for g in want_listed),
         {"records": [r["id"] for r in found_listed], "harness": [g["id"] for g in want_listed]},
     )
+    # the join of an MCP message is its session: a stdio session is the transport hook's
+    # keyed ``mcps-`` id, an HTTP session is the host's ``hst-`` id (revision 3.9 notes 3, 6)
     found_calls = [
-        {"tool": row.get("tool"), "method": row["method"], "outcome": row["outcome"]}
+        {
+            "tool": row.get("tool"),
+            "method": row["method"],
+            "outcome": row["outcome"],
+            "transport": _transport(row.get("session")),
+        }
         for row in mcp_rows
     ]
     want_calls = [
-        {"tool": c["tool"], "method": c.get("method", "tools/call"), "outcome": c["outcome"]}
+        {
+            "tool": c["tool"],
+            "method": c.get("method", "tools/call"),
+            "outcome": c["outcome"],
+            "transport": c["transport"],
+        }
         for c in truth.mcp_calls
     ]
+    # one session per server: the calls of one server share one session id, and two servers
+    # never share one
+    by_session: dict[str, set[str]] = {}
+    for row in mcp_rows:
+        by_session.setdefault(str(row.get("session")), set()).add(_transport(row.get("session")))
+    servers = {c["server"] for c in truth.mcp_calls}
+    out.add(
+        "events.mcp_call_sessions",
+        len(by_session) == len(servers),
+        {"record_sessions": sorted(by_session), "harness_servers": sorted(servers)},
+    )
     out.add(
         "events.mcp_calls",
         _diff(want_calls, found_calls) == {"missing": [], "extra": []},
@@ -365,6 +418,14 @@ def check_session(  # noqa: PLR0915 - one block per pass criterion
         facts.get("F9", {}).get("count", 0) == len(want_ext),
         {"records": facts.get("F9", {}).get("count", 0), "harness": len(want_ext)},
     )
+    # a fact the ground truth has no event for (a pending or denied control, a hook, an OS
+    # refusal, an unmatched or conflicting control) is a record with no ground-truth entry
+    other_facts = {
+        name: fact.get("count")
+        for name, fact in sorted(facts.items())
+        if name not in CHECKED_FACTS and fact.get("count", 1)
+    }
+    out.add("events.no_other_fact", not other_facts, other_facts)
     launch_effects = [row for row in rows if row["kind"] == "effect" and row.get("rule") == "S0"]
     out.add(
         "events.stdio_launch_lifetime_and_exit",
@@ -375,7 +436,6 @@ def check_session(  # noqa: PLR0915 - one block per pass criterion
             "harness_launches": len(truth.launches),
         },
     )
-    del by_n
     return out
 
 
@@ -391,7 +451,8 @@ def check_identity(on: Result, off: Result) -> Check:
 
 def check_canaries(result: Result, canaries: Canaries) -> list[Check]:
     """Telemetry (every delivered record and the raw delivered bytes), the spool (as the
-    agent left it before delivery), the export (the reader's outputs) and the content store
+    agent left it before delivery), the export (the reader's outputs), the logs (what the
+    agent process and the reader printed, Fabric's warnings included) and the content store
     (only inside a body of a role the policy names, never in a descriptor)."""
     checks = []
     sink_dir = result.sink.parent
@@ -417,6 +478,15 @@ def check_canaries(result: Result, canaries: Canaries) -> list[Check]:
                     meta = path.parent / "meta" / f"{path.name}.json"
                     role = json.loads(meta.read_text()).get("role", "?") if meta.exists() else "?"
                 store_hits.setdefault(label, []).append(role)
+    logs = b"".join(
+        path.read_bytes()
+        for path in (
+            result.directory / "agent.stdout",
+            result.directory / "agent.stderr",
+            result.directory / "read" / "reader.stderr",
+        )
+        if path.is_file()
+    )
     for label, needle in canaries.needles().items():
         where = [
             name
@@ -424,6 +494,7 @@ def check_canaries(result: Result, canaries: Canaries) -> list[Check]:
                 ("telemetry", telemetry),
                 ("spool", result.spool_bytes),
                 ("export", export),
+                ("logs", logs),
             )
             if needle.encode() in blob
         ]

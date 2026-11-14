@@ -63,11 +63,24 @@ harness keeps itself.
    with its blocking negative control, pass.
 5. Privacy canaries (a marker in the system prompt, a secret path in the MCP
    roots, a marker in an elicitation message) never appear in telemetry (every
-   delivered record and the delivered bytes), the sealed spool or the export
-   (the report, projection and view). In the content store they appear only
+   delivered record and the delivered bytes), the sealed spool, the export
+   (the report, projection and view) or the logs (what the agent process and
+   the reader printed). In the content store they appear only
    inside the bodies of the roles the capture policy names
    (`model.exchange.request`, `network.*`, `mcp.*`), never in a descriptor.
 6. The reader's output has no evaluative word.
+7. Every model response is HTTP 200. An endpoint that refuses or fails ends
+   the loop early with ledgers and records that still agree, so the session
+   fails by itself (`model_responses_ok`) and names what to check.
+8. The run states no fact the ground truth has no event for
+   (`events.no_other_fact`: for example a pending or denied gated call or an
+   OS refusal), and every B4 scenario the table lists was measured
+   (`b4.every_scenario_measured`).
+
+An MCP call's join is its session: the checks require a stdio server's calls
+under the transport hook's `mcps-` session, an HTTP server's under the host's
+`hst-` session, and one session per server. An elicitation row must name the
+server that asked (`engine`).
 
 ## Run it
 
@@ -94,8 +107,16 @@ SC_RA1_MODEL_KEY_FILE=/path/to/key sdk/python/.venv/bin/python \
   --record-cassette qualification/security-context/sc_ra1/cassette.json
 ```
 
-The key is read from the file and passed to the agent through its environment
-only; it is never printed or written. Each live session's capture-off twin
+The key is read from the file, kept in the harness's memory (it is removed
+from the harness's own environment) and passed to the live agent process
+only: the reader, the spool drain and the B4 gates never get it. It is never
+printed or written. The agent takes the key out of its environment before it
+starts anything, so the tools the model runs (`run_shell`, `python_exec`) and
+the stdio MCP servers never inherit it. The agent is also started without any
+variable of the caller's environment that is named like a credential (`KEY`,
+`TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIAL`, `AUTH`, `COOKIE` in the name): a
+model that runs `env` would otherwise send those to the endpoint and into the
+content store. Each live session's capture-off twin
 replays the responses that session received, so both see the same model
 responses. `--record-cassette` writes those responses as the new cassette; it
 does not write the endpoint's URL.

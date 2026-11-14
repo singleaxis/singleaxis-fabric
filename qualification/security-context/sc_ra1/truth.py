@@ -295,6 +295,7 @@ def _server_truth(  # noqa: PLR0912, PLR0915 - one branch per MCP message kind
                 truth.mcp_calls.append(
                     {
                         "server": server,
+                        "transport": entry["transport"],
                         "tool": message["params"]["name"],
                         "id": message["id"],
                         "outcome": "pending",
@@ -307,6 +308,7 @@ def _server_truth(  # noqa: PLR0912, PLR0915 - one branch per MCP message kind
                     truth.mcp_calls.append(
                         {
                             "server": server,
+                            "transport": entry["transport"],
                             "tool": None,
                             "method": message["method"],
                             "outcome": "notification",

@@ -66,6 +66,20 @@ LOOP_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
 }
 
 
+# The live model key, taken out of the environment in ``main`` before anything is started:
+# the tools the model asks for (``run_shell``, ``python_exec``) and the stdio MCP servers are
+# child processes, and a child that inherited the key could print it into a tool result,
+# and from there into the next request, the outputs file and the content store.
+_MODEL_KEY = ""
+
+
+def take_model_key(plan: Mapping[str, Any], environ: dict[str, str] | None = None) -> str:
+    """Remove the plan's key variable from the environment and return its value."""
+    env = os.environ if environ is None else environ
+    name = plan.get("api_key_env")
+    return env.pop(name, "") if name else ""
+
+
 def _dump(value: Any) -> bytes:
     return json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
@@ -162,7 +176,7 @@ class Model:
         self.url = session["base_url"].rstrip("/") + (
             "/messages" if self.dialect == "anthropic" else "/chat/completions"
         )
-        key = os.environ.get(plan.get("api_key_env") or "", "") if not session.get("replay") else ""
+        key = _MODEL_KEY if not session.get("replay") else ""
         self.headers = {"content-type": "application/json"}
         if self.dialect == "anthropic":
             self.headers.update({"anthropic-version": "2023-06-01", "x-api-key": key or "replay"})
@@ -568,7 +582,9 @@ async def _mcp_loop(
 
 
 def main(argv: Sequence[str]) -> int:
+    global _MODEL_KEY  # noqa: PLW0603 - set once, before any child process exists
     plan = json.loads(Path(argv[1]).read_text(encoding="utf-8"))
+    _MODEL_KEY = take_model_key(plan)
     ledger = Ledger(Path(plan["ledger"]))
     outputs = Outputs()
     timing: dict[str, float] = {}

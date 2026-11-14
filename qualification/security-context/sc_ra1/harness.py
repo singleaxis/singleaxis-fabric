@@ -204,6 +204,7 @@ class Options:
     cassette: Path = replay.CASSETTE
     record_cassette: Path | None = None
     base_url: str = ""
+    model_key: str = ""  # live: given to the agent process only, never printed or written
     latency_gate: bool = True
     log: Callable[[str], None] = print
 
@@ -270,6 +271,26 @@ def write_workspace(directory: Path) -> Path:
     ):
         os.utime(path, (FIXED_MTIME, FIXED_MTIME))
     return directory
+
+
+# The agent runs the commands a model asks for (``run_shell``, ``python_exec``), and a live
+# model's request bodies leave the machine and are retained in the content store. So the
+# agent, and with it every tool it starts, is not given the caller's credentials: a
+# variable whose name carries one of these marks is left out, with capture on and off alike.
+SECRET_MARKS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "AUTH", "COOKIE")
+
+
+def agent_environment(environ: Mapping[str, str]) -> dict[str, str]:
+    """The caller's environment for the agent process: no Fabric, OpenTelemetry or harness
+    variable (the harness sets its own), no ``PYTHONPATH`` and no variable named like a
+    credential."""
+    return {
+        k: v
+        for k, v in environ.items()
+        if not k.startswith(("FABRIC_", "OTEL_", "SC_RA1_"))
+        and k != "PYTHONPATH"
+        and not any(mark in k.upper() for mark in SECRET_MARKS)
+    }
 
 
 def autoload_path() -> str:
@@ -474,16 +495,10 @@ class Harness:
         http_hosts: str,
         otlp: str,
     ) -> dict[str, str]:
-        env = {
-            k: v
-            for k, v in os.environ.items()
-            if not k.startswith(("FABRIC_", "OTEL_", "SC_RA1_")) and k != "PYTHONPATH"
-        }
+        env = agent_environment(os.environ)
         env["PYTHONUNBUFFERED"] = "1"
-        if self.o.mode == "live" and not session.replay_only:
-            key = os.environ.get(KEY_ENV)
-            if key:
-                env[KEY_ENV] = key
+        if self.o.mode == "live" and not session.replay_only and self.o.model_key:
+            env[KEY_ENV] = self.o.model_key
         if not capture:
             return env
         env.update(
@@ -535,6 +550,7 @@ class Harness:
             "FABRIC_WIRE_SHUTDOWN_TIMEOUT_S": str(EXIT_BUDGET_S),
             "FABRIC_RUN_ID": "sc-ra1-drain",
         }
+        drain.pop(KEY_ENV, None)  # the drain talks to the sink only
         drain.pop("FABRIC_WIRE_EXEC", None)
         drain.pop("FABRIC_WIRE_MCP", None)
         subprocess.run(
@@ -567,7 +583,7 @@ class Harness:
         out.mkdir(exist_ok=True)
         report, projection = out / "report.json", out / "projection.json"
         base = [sys.executable, "-m", "fabric.reconstruct"]
-        subprocess.run(
+        summary = subprocess.run(
             [
                 *base,
                 "--spans",
@@ -580,6 +596,7 @@ class Harness:
             ],
             env=env,
             capture_output=True,
+            text=True,
             check=False,
             timeout=300,
         )
@@ -601,11 +618,13 @@ class Harness:
         )
         (out / "actions.json").write_text(actions.stdout)
         (out / "actions.txt").write_text(view.stdout)
-        (out / "reader.stderr").write_text(actions.stderr + view.stderr)
+        # every reader call's stderr: it is named in a failure and searched by the canaries
+        (out / "reader.stderr").write_text(summary.stderr + actions.stderr + view.stderr)
         if not report.exists() or not actions.stdout.strip():
             raise RuntimeError(
                 f"{result.session.name}: the reader failed: "
-                f"{(actions.stderr or view.stderr)[-2000:]}"
+                f"{(summary.stderr or actions.stderr or view.stderr)[-2000:]}; see "
+                f"{out / 'reader.stderr'}"
             )
         result.report = json.loads(report.read_text())
         result.projection = json.loads(projection.read_text())
