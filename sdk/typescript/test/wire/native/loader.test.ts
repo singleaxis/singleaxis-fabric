@@ -80,6 +80,8 @@ function expectDisabled(result: NativeLoad, reason: NativeDisabledReason): Nativ
     expect(text).not.toMatch(/[0-9a-f]{64}/);
   }
   expect(Object.isFrozen(off)).toBe(true);
+  if (reason !== "native_selftest_failed") expect(off.failedStep).toBeUndefined();
+  else expect(off.failedStep).toMatch(/^[A-Za-z-]+=[A-Z_]+$/);
   return off;
 }
 
@@ -223,7 +225,15 @@ describe("each disabled reason", () => {
     try {
       process.env.FABRIC_WIRE_TEST_FAULT = "flock=ignore";
       const options = { prebuildsDir: dir, digests: { [build.target]: sha256(file) } };
-      expectDisabled(loadNative({ ...options, selfTestDir: spool }), "native_selftest_failed");
+      const off = expectDisabled(
+        loadNative({ ...options, selfTestDir: spool }),
+        "native_selftest_failed",
+      );
+      // The second handle got the lock too: the step and what it returned are named.
+      expect(off.failedStep).toBe("flock-second-handle=UNEXPECTED_RESULT");
+      expect(off.message).toContain("file locks or shared mappings do not work");
+      expect(off.message).toContain("self-test step flock-second-handle=UNEXPECTED_RESULT");
+      expect(off.fix).toContain("local disk");
       expect(readdirSync(spool)).toEqual([]);
       // Without a self-test directory the same module loads: only install runs the test.
       expect(loadNative(options).ok).toBe(true);
@@ -234,16 +244,20 @@ describe("each disabled reason", () => {
     }
   });
 
+  // Each failure names its own cause and fix: a full disk is not a filesystem without locks.
   it.each([
-    ["recordLock=EOPNOTSUPP", "record locks are unsupported"],
-    ["mapShared=EOPNOTSUPP", "shared mappings are unsupported"],
-    ["allocate=ENOSPC", "the disk is full"],
-  ])("native_selftest_failed: %s (%s)", (fault) => {
+    ["recordLock=EOPNOTSUPP", "recordLock=UNSUPPORTED", "do not work in the spool", "local disk"],
+    ["mapShared=EOPNOTSUPP", "mapShared=UNSUPPORTED", "do not work in the spool", "local disk"],
+    ["allocate=ENOSPC", "allocate=NO_SPACE", "no free space or quota", "free space"],
+    ["allocate=EDQUOT", "allocate=QUOTA", "no free space or quota", "free space"],
+    ["openFile=EMFILE", "openFile=LIMIT", "handles are all in use", "restart the process"],
+    ["openDir=EACCES", "openDir=PERMISSION", "not owned by this user", "mode 0700"],
+  ])("native_selftest_failed: %s is reported as %s", (fault, failedStep, cause, fix) => {
     const { dir, file } = prebuildsWith(build.faults);
     const spool = privateDir("selftest");
     try {
       process.env.FABRIC_WIRE_TEST_FAULT = fault;
-      expectDisabled(
+      const off = expectDisabled(
         loadNative({
           prebuildsDir: dir,
           digests: { [build.target]: sha256(file) },
@@ -251,6 +265,10 @@ describe("each disabled reason", () => {
         }),
         "native_selftest_failed",
       );
+      expect(off.failedStep).toBe(failedStep);
+      expect(off.message).toContain(cause);
+      expect(off.message).toContain(`self-test step ${failedStep}`);
+      expect(off.fix).toContain(fix);
       expect(readdirSync(spool)).toEqual([]);
     } finally {
       rmSync(spool, { recursive: true, force: true });
@@ -263,11 +281,21 @@ describe("each disabled reason", () => {
     const shared = privateDir("selftest");
     try {
       chmodSync(shared, 0o755);
-      expectDisabled(loadNative({ ...options, selfTestDir: shared }), "native_selftest_failed");
-      expectDisabled(
+      const open = expectDisabled(
+        loadNative({ ...options, selfTestDir: shared }),
+        "native_selftest_failed",
+      );
+      expect(open.failedStep).toBe("openDir=UNSAFE_PATH");
+      const absent = expectDisabled(
         loadNative({ ...options, selfTestDir: join(shared, "absent") }),
         "native_selftest_failed",
       );
+      expect(absent.failedStep).toBe("openDir=NOT_FOUND");
+      for (const off of [open, absent]) {
+        expect(off.message).toContain("missing, is not owned by this user or is open to other");
+        expect(off.fix).toContain("mode 0700");
+        expect(off.fix).not.toContain("NFS"); // moving the spool would not help
+      }
     } finally {
       rmSync(shared, { recursive: true, force: true });
     }

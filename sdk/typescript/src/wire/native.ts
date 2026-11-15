@@ -152,6 +152,11 @@ export interface NativeDisabled {
   readonly message: string;
   /** What to do about it. */
   readonly fix: string;
+  /**
+   * For `native_selftest_failed`: the self-test step that failed and the fixed code name
+   * it returned, as `step=CODE` (for example `allocate=NO_SPACE`). Never a path.
+   */
+  readonly failedStep?: string;
 }
 
 export type NativeLoad = NativeLoaded | NativeDisabled;
@@ -201,16 +206,57 @@ const REASON_DETAIL: Readonly<Record<NativeDisabledReason, readonly [string, str
   ],
 };
 
-function disabled(reason: NativeDisabledReason): NativeDisabled {
+/** The self-test step that failed and what it returned. */
+interface SelfTestFailure {
+  readonly step: string;
+  /** A fixed code name, or `UNEXPECTED_RESULT` for a non-negative value that is wrong. */
+  readonly code: NativeCodeName | "UNEXPECTED_RESULT";
+}
+
+/**
+ * The cause and fix of a failed self-test, by what failed. A full disk, a missing or
+ * shared directory and an exhausted handle table are not filesystems without locks, and
+ * are not fixed by moving the spool.
+ */
+function selfTestDetail(failure: SelfTestFailure): readonly [string, string] {
+  const { step, code } = failure;
+  if (code === "NO_SPACE" || code === "QUOTA") {
+    return [
+      "the spool filesystem has no free space or quota left for the 4 KiB probe file",
+      "free space (or raise the quota) on the filesystem that holds FABRIC_WIRE_SPOOL_DIR",
+    ];
+  }
+  if (
+    step === "openDir" &&
+    (code === "NOT_FOUND" || code === "UNSAFE_PATH" || code === "PERMISSION")
+  ) {
+    return [
+      "the spool directory is missing, is not owned by this user or is open to other users",
+      "create FABRIC_WIRE_SPOOL_DIR as a directory (not a symlink) owned by the agent's user with mode 0700",
+    ];
+  }
+  if (code === "LIMIT") {
+    return [
+      "the module's descriptor or mapping handles are all in use in this process",
+      "restart the process; if it loads Fabric in many worker threads, install capture once, from the main thread",
+    ];
+  }
+  return REASON_DETAIL.native_selftest_failed;
+}
+
+function disabled(reason: NativeDisabledReason, failure?: SelfTestFailure): NativeDisabled {
   const reasonId = reason === "platform_unsupported" ? "FW-027" : "FW-028";
   const entry = CATALOGUE.find((row) => row.id === reasonId);
-  const [detail, fix] = REASON_DETAIL[reason];
+  const [detail, fix] = failure === undefined ? REASON_DETAIL[reason] : selfTestDetail(failure);
+  const failedStep = failure === undefined ? undefined : `${failure.step}=${failure.code}`;
+  const where = failedStep === undefined ? "" : `; self-test step ${failedStep}`;
   return Object.freeze({
     ok: false as const,
     reason,
     reasonId,
-    message: `${entry?.text ?? "model-call capture is off"} (${reason}: ${detail})`,
+    message: `${entry?.text ?? "model-call capture is off"} (${reason}: ${detail}${where})`,
     fix: fix === "" ? (entry?.fix ?? "") : `${fix}; or: ${entry?.fix ?? ""}`,
+    ...(failedStep === undefined ? {} : { failedStep }),
   });
 }
 
@@ -280,37 +326,53 @@ function hasExactExports(value: unknown): value is NativeAddon {
  * The install self-test (spec 055 §4.4): two handles on one file, where an exclusive
  * `flock` on the first must make the second `WOULD_BLOCK`; then a `recordLock` and a
  * `mapShared` store/load round trip must succeed. Removes its file and closes its
- * descriptors whatever happens.
+ * descriptors whatever happens. Returns `null` when it passed, or the step that failed.
  */
-function selfTest(addon: NativeAddon, dir: string): boolean {
+function selfTest(addon: NativeAddon, dir: string): SelfTestFailure | null {
   const name = `.fabric-selftest-${process.pid}-${randomBytes(6).toString("hex")}`;
   const probe = 0x0fab01c0ffee0001n;
   let dirHandle = -1;
   let first = -1;
   let second = -1;
+  const failed = (step: string, result: number | bigint): SelfTestFailure => ({
+    step,
+    code: Number(result) < 0 ? nativeCodeName(result) : "UNEXPECTED_RESULT",
+  });
   try {
     dirHandle = addon.openDir(dir);
-    if (dirHandle <= 0) return false;
+    if (!(dirHandle > 0)) return failed("openDir", dirHandle);
     first = addon.openFile(dirHandle, name, true);
-    second = first > 0 ? addon.openFile(dirHandle, name, false) : -1;
-    if (first <= 0 || second <= 0) return false;
-    if (addon.flock(first, FLOCK_EXCLUSIVE) !== NativeCode.OK) return false;
-    if (addon.flock(second, FLOCK_EXCLUSIVE) !== NativeCode.WOULD_BLOCK) return false;
-    if (addon.flock(first, FLOCK_UNLOCK) !== NativeCode.OK) return false;
-    if (addon.recordLock(first, 0n, 1n, RECORD_WRITE) !== NativeCode.OK) return false;
-    if (addon.recordLock(first, 0n, 1n, RECORD_UNLOCK) !== NativeCode.OK) return false;
-    if (addon.allocate(first, 4096n) !== NativeCode.OK) return false;
+    if (!(first > 0)) return failed("openFile", first);
+    second = addon.openFile(dirHandle, name, false);
+    if (!(second > 0)) return failed("openFile", second);
+    let result: number | bigint = addon.flock(first, FLOCK_EXCLUSIVE);
+    if (result !== NativeCode.OK) return failed("flock", result);
+    result = addon.flock(second, FLOCK_EXCLUSIVE);
+    if (result !== NativeCode.WOULD_BLOCK) return failed("flock-second-handle", result);
+    result = addon.flock(first, FLOCK_UNLOCK);
+    if (result !== NativeCode.OK) return failed("flock", result);
+    result = addon.recordLock(first, 0n, 1n, RECORD_WRITE);
+    if (result !== NativeCode.OK) return failed("recordLock", result);
+    result = addon.recordLock(first, 0n, 1n, RECORD_UNLOCK);
+    if (result !== NativeCode.OK) return failed("recordLock", result);
+    result = addon.allocate(first, 4096n);
+    if (result !== NativeCode.OK) return failed("allocate", result);
     const map = addon.mapShared(first, 4096);
-    if (map <= 0) return false;
+    if (!(map > 0)) return failed("mapShared", map);
     const stored = addon.store64(map, 8, probe);
     const loaded = addon.load64(map, 8);
     const onDisk = new Uint8Array(8);
     const read = addon.pread(first, onDisk, 8n);
     addon.retire(map);
-    if (stored !== NativeCode.OK || loaded !== probe || read !== 8) return false;
-    return new DataView(onDisk.buffer).getBigUint64(0, endianness()) === probe;
+    if (stored !== NativeCode.OK) return failed("store64", stored);
+    if (loaded !== probe) return failed("load64", loaded);
+    if (read !== 8) return failed("pread", read);
+    if (new DataView(onDisk.buffer).getBigUint64(0, endianness()) !== probe) {
+      return { step: "pread", code: "UNEXPECTED_RESULT" };
+    }
+    return null;
   } catch {
-    return false;
+    return { step: "exception", code: "OTHER" };
   } finally {
     try {
       if (first > 0) unlinkSync(join(dir, name));
@@ -379,7 +441,8 @@ export function loadNative(options: NativeLoadOptions = {}): NativeLoad {
     if (options.selfTestDir !== undefined) {
       const tested = `${key}\0${options.selfTestDir}`;
       if (!selfTested.has(tested)) {
-        if (!selfTest(addon, options.selfTestDir)) return disabled("native_selftest_failed");
+        const failure = selfTest(addon, options.selfTestDir);
+        if (failure !== null) return disabled("native_selftest_failed", failure);
         selfTested.add(tested);
       }
     }
