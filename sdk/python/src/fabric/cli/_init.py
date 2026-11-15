@@ -711,8 +711,10 @@ def run_kubernetes(
         generator.run()
     findings = list(generator.findings)
     for outcome in generator.outcomes:
-        about = ", ".join(outcome.keys) + (
-            f"; {outcome.fingerprint}" if outcome.fingerprint else ""
+        about = (
+            ", ".join(outcome.keys)
+            + (f"; {outcome.fingerprint}" if outcome.fingerprint else "")
+            + (f"; valid until {outcome.expires[:10]}" if outcome.expires else "")
         )
         lines.append(f"{outcome.action} Secret {outcome.namespace}/{outcome.name} ({about})")
     if isinstance(store, _kube.RenderStore):
@@ -720,6 +722,10 @@ def run_kubernetes(
         lines.append(
             f"apply with: kubectl create -f {store.where} --recursive "
             "(create, not apply: apply copies each Secret into an annotation)"
+        )
+        lines.append(
+            "note: these files hold the secret values in clear; encrypt them with your "
+            "GitOps tool's own means before they reach a repository"
         )
     if plan.injector and not options.in_cluster:
         findings.append(Finding("FC-107", f"{plan.namespace}/{plan.name('ca')}"))

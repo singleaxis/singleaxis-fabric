@@ -611,6 +611,37 @@ the caBundle.
 Fix: use lowercase letters, digits and '-' (at most 63 characters for a namespace); a source label
 may also use '.', '_' and ':'.
 
+### FC-110
+
+`kube_agent_secret_unusable`, error: an agent namespace's existing Secret holds no ingest credential
+or id key this setup can read, so the namespace's ingress Secret cannot be made and the Node, which
+reads it, would not start.
+
+Fix: delete the agent Secret the message names (kubectl delete secret -n AGENT-NAMESPACE NAME) and
+run the command again, or run helm upgrade again; the agent Secret and its ingress Secret are then
+generated together (a new id key changes the namespace's pseudonyms; restart its agents).
+
+### FC-111
+
+`kube_certificate_expiring`, warning: a certificate in a Secret expires within 14 days; Secrets are
+never overwritten, so it is not renewed by itself.
+
+Fix: delete the Node's or the injector's Secret the message names and run the command again (helm
+upgrade runs the secrets Job): a new certificate is issued from the same CA; then restart the Node
+if it was its own. For an agent Secret or the CA Secret follow 'Certificate renewal' in
+docs/deployment.md.
+
+### FC-112
+
+`kube_certificate_expired`, error: a certificate in a Secret has expired, so the connections it
+secures fail: agents cannot deliver to the Node, or the injector's webhook is skipped and pods start
+without capture.
+
+Fix: delete the Node's or the injector's Secret the message names and run the command again (helm
+upgrade runs the secrets Job): a new certificate is issued from the same CA; then restart the Node
+if it was its own. For an agent Secret or the CA Secret follow 'Certificate renewal' in
+docs/deployment.md.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001

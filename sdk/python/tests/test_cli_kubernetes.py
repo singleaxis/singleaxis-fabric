@@ -13,6 +13,7 @@ their cause and fix."""
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import json
 import re
 import stat
@@ -28,7 +29,7 @@ from cryptography.x509.oid import ExtendedKeyUsageOID
 
 from fabric import cli
 from fabric._sequence import label_pseudonym
-from fabric.cli import _kube
+from fabric.cli import _kube, _secrets
 from fabric.cli._report import CliError
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
@@ -640,6 +641,13 @@ def test_in_cluster_outside_a_pod_says_so() -> None:
     assert "inside a pod" in (caught.value.findings[0].detail or "")
 
 
+def test_in_cluster_without_a_service_account_token_says_so(tmp_path: Path) -> None:
+    with pytest.raises(CliError) as caught:
+        _kube.InClusterStore({"KUBERNETES_SERVICE_HOST": "10.0.0.1"}, sa_dir=tmp_path)
+    assert caught.value.findings[0].id == "FC-103"
+    assert "automountServiceAccountToken: true" in (caught.value.findings[0].detail or "")
+
+
 def test_an_unreachable_api_server_is_fc_103() -> None:
     def refuse(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused", request=request)
@@ -648,3 +656,144 @@ def test_an_unreachable_api_server_is_fc_103() -> None:
     with pytest.raises(CliError) as caught:
         _kube.Generator(_plan(), _kube.InClusterStore({}, client=client)).run()
     assert (caught.value.findings[0].id, caught.value.exit_code) == ("FC-103", 3)
+
+
+# ---------------------------------------------------------------- review: expiry, unusable
+
+
+def _later(monkeypatch: pytest.MonkeyPatch, days: int) -> None:
+    moved = _secrets._now() + dt.timedelta(days=days)
+    monkeypatch.setattr(_secrets, "_now", lambda: moved)
+
+
+def test_a_new_certificate_reports_when_it_expires_and_no_finding() -> None:
+    store = MemoryStore()
+    generator = _kube.Generator(_plan(production=True, injector=True), store)
+    outcomes = {o.name: o for o in generator.run()}
+    assert not generator.findings
+    for name in ("fabric-ca", "fabric-node-receiver-tls", "fabric-injector-tls", "fabric-agent"):
+        shown = outcomes[name].to_json()
+        assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", shown["expires"]), name
+        assert shown["fingerprint"].startswith("sha256:")
+    # A Secret without a certificate has neither.
+    assert "expires" not in outcomes["fabric-ingress-agents"].to_json()
+
+
+def test_a_kept_certificate_close_to_expiry_is_a_warning_naming_the_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = MemoryStore()
+    _kube.Generator(_plan(production=True, injector=True), store).run()
+    before = {key: dict(value) for key, value in store.secrets.items()}
+    _later(monkeypatch, _secrets.LEAF_VALID_DAYS - _secrets.RENEW_BEFORE_DAYS + 1)
+    generator = _kube.Generator(_plan(production=True, injector=True), store)
+    generator.run()
+    assert store.secrets == before  # never renewed in place: a Secret is never overwritten
+    assert {f.id for f in generator.findings} == {"FC-111"}
+    assert all(f.severity == "warning" for f in generator.findings)
+    details = sorted(f.detail or "" for f in generator.findings)
+    assert [d.split(",")[0] for d in details] == [
+        "agents/fabric-agent tls.crt",
+        "fabric-system/fabric-injector-tls tls.crt",
+        "fabric-system/fabric-node-receiver-tls tls.crt",
+    ]
+    assert all(re.search(r", valid until \d{4}-\d\d-\d\d$", d) for d in details)
+
+
+def test_an_expired_certificate_is_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = MemoryStore()
+    _kube.Generator(_plan(), store).run()
+    _later(monkeypatch, _secrets.LEAF_VALID_DAYS + 1)
+    generator = _kube.Generator(_plan(), store)
+    generator.run()
+    assert [(f.id, f.severity) for f in generator.findings] == [("FC-112", "error")]
+    assert (generator.findings[0].detail or "").startswith(
+        "fabric-system/fabric-node-receiver-tls tls.crt, valid until "
+    )
+
+
+def test_deleting_an_expired_node_certificate_issues_a_new_one_from_the_same_ca(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fix FC-111 and FC-112 give, end to end."""
+    store = MemoryStore()
+    _kube.Generator(_plan(), store).run()
+    ca = dict(store.secrets[("fabric-system", "fabric-ca")])
+    old = store.secrets.pop(("fabric-system", "fabric-node-receiver-tls"))
+    _later(monkeypatch, _secrets.LEAF_VALID_DAYS + 1)
+    generator = _kube.Generator(_plan(), store)
+    generator.run()
+    assert not generator.findings
+    new = store.secrets[("fabric-system", "fabric-node-receiver-tls")]
+    assert new["tls.crt"] != old["tls.crt"] and new["ca.crt"] == ca["ca.crt"]
+    assert store.secrets[("fabric-system", "fabric-ca")] == ca
+    issued = x509.load_pem_x509_certificate(new["tls.crt"])
+    issued.verify_directly_issued_by(x509.load_pem_x509_certificate(ca["ca.crt"]))
+
+
+def test_a_secret_that_holds_no_certificate_has_no_expiry_and_no_finding() -> None:
+    store = MemoryStore()
+    store.secrets[("fabric-system", "fabric-node-receiver-tls")] = {
+        "tls.crt": b"not a certificate",
+        "tls.key": b"x",
+    }
+    generator = _kube.Generator(_plan(), store)
+    outcomes = {o.name: o for o in generator.run()}
+    assert not generator.findings
+    assert outcomes["fabric-node-receiver-tls"].to_json() == {
+        "namespace": "fabric-system",
+        "name": "fabric-node-receiver-tls",
+        "action": "kept",
+        "keys": ["tls.crt", "tls.key"],
+    }
+
+
+def test_an_agent_secret_without_a_credential_stops_a_production_setup() -> None:
+    """A namespace first set up for a local Node, then moved to a production one: its
+    Secret has no ingest credential, so no ingress Secret can match it and the Node,
+    which reads that Secret when it starts, would wait in CreateContainerConfigError."""
+    store = MemoryStore()
+    _kube.Generator(_plan(), store).run()
+    agent = dict(store.secrets[("agents", "fabric-agent")])
+    generator = _kube.Generator(_plan(production=True), store)
+    generator.run()
+    assert store.secrets[("agents", "fabric-agent")] == agent
+    assert ("fabric-system", "fabric-ingress-agents") not in store.secrets
+    by_id = {f.id: f for f in generator.findings}
+    assert set(by_id) == {"FC-104", "FC-110"}
+    assert by_id["FC-110"].severity == "error"
+    assert by_id["FC-110"].detail == (
+        "agents/fabric-agent (ingress Secret fabric-system/fabric-ingress-agents not made)"
+    )
+    # The fix it names works: delete the agent Secret, run again.
+    del store.secrets[("agents", "fabric-agent")]
+    again = _kube.Generator(_plan(production=True), store)
+    again.run()
+    assert not again.findings
+    assert ("fabric-system", "fabric-ingress-agents") in store.secrets
+
+
+def test_the_unusable_agent_secret_fails_the_command(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "manifests"
+    base = ["init", "--kubernetes", "--agent-namespace", "agents", "--render", str(out)]
+    assert _json(base, capsys)["exit_code"] == 0
+    report = _json([*base, "--profile", "production"], capsys)
+    assert report["exit_code"] == 1
+    assert {f["id"] for f in report["findings"]} == {"FC-104", "FC-110"}
+    assert not (out / "fabric-system" / "secret-fabric-ingress-agents.yaml").exists()
+
+
+def test_render_says_the_files_hold_values_in_clear_and_shows_expiry(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "manifests"
+    assert (
+        cli.main(["init", "--kubernetes", "--agent-namespace", "agents", "--render", str(out)]) == 0
+    )
+    text, _ = capsys.readouterr()
+    assert "hold the secret values in clear" in text
+    assert re.search(
+        r"created Secret fabric-system/fabric-ca \(.*; valid until \d{4}-\d\d-\d\d\)", text
+    )

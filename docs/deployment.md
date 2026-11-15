@@ -516,9 +516,16 @@ It adds, and changes nothing else:
 - the namespace's `fabric-agent` Secret, read-only at
   `/var/run/fabric/secrets`, and a spool volume at `/var/lib/fabric`
   (`emptyDir` with `injector.spool.sizeLimit`, or the claim `fabric-spool`
-  with the annotation `fabric.singleaxis.ai/spool: pvc`; a one-shot pod
-  with an `emptyDir` spool can lose what it did not deliver before it
-  ended);
+  with the annotation `fabric.singleaxis.ai/spool: pvc`, which you create
+  before the pod: a pod that names a missing claim waits for it; a one-shot
+  pod with an `emptyDir` spool can lose what it did not deliver before it
+  ended). With the `emptyDir`, the SDK's own spool bound
+  (`FABRIC_WIRE_SPOOL_MAX_BYTES`) is set to a quarter of
+  `injector.spool.sizeLimit` (256 MiB of the default `1Gi`; the limit must
+  be `512Mi` or more): the kubelet evicts a pod whose `emptyDir` passes its
+  limit, so the spool stops well under it and a long Node outage costs
+  spooled records, never the agent's pod. Set the bound yourself with
+  `injector.env.FABRIC_WIRE_SPOOL_MAX_BYTES`;
 - for `python`: a standard-library `sitecustomize.py` (a ConfigMap) on
   `PYTHONPATH` with `FABRIC_WIRE_AUTOLOAD=1`. It hands over to the Fabric
   SDK **in your image** (add `singleaxis-fabric[otlp]` to its dependencies)
@@ -547,8 +554,37 @@ image variables), so give that value in the annotation
 a container takes through `envFrom` cannot be read at admission: a
 `FABRIC_*` variable set that way is overridden, so set it in `env`.
 
+Kubernetes selects pods for a webhook by label, not by annotation, so every
+pod created in a labelled namespace passes through the webhook; one without
+the annotation is answered unchanged. To keep such pods away from it
+altogether, give your agent pods a label and set `injector.objectSelector`
+to it.
+
+A GitOps tool that renders the chart itself (`helm template`) cannot read
+the generated CA, and may reset the `caBundle` the post-install Job wrote:
+set `injector.caBundle` to the `ca.crt` entry of the `fabric-ca` Secret's
+data (`fabric init --kubernetes --injector` names it, `FC-107`).
+
 Without the injector, `fabric run --print-env --format k8s` prints an
 environment and volume patch to apply yourself.
+
+### Certificate renewal
+
+Generated leaf certificates are valid 90 days and the CA 2 years. A Secret
+is never overwritten, so nothing renews a certificate by itself. Every run
+of the generator (each `helm upgrade`, or `fabric init --kubernetes`) prints
+each certificate's last day, warns within 14 days of it (`FC-111`) and
+fails once it has passed (`FC-112`; a failed `helm upgrade` changes
+nothing). A warning inside a successful hook Job is deleted with the Job:
+run `fabric init --kubernetes` with the release's flags from a workstation
+to see the dates, or read a certificate's dates yourself.
+
+| Certificate | Renew it |
+|---|---|
+| Node (`fabric-node-receiver-tls`) | `kubectl delete secret -n fabric-system fabric-node-receiver-tls`, then `helm upgrade` with your values (or `fabric init --kubernetes` with the same flags), then restart the Node's pods. Agents keep working: they trust the CA. |
+| Injector (`fabric-injector-tls`) | Delete the Secret and upgrade the same way. The injector reads the new certificate by itself within a few minutes. While it is expired, pods start uncaptured. |
+| Agent client certificate (`tls.crt` in `fabric-agent`, production) | The Secret also holds the namespace's id key and ingest credential. Either replace `tls.crt` and `tls.key` in it with a client certificate you issue from the CA in `fabric-ca` (the Secret is yours to edit; Fabric never changes it), which keeps the id key; or delete `fabric-agent` in the agent namespace **and** `fabric-ingress-<namespace>` in the release namespace and upgrade: both are generated again together, with a new id key, so the namespace's pseudonyms change from then on (keep the old `id.key` for reading earlier records). Then restart the Node and the namespace's agents. |
+| CA (`fabric-ca`) | Delete `fabric-ca`, every Secret above and `fabric-node-client-ca`, upgrade, and restart the Node and every agent. |
 
 ### Worked example: host sensors and content
 

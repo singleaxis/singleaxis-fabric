@@ -38,9 +38,14 @@ it never makes, applies, waits for or returns one.
 - **A worked production example** with host sensors and content delivery to
   an S3-compatible store behind a private CA:
   `charts/fabric/examples/production-host-sensor-content.yaml`.
-- New diagnostics `FC-100` to `FC-109` say what went wrong with Kubernetes
+- New diagnostics `FC-100` to `FC-112` say what went wrong with Kubernetes
   Secrets (no kubectl, missing namespace, no permission, API unreachable, an
-  incomplete or orphaned Secret) and how to fix it.
+  incomplete, orphaned or unusable Secret, a certificate that expires soon
+  or has expired) and how to fix it. Generated certificates show their last
+  day; "Certificate renewal" in `docs/deployment.md` says how to renew each.
+- An injected pod's spool stops at a quarter of its `emptyDir` limit
+  (`injector.spool.sizeLimit`, `512Mi` or more), so a spool that fills while
+  the Node is away never gets the pod evicted.
 - **Get started with your own Python agent.**
   [docs/get-started/python.md](docs/get-started/python.md) is one install
   and three commands: `pip install "singleaxis-fabric[cli]"`, `fabric up`,

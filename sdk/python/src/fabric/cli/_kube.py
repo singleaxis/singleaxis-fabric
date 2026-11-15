@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import datetime as dt
 import hashlib
 import json
 import re
@@ -319,7 +320,20 @@ class InClusterStore:
                 import httpx  # noqa: PLC0415
             except ImportError:
                 raise CliError([Finding("FC-005", "httpx is not installed")], EXIT_USAGE) from None
-            token = (sa_dir / "token").read_text(encoding="utf-8").strip()
+            try:
+                token = (sa_dir / "token").read_text(encoding="utf-8").strip()
+            except OSError as exc:
+                raise CliError(
+                    [
+                        Finding(
+                            "FC-103",
+                            f"the pod's service account token cannot be read "
+                            f"({type(exc).__name__}): --in-cluster needs "
+                            "automountServiceAccountToken: true",
+                        )
+                    ],
+                    EXIT_PREREQUISITE,
+                ) from None
             address = f"[{host}]" if ":" in host else host
             client = httpx.Client(
                 base_url=f"https://{address}:{port}",
@@ -448,6 +462,7 @@ class Outcome:
     action: str  # created, kept, incomplete
     keys: tuple[str, ...]
     fingerprint: str | None = None
+    expires: str | None = None  # the certificate's last valid moment (UTC), §7.2
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -458,18 +473,22 @@ class Outcome:
         }
         if self.fingerprint:
             out["fingerprint"] = self.fingerprint
+        if self.expires:
+            out["expires"] = self.expires
         return out
 
 
-def _fingerprint(cert_pem: bytes) -> str | None:
+def _certificate(cert_pem: bytes) -> tuple[str, dt.datetime] | None:
+    """A certificate as the CLI may show it: its fingerprint and when it expires. None for
+    bytes that are not a certificate (a Secret the operator filled with something else)."""
     try:
         api = _secrets._crypto()
-        der = api.x509.load_pem_x509_certificate(cert_pem).public_bytes(
-            api.serialization.Encoding.DER
-        )
+        certificate = api.x509.load_pem_x509_certificate(cert_pem)
+        der = certificate.public_bytes(api.serialization.Encoding.DER)
+        expires: dt.datetime = certificate.not_valid_after_utc
     except (ValueError, CliError):
         return None
-    return "sha256:" + hashlib.sha256(der).hexdigest()
+    return "sha256:" + hashlib.sha256(der).hexdigest(), expires
 
 
 class Generator:
@@ -518,9 +537,25 @@ class Generator:
                     Finding("FC-104", f"{namespace}/{name} lacks " + ", ".join(missing))
                 )
         cert = data.get(fingerprint_key) if fingerprint_key else None
+        shown = _certificate(cert) if cert else None
+        fingerprint, expires = shown if shown else (None, None)
+        if expires is not None:
+            # Secrets are never overwritten, so nothing here renews a certificate: say when
+            # one is about to stop working, and stop when it already has (§7.3).
+            left = expires - _secrets._now()
+            what = f"{namespace}/{name} {fingerprint_key}, valid until {expires:%Y-%m-%d}"
+            if left <= dt.timedelta(0):
+                self.findings.append(Finding("FC-112", what))
+            elif left <= dt.timedelta(days=_secrets.RENEW_BEFORE_DAYS):
+                self.findings.append(Finding("FC-111", what))
         self.outcomes.append(
             Outcome(
-                namespace, name, action, tuple(sorted(data)), _fingerprint(cert) if cert else None
+                namespace,
+                name,
+                action,
+                tuple(sorted(data)),
+                fingerprint,
+                f"{expires:%Y-%m-%dT%H:%M:%SZ}" if expires else None,
             )
         )
         return data
@@ -668,7 +703,17 @@ class Generator:
         agent_token = _token_from_headers(data.get("headers"))
         id_key = data.get("id.key")
         if agent_token is None or not id_key:
-            # FC-104 already names the agent Secret's missing keys.
+            # FC-104 names the agent Secret's missing keys, but it is a warning and the Node
+            # reads this ingress Secret when it starts: without it the Node's pod waits in
+            # CreateContainerConfigError. Stop here (the hook Job fails before Helm changes
+            # anything) and name the Secret to regenerate.
+            self.findings.append(
+                Finding(
+                    "FC-110",
+                    f"{agent.name}/{plan.name('agent')} (ingress Secret "
+                    f"{plan.namespace}/{ingress_name} not made)",
+                )
+            )
             return
         node_side = {
             "token": agent_token.encode("ascii"),
