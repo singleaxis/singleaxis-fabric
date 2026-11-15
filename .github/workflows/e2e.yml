@@ -462,7 +462,10 @@ jobs:
           version: v3.15.0
       - name: Secrets Job, injector and webhook outage
         if: needs.detect.outputs.relevant == 'true'
-        run: bash charts/fabric/tests/kind/e2e-secrets-injector.sh
+        run: |
+          export KUBECONFIG="${RUNNER_TEMP}/kubeconfig"
+          kind get kubeconfig --name "${KIND_CLUSTER}" > "${KUBECONFIG}"
+          bash charts/fabric/tests/kind/e2e-secrets-injector.sh
       - name: Diagnostics
         if: failure() && needs.detect.outputs.relevant == 'true'
         run: |
