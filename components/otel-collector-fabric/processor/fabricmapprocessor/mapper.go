@@ -49,6 +49,32 @@ type mapStats struct {
 	attributesDropped atomic.Uint64 // attributes outside the profile
 	valuesUnmapped    atomic.Uint64 // a mapped source whose value was not usable
 	sourcesAccepted   atomic.Uint64 // semantic-convention source keys translated
+	unboundDropped    atomic.Uint64 // unmatched, classless log records removed on a bound ingress
+	warned            atomic.Bool   // the one-time unusable-value warning was logged
+}
+
+// tally is what one batch did, for the batch's debug line.
+type tally struct{ mapped, attributesDropped, valuesUnmapped, sourcesAccepted, unboundDropped uint64 }
+
+func (s *mapStats) tally() tally {
+	return tally{s.mapped.Load(), s.attributesDropped.Load(), s.valuesUnmapped.Load(), s.sourcesAccepted.Load(), s.unboundDropped.Load()}
+}
+
+// report logs what a batch did, as counts only (never a name or a value), so
+// an operator can see a profile matching nothing or dropping what it maps.
+func (m *mapper) report(signal string, before tally) {
+	after := m.stats.tally()
+	if after == before {
+		return
+	}
+	m.logger.Debug("fabricmap: mapping applied",
+		zap.String("signal", signal),
+		zap.Uint64("records_mapped", after.mapped-before.mapped),
+		zap.Uint64("attributes_dropped", after.attributesDropped-before.attributesDropped),
+		zap.Uint64("values_not_usable", after.valuesUnmapped-before.valuesUnmapped),
+		zap.Uint64("genai_sources_accepted", after.sourcesAccepted-before.sourcesAccepted),
+		zap.Uint64("unbound_log_records_dropped", after.unboundDropped-before.unboundDropped),
+	)
 }
 
 type mapper struct {
@@ -61,6 +87,8 @@ type mapper struct {
 }
 
 func (m *mapper) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Traces, error) {
+	before := m.stats.tally()
+	defer m.report("traces", before)
 	resourceSpans := td.ResourceSpans()
 	for ri := 0; ri < resourceSpans.Len(); ri++ {
 		scopeSpans := resourceSpans.At(ri).ScopeSpans()
@@ -75,14 +103,13 @@ func (m *mapper) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trac
 }
 
 func (m *mapper) processLogs(_ context.Context, ld plog.Logs) (plog.Logs, error) {
+	before := m.stats.tally()
+	defer m.report("logs", before)
 	resourceLogs := ld.ResourceLogs()
 	for ri := 0; ri < resourceLogs.Len(); ri++ {
 		scopeLogs := resourceLogs.At(ri).ScopeLogs()
 		for si := 0; si < scopeLogs.Len(); si++ {
-			records := scopeLogs.At(si).LogRecords()
-			for i := 0; i < records.Len(); i++ {
-				m.mapLog(records.At(i))
-			}
+			scopeLogs.At(si).LogRecords().RemoveIf(m.mapLog)
 		}
 	}
 	return ld, nil
@@ -111,10 +138,19 @@ func (m *mapper) mapSpan(span ptrace.Span) {
 	m.acceptGenAISources(attrs)
 }
 
-func (m *mapper) mapLog(record plog.LogRecord) {
+// mapLog maps one log record; true removes it from the batch.
+//
+// On a bound ingress fabricguard refuses a whole logs request when any record
+// in it is not a Fabric log class naming the bound tenant and source. An
+// emitter with its own attribute names sends its other log records in the
+// same request, so the records the profile maps would be lost with them. A
+// record that matches no rule and names no event class is therefore removed
+// here (as fabricguard removes an unbound span); a record that does name a
+// class is left for fabricguard to judge, and to refuse.
+func (m *mapper) mapLog(record plog.LogRecord) (remove bool) {
 	attrs := record.Attributes()
 	if _, capture := attrs.Get(captureInputKey); capture {
-		return
+		return false
 	}
 	if r := m.matchRule("", record.EventName(), attrs); r != nil {
 		m.applyRule(r, attrs)
@@ -126,9 +162,14 @@ func (m *mapper) mapLog(record plog.LogRecord) {
 		record.SetEventName(mappedName)
 		_ = record.Body().FromRaw(nil)
 		record.SetSeverityText("")
-		return
+		return false
+	}
+	if _, classed := attrs.Get(logClassAttribute); !classed && m.binding != nil {
+		m.stats.unboundDropped.Add(1)
+		return true
 	}
 	m.acceptGenAISources(attrs)
+	return false
 }
 
 // matchRule returns the first rule whose name and literal attributes match.
@@ -203,6 +244,14 @@ func (m *mapper) applyRule(r *rule, attrs pcommon.Map) {
 		used++
 		if !m.mapValue(mp, source, out) {
 			m.stats.valuesUnmapped.Add(1)
+			if m.stats.warned.CompareAndSwap(false, true) {
+				// Once per processor. The target is a key of the schema; the
+				// source name and the value are the customer's and stay out.
+				m.logger.Warn("fabricmap: a mapped source attribute held a value the profile cannot use, so its target was left out of the record; "+
+					"list the value in the mapping's values map, or check the attribute's type (an identifier must be a string or an integer; maps and bytes are never copied). "+
+					"Later occurrences are counted in the debug line \"fabricmap: mapping applied\" (values_not_usable)",
+					zap.String("target", mp.Target), zap.String("profile_id", m.profile.ID))
+			}
 		}
 	}
 	for _, s := range r.Set {
@@ -238,8 +287,8 @@ func (m *mapper) mapValue(mp *mapping, source pcommon.Value, out pcommon.Map) bo
 	switch {
 	case mp.Values != nil:
 		for _, entry := range mp.Values {
-			if literalEquals(entry.From, source) {
-				putLiteral(out, mp.Target, entry.To)
+			if literalEquals(*entry.From, source) {
+				putLiteral(out, mp.Target, *entry.To)
 				return true
 			}
 		}
@@ -341,7 +390,7 @@ func (m *mapper) acceptGenAISources(attrs pcommon.Map) {
 				attrs.PutStr(callTarget, id)
 			}
 		}
-		attrs.Remove(genAIToolCallID)
+		removeAll(attrs, genAIToolCallID)
 		m.stats.sourcesAccepted.Add(1)
 	}
 	if !control {
@@ -353,7 +402,13 @@ func (m *mapper) acceptGenAISources(attrs pcommon.Map) {
 				attrs.PutStr("fabric.control.gated_kind", kind)
 			}
 		}
-		attrs.Remove(genAIOperationName)
+		removeAll(attrs, genAIOperationName)
 		m.stats.sourcesAccepted.Add(1)
 	}
+}
+
+// removeAll removes every occurrence of key: Map.Remove stops at the first,
+// and a sender can repeat a key on the wire.
+func removeAll(attrs pcommon.Map, key string) {
+	attrs.RemoveIf(func(candidate string, _ pcommon.Value) bool { return candidate == key })
 }

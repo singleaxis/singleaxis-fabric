@@ -203,7 +203,7 @@ func (l *literal) UnmarshalJSON(data []byte) error {
 		}
 		f, err := v.Float64()
 		if err != nil {
-			return fmt.Errorf("number %s is out of range", v)
+			return errors.New("a number literal is out of range")
 		}
 		*l = literal{kind: 'f', f: f}
 	default:
@@ -212,9 +212,10 @@ func (l *literal) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// valueMap is one entry of a literal value map; both sides are required.
 type valueMap struct {
-	From literal `json:"from"`
-	To   literal `json:"to"`
+	From *literal `json:"from"`
+	To   *literal `json:"to"`
 }
 
 type mapping struct {
@@ -232,9 +233,13 @@ type setValue struct {
 }
 
 type ruleMatch struct {
-	SpanName   string             `json:"span_name"`
-	LogName    string             `json:"log_name"`
+	SpanNameIn *string            `json:"span_name"`
+	LogNameIn  *string            `json:"log_name"`
 	Attributes map[string]literal `json:"attributes"`
+
+	// The one name the rule matches, set by checkRule.
+	SpanName string `json:"-"`
+	LogName  string `json:"-"`
 }
 
 type rule struct {
@@ -246,11 +251,11 @@ type rule struct {
 }
 
 type profileDocument struct {
-	SchemaVersion  string `json:"schema_version"`
-	ProfileID      string `json:"profile_id"`
-	ProfileVersion *int64 `json:"profile_version"`
-	Unmapped       string `json:"unmapped"`
-	Rules          []rule `json:"rules"`
+	SchemaVersion  string  `json:"schema_version"`
+	ProfileID      string  `json:"profile_id"`
+	ProfileVersion *int64  `json:"profile_version"`
+	Unmapped       *string `json:"unmapped"`
+	Rules          []rule  `json:"rules"`
 }
 
 // profile is a loaded, checked mapping profile.
@@ -289,10 +294,12 @@ func parseProfile(data []byte) (*profile, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&doc); err != nil {
-		return nil, profileError("$", "it is not a valid profile document ("+err.Error()+"); see the schema fabric.otlp-mapping-profile/v1")
+		return nil, profileError("$", "it is not a valid profile document ("+decodeProblem(err)+"); see the schema fabric.otlp-mapping-profile/v1")
 	}
-	if dec.More() {
-		return nil, profileError("$", "the file holds more than one JSON document; keep exactly one profile per file")
+	// Nothing may follow the document: a second document, or stray text a
+	// lenient reader would ignore.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, profileError("$", "the file holds more than one JSON document or text after it; keep exactly one profile per file")
 	}
 	if doc.SchemaVersion != profileSchemaVersion {
 		return nil, profileError("$.schema_version", `it must be "`+profileSchemaVersion+`"`)
@@ -303,7 +310,7 @@ func parseProfile(data []byte) (*profile, error) {
 	if doc.ProfileVersion == nil || *doc.ProfileVersion < 1 || *doc.ProfileVersion > 2147483647 {
 		return nil, profileError("$.profile_version", "it must be an integer from 1 to 2147483647")
 	}
-	if doc.Unmapped != "" && doc.Unmapped != "drop" {
+	if doc.Unmapped != nil && *doc.Unmapped != "drop" {
 		return nil, profileError("$.unmapped", `the only admitted value is "drop": every attribute the profile does not map is dropped`)
 	}
 	if len(doc.Rules) < 1 || len(doc.Rules) > maxRules {
@@ -327,11 +334,16 @@ func checkRule(r *rule, where string) (pseudonymises bool, err error) {
 		return false, profileError(where+".match", "it is required: name the span (span_name) or the log record (log_name) the rule applies to")
 	}
 	m := r.Match
-	if (m.SpanName == "") == (m.LogName == "") {
+	if (m.SpanNameIn == nil) == (m.LogNameIn == nil) {
 		return false, profileError(where+".match", "give exactly one of span_name and log_name")
 	}
-	if len(m.SpanName) > maxNameBytes || len(m.LogName) > maxNameBytes {
-		return false, profileError(where+".match", fmt.Sprintf("a name is at most %d bytes", maxNameBytes))
+	if m.SpanNameIn != nil {
+		m.SpanName = *m.SpanNameIn
+	} else {
+		m.LogName = *m.LogNameIn
+	}
+	if name := m.SpanName + m.LogName; name == "" || len(name) > maxNameBytes {
+		return false, profileError(where+".match", fmt.Sprintf("a name is 1 to %d bytes", maxNameBytes))
 	}
 	if len(m.Attributes) > maxMatchAttributes {
 		return false, profileError(where+".match.attributes", fmt.Sprintf("at most %d attributes", maxMatchAttributes))
@@ -393,6 +405,11 @@ func checkRule(r *rule, where string) (pseudonymises bool, err error) {
 		if mp.Values != nil && len(mp.Values) == 0 {
 			return false, profileError(at+".values", "an empty value map would drop every value; remove it or list the values")
 		}
+		for j, entry := range mp.Values {
+			if entry.From == nil || entry.To == nil {
+				return false, profileError(fmt.Sprintf("%s.values[%d]", at, j), `it needs both "from" (the emitter's literal value) and "to" (the value to record)`)
+			}
+		}
 		if mp.Values != nil && mp.Pseudonymise != "" {
 			return false, profileError(at, "values and pseudonymise cannot be combined")
 		}
@@ -442,6 +459,18 @@ func checkRule(r *rule, where string) (pseudonymises bool, err error) {
 		}
 	}
 	return pseudonymises, nil
+}
+
+// decodeProblem is a JSON decoding error for a refusal. An unknown field's
+// name is the profile author's own text, so it is bounded like any key name;
+// the decoder's other messages name only fields and types of the schema.
+func decodeProblem(err error) string {
+	const unknown = `json: unknown field "`
+	message := err.Error()
+	if strings.HasPrefix(message, unknown) {
+		return "unknown field " + quoteKey(strings.TrimSuffix(strings.TrimPrefix(message, unknown), `"`))
+	}
+	return message
 }
 
 // quoteKey bounds an unknown key name before it is echoed in an error.
