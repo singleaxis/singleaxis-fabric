@@ -64,6 +64,21 @@ def _chain(search):
     spec.loader.exec_module(module)
 
 
+_UNEXPANDED = "$(PYTHONPATH)"
+
+
+def _drop_unexpanded():
+    """For a container with envFrom the injector writes PYTHONPATH as
+    "<this directory>:$(PYTHONPATH)", so a value one of those sources sets is kept.
+    When none sets it, Kubernetes leaves the reference as written: take that text out
+    of sys.path and of PYTHONPATH, so neither this program nor one it starts looks
+    for modules in a directory of that name."""
+    sys.path[:] = [entry for entry in sys.path if os.path.basename(entry) != _UNEXPANDED]
+    parts = os.environ.get("PYTHONPATH", "").split(os.pathsep)
+    if _UNEXPANDED in parts:
+        os.environ["PYTHONPATH"] = os.pathsep.join(p for p in parts if p != _UNEXPANDED)
+
+
 def _find_autoload():
     """Take this directory off sys.path and return the SDK's autoload file, or None.
     This directory has done its job once Python imported this file: removing it means
@@ -86,6 +101,7 @@ def _run():
         return
     sys._fabric_autoload_shim_ran = True
     try:
+        _drop_unexpanded()
         autoload = _find_autoload()
     except Exception:  # noqa: BLE001 - never stop the program
         _record("shim_failed")

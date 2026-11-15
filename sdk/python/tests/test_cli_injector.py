@@ -191,6 +191,33 @@ def test_pythonpath_annotation_and_env_from_keep_the_image_paths() -> None:
     )
 
 
+def test_a_setting_the_container_gives_by_value_keeps_its_file_twin_away() -> None:
+    """The SDK refuses FABRIC_WIRE_ID_KEY together with FABRIC_WIRE_ID_KEY_FILE (FW-018):
+    injecting the twin of a variable the container sets would turn its capture off."""
+    by_value = [{"name": "FABRIC_WIRE_ID_KEY", "value": "the-container's-own-key"}]
+    after, outcome = _inject(_pod(containers=[{"name": "agent", "env": list(by_value)}]))
+    env = _env(after["spec"]["containers"][0])
+    assert outcome == "injected"
+    assert "FABRIC_WIRE_ID_KEY_FILE" not in env and env["FABRIC_WIRE_ID_KEY"] == by_value[0]["value"]
+    assert env["FABRIC_OTLP_ENDPOINT"] == ENV["FABRIC_OTLP_ENDPOINT"]  # the rest still arrives
+    # The reverse: a file the container names keeps a configured value away.
+    config = _injector.Config(version="1", namespaces={"agents": {"FABRIC_OTLP_HEADERS": "a=b"}})
+    by_file = [{"name": "FABRIC_OTLP_HEADERS_FILE", "value": "/etc/agent/headers"}]
+    after, _ = _inject(_pod(containers=[{"name": "agent", "env": by_file}]), config)
+    assert "FABRIC_OTLP_HEADERS" not in _env(after["spec"]["containers"][0])
+
+
+def test_a_missing_secret_or_shim_never_keeps_the_pod_from_starting() -> None:
+    """I3: the kubelet holds a pod in ContainerCreating while a required Secret or
+    ConfigMap volume is missing (a namespace added before its Secret exists, a Secret
+    deleted to regenerate it). Both injected sources are optional: the pod starts and the
+    SDK leaves capture off."""
+    after, _ = _inject(_pod())
+    volumes = {v["name"]: v for v in after["spec"]["volumes"]}
+    assert volumes[_injector.VOLUME_SECRETS]["secret"]["optional"] is True
+    assert volumes[_injector.VOLUME_AUTOLOAD]["configMap"]["optional"] is True
+
+
 def test_pvc_spool_by_annotation() -> None:
     after, _ = _inject(_pod({_injector.INJECT: "env", _injector.SPOOL: "pvc"}))
     volumes = {v["name"]: v for v in after["spec"]["volumes"]}
@@ -279,6 +306,28 @@ def test_a_review_whose_request_is_not_an_object_is_allowed_unchanged() -> None:
     assert answer["response"] == {"uid": "", "allowed": True}
 
 
+@pytest.mark.parametrize(
+    "request_",
+    [
+        {**_request(_pod()), "object": ["not", "a", "pod"]},
+        {**_request(_pod()), "object": {"metadata": "x", "spec": 3}},
+        {**_request(_pod()), "object": {"metadata": {"annotations": {_injector.INJECT: "python"}},
+                                        "spec": {"containers": ["x"]}}},
+        {**_request(_pod()), "kind": "Pod"},
+        {**_request(_pod()), "namespace": {"a": 1}},
+    ],
+)  # fmt: skip
+def test_a_malformed_request_is_allowed_unchanged_and_never_raises(
+    request_: dict[str, Any],
+) -> None:
+    """A review this code cannot read is answered, not dropped: a raised error would end
+    the connection, which the API server waits out as a webhook failure."""
+    answer = _injector.review_response({"request": request_}, CONFIG)
+    assert answer["response"]["allowed"] is True
+    ops = json.loads(base64.b64decode(answer["response"].get("patch") or "W10="))
+    assert all(op["path"].startswith("/metadata/annotations") for op in ops), ops
+
+
 def test_config_from_the_chart_json() -> None:
     config = _injector.Config.from_json(
         {
@@ -342,6 +391,25 @@ def test_server_answers_reviews_over_tls(server: tuple[int, Path]) -> None:
     assert answer["response"]["patchType"] == "JSONPatch"
     assert _call(port, ca, "/mutate", b"not json")[0] == 400
     assert _call(port, ca, "/elsewhere", b"{}")[0] == 404
+
+
+def test_server_allows_a_review_it_fails_on(
+    server: tuple[int, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fault injection (I3): whatever fails inside a review, the answer is allowed: true
+    with the request's uid, on a connection that stays usable."""
+
+    def broken(*_: Any) -> Any:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(_injector, "review_response", broken)
+    port, ca = server
+    review = {"apiVersion": "admission.k8s.io/v1", "kind": "AdmissionReview",
+              "request": _request(_pod())}  # fmt: skip
+    status, body = _call(port, ca, "/mutate", json.dumps(review).encode())
+    assert status == 200
+    assert json.loads(body)["response"] == {"uid": "u-1", "allowed": True}
+    assert _call(port, ca, "/healthz") == (200, b"ok\n")
 
 
 def test_server_keeps_the_connection_so_the_answer_is_never_cut_off(
@@ -492,6 +560,21 @@ def test_shim_without_the_sdk_records_why_and_still_runs_the_image_sitecustomize
     )
     status = json.loads((spool.parent / "autoload-status.json").read_text())
     assert status["state"] == "sdk_not_found"
+
+
+def test_shim_drops_a_pythonpath_reference_kubernetes_left_unexpanded(tmp_path: Path) -> None:
+    """With envFrom the injector appends $(PYTHONPATH); when no source sets one,
+    Kubernetes leaves that text in place. It must not stay a module search directory,
+    for this program or for one it starts."""
+    shim = _shim_dir(tmp_path)
+    image = tmp_path / "image"
+    image.mkdir()
+    code = (
+        "import os, sys; print([e for e in sys.path if 'PYTHONPATH' in e], "
+        "os.environ['PYTHONPATH'].split(os.pathsep)[1:])"
+    )
+    result = _python(code, [shim, image, Path("$(PYTHONPATH)")], tmp_path, FABRIC_WIRE_AUTOLOAD="0")
+    assert (result.returncode, result.stdout, result.stderr) == (0, f"[] [{str(image)!r}]\n", "")
 
 
 def test_shim_is_standard_library_python_without_newer_syntax() -> None:
