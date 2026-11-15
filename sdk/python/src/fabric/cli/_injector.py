@@ -11,8 +11,10 @@ namespace the chart serves and carries ``fabric.singleaxis.ai/inject: "python"``
 patch adds, never replaces:
 
 - ``FABRIC_*`` variables from the chart's configuration, skipping any name the container
-  already sets in ``env``;
-- the namespace's agent Secret, read-only at ``/var/run/fabric/secrets``;
+  already sets in ``env`` and the ``_FILE`` twin of one it sets by value (or the reverse:
+  the SDK refuses both);
+- the namespace's agent Secret, read-only at ``/var/run/fabric/secrets`` (an optional
+  volume, as the shim's is: a missing Secret never keeps a pod from starting);
 - a spool volume at ``/var/lib/fabric`` (``emptyDir`` with a size limit, or the claim
   ``fabric-spool`` with ``fabric.singleaxis.ai/spool: pvc``);
 - for ``python``: the standard-library autoload shim (a ConfigMap) at
@@ -134,7 +136,10 @@ def _volumes(config: Config, mode: str, annotations: Mapping[str, str]) -> list[
     volumes: list[dict[str, Any]] = [
         {
             "name": VOLUME_SECRETS,
-            "secret": {"secretName": config.secret, "defaultMode": 0o444, "optional": False},
+            # Optional, like the shim below: a Secret or ConfigMap that is missing must
+            # never hold a pod in ContainerCreating (I3). The pod then starts with an
+            # empty directory and the SDK leaves capture off, naming the unreadable file.
+            "secret": {"secretName": config.secret, "defaultMode": 0o444, "optional": True},
         },
     ]
     if (annotations.get(SPOOL) or "").strip().lower() == "pvc":
@@ -147,7 +152,11 @@ def _volumes(config: Config, mode: str, annotations: Mapping[str, str]) -> list[
         volumes.append(
             {
                 "name": VOLUME_AUTOLOAD,
-                "configMap": {"name": config.shim_config_map, "defaultMode": 0o444},
+                "configMap": {
+                    "name": config.shim_config_map,
+                    "defaultMode": 0o444,
+                    "optional": True,
+                },
             }
         )
     return volumes
@@ -215,7 +224,9 @@ def _patch(
     for index, container in enumerate(containers):
         own = {e.get("name") for e in container.get("env") or [] if isinstance(e, dict)}
         added: list[dict[str, Any]] = [
-            {"name": name, "value": value} for name, value in env.items() if name not in own
+            {"name": name, "value": value}
+            for name, value in env.items()
+            if name not in own and _twin(name) not in own
         ]
         if mode == "python":
             if "PYTHONPATH" in own:
@@ -232,6 +243,13 @@ def _patch(
     if notes:
         marks[NOTE] = "; ".join(notes)
     return ops + _annotate(pod, marks)
+
+
+def _twin(name: str) -> str:
+    """The other spelling of a setting the SDK reads by value or from a file
+    (``FABRIC_WIRE_ID_KEY`` and ``FABRIC_WIRE_ID_KEY_FILE``). The SDK refuses both at
+    once, so a container that sets one keeps it and does not get the other."""
+    return name[: -len("_FILE")] if name.endswith("_FILE") else name + "_FILE"
 
 
 def _pythonpath(container: Mapping[str, Any], annotations: Mapping[str, str]) -> str:
@@ -257,11 +275,12 @@ def review_response(review: Mapping[str, Any], config: Config) -> dict[str, Any]
     response: dict[str, Any] = {"uid": request.get("uid", ""), "allowed": True}
     try:
         ops, outcome = plan_patch(request, config)
+        patch = base64.b64encode(json.dumps(ops).encode("utf-8")).decode("ascii") if ops else ""
     except Exception as exc:  # never fail a pod admission (I3)
-        ops, outcome = [], f"error: {type(exc).__name__}"
-    if ops:
+        patch, outcome = "", f"error: {type(exc).__name__}"
+    if patch:
         response["patchType"] = "JSONPatch"
-        response["patch"] = base64.b64encode(json.dumps(ops).encode("utf-8")).decode("ascii")
+        response["patch"] = patch
     _LOG.info(
         "%s/%s: %s", _log_name(request.get("namespace")), _log_name(_pod_name(request)), outcome
     )
@@ -280,7 +299,11 @@ def _log_name(value: object) -> str:
 
 
 def _pod_name(request: Mapping[str, Any]) -> str:
-    metadata = (request.get("object") or {}).get("metadata") or {}
+    """The pod's name for the log line; empty for a request that is not shaped like one."""
+    pod = request.get("object")
+    metadata = pod.get("metadata") if isinstance(pod, Mapping) else None
+    if not isinstance(metadata, Mapping):
+        return ""
     return str(metadata.get("name") or metadata.get("generateName") or "")
 
 
@@ -323,6 +346,8 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError:
             length = -1
         if length <= 0 or length > MAX_BODY_BYTES:
+            # The body is not read, so this connection cannot carry another request.
+            self.close_connection = True
             self._send(413, b"request too large\n", "text/plain")
             return
         try:
@@ -332,8 +357,20 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError:
             self._send(400, b"not an AdmissionReview\n", "text/plain")
             return
-        answer = review_response(review, self.config)
-        self._send(200, json.dumps(answer).encode("utf-8"), "application/json")
+        try:
+            body = json.dumps(review_response(review, self.config)).encode("utf-8")
+        except Exception as exc:  # never fail a pod admission (I3): allow it unchanged
+            _LOG.warning("review failed: %s", type(exc).__name__)
+            request = review.get("request")
+            uid = request.get("uid", "") if isinstance(request, dict) else ""
+            body = json.dumps(
+                {
+                    "apiVersion": "admission.k8s.io/v1",
+                    "kind": "AdmissionReview",
+                    "response": {"uid": uid if isinstance(uid, str) else "", "allowed": True},
+                }
+            ).encode("utf-8")
+        self._send(200, body, "application/json")
 
 
 def _tls_context(tls_dir: Path) -> ssl.SSLContext:
