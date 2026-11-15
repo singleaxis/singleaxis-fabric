@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import base64
 import copy
+import dataclasses
 import http.client
 import json
 import os
@@ -30,6 +31,7 @@ from typing import Any
 import pytest
 
 from fabric.cli import _injector, _secrets
+from fabric.wire._config import WireConfig
 
 REPO = Path(__file__).resolve().parents[3]
 SHIM = REPO / "charts/fabric/files/autoload/sitecustomize.py"
@@ -198,7 +200,9 @@ def test_a_setting_the_container_gives_by_value_keeps_its_file_twin_away() -> No
     after, outcome = _inject(_pod(containers=[{"name": "agent", "env": list(by_value)}]))
     env = _env(after["spec"]["containers"][0])
     assert outcome == "injected"
-    assert "FABRIC_WIRE_ID_KEY_FILE" not in env and env["FABRIC_WIRE_ID_KEY"] == by_value[0]["value"]
+    assert (
+        "FABRIC_WIRE_ID_KEY_FILE" not in env and env["FABRIC_WIRE_ID_KEY"] == by_value[0]["value"]
+    )
     assert env["FABRIC_OTLP_ENDPOINT"] == ENV["FABRIC_OTLP_ENDPOINT"]  # the rest still arrives
     # The reverse: a file the container names keeps a configured value away.
     config = _injector.Config(version="1", namespaces={"agents": {"FABRIC_OTLP_HEADERS": "a=b"}})
@@ -222,6 +226,35 @@ def test_pvc_spool_by_annotation() -> None:
     after, _ = _inject(_pod({_injector.INJECT: "env", _injector.SPOOL: "pvc"}))
     volumes = {v["name"]: v for v in after["spec"]["volumes"]}
     assert volumes["fabric-spool"]["persistentVolumeClaim"] == {"claimName": "fabric-spool"}
+
+
+def test_an_emptydir_spool_bounds_the_sdk_spool_under_the_volume_limit() -> None:
+    """The kubelet evicts a pod whose emptyDir passes its sizeLimit. The SDK's default
+    spool bound is 1 GiB, the volume's default limit too: without a smaller bound a
+    spool that filled during a Node outage would cost the agent its pod."""
+    config = dataclasses.replace(CONFIG, spool_max_bytes=268435456)
+    after, _ = _inject(_pod(), config)
+    assert _env(after["spec"]["containers"][0])["FABRIC_WIRE_SPOOL_MAX_BYTES"] == "268435456"
+    # A claim has no limit the kubelet evicts for: the SDK keeps its own default.
+    after, _ = _inject(_pod({_injector.INJECT: "env", _injector.SPOOL: "pvc"}), config)
+    assert "FABRIC_WIRE_SPOOL_MAX_BYTES" not in _env(after["spec"]["containers"][0])
+    # The container's own value is never changed.
+    own = {"name": "agent", "env": [{"name": "FABRIC_WIRE_SPOOL_MAX_BYTES", "value": "70000000"}]}
+    after, _ = _inject(_pod(containers=[own]), config)
+    assert _env(after["spec"]["containers"][0])["FABRIC_WIRE_SPOOL_MAX_BYTES"] == "70000000"
+    # A value from the chart's injector.env wins over the computed one.
+    served = {"agents": {**ENV, "FABRIC_WIRE_SPOOL_MAX_BYTES": "99000000"}}
+    after, _ = _inject(_pod(), dataclasses.replace(config, namespaces=served))
+    assert _env(after["spec"]["containers"][0])["FABRIC_WIRE_SPOOL_MAX_BYTES"] == "99000000"
+
+
+def test_the_spool_bound_is_read_from_the_chart_configuration() -> None:
+    config = _injector.Config.from_json({"version": "1", "spoolMaxBytes": 268435456})
+    assert config.spool_max_bytes == 268435456
+    assert _injector.Config.from_json({"version": "1"}).spool_max_bytes == 0
+    # The SDK accepts the bound the chart computes from its smallest allowed limit.
+    smallest = (512 * 1024 * 1024) // 4
+    WireConfig(spool_dir="/var/lib/fabric/spool", spool_max_bytes=smallest)
 
 
 @pytest.mark.parametrize(

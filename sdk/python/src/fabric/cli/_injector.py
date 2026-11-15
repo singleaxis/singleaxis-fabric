@@ -16,7 +16,10 @@ patch adds, never replaces:
 - the namespace's agent Secret, read-only at ``/var/run/fabric/secrets`` (an optional
   volume, as the shim's is: a missing Secret never keeps a pod from starting);
 - a spool volume at ``/var/lib/fabric`` (``emptyDir`` with a size limit, or the claim
-  ``fabric-spool`` with ``fabric.singleaxis.ai/spool: pvc``);
+  ``fabric-spool`` with ``fabric.singleaxis.ai/spool: pvc``). With the ``emptyDir`` the
+  SDK's own spool bound (``FABRIC_WIRE_SPOOL_MAX_BYTES``) is set well under that limit:
+  the kubelet evicts a pod whose ``emptyDir`` grows past its limit, and a spool that
+  fills while the Node is away must never cost the agent its pod;
 - for ``python``: the standard-library autoload shim (a ConfigMap) at
   ``/var/run/fabric/autoload``, ``PYTHONPATH`` pointing at it and
   ``FABRIC_WIRE_AUTOLOAD=1``. The SDK itself must be in the image (OQ-6);
@@ -66,6 +69,7 @@ SPOOL_DIR = "/var/lib/fabric"
 VOLUME_SECRETS = "fabric-secrets"
 VOLUME_AUTOLOAD = "fabric-autoload"
 VOLUME_SPOOL = "fabric-spool"
+SPOOL_MAX_BYTES = "FABRIC_WIRE_SPOOL_MAX_BYTES"
 MAX_BODY_BYTES = 8 * 1024 * 1024
 _LOG = logging.getLogger("fabric.injector")
 _NOT_NAME = re.compile(r"[^A-Za-z0-9._-]")
@@ -80,6 +84,8 @@ class Config:
     shim_config_map: str = "fabric-autoload"
     spool_size_limit: str = "1Gi"
     spool_claim: str = "fabric-spool"
+    #: The SDK spool bound for an ``emptyDir`` spool, in bytes (0: not set here).
+    spool_max_bytes: int = 0
     namespaces: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
     @classmethod
@@ -94,6 +100,7 @@ class Config:
             shim_config_map=str(data.get("shimConfigMap") or "fabric-autoload"),
             spool_size_limit=str(data.get("spoolSizeLimit") or "1Gi"),
             spool_claim=str(data.get("spoolClaim") or "fabric-spool"),
+            spool_max_bytes=max(0, int(data.get("spoolMaxBytes") or 0)),
             namespaces=namespaces,
         )
 
@@ -132,6 +139,10 @@ class Skip(Exception):  # noqa: N818 - a decision, not an error
     """The pod is left unchanged, for the reason given."""
 
 
+def _uses_claim(annotations: Mapping[str, str]) -> bool:
+    return str(annotations.get(SPOOL) or "").strip().lower() == "pvc"
+
+
 def _volumes(config: Config, mode: str, annotations: Mapping[str, str]) -> list[dict[str, Any]]:
     volumes: list[dict[str, Any]] = [
         {
@@ -142,7 +153,7 @@ def _volumes(config: Config, mode: str, annotations: Mapping[str, str]) -> list[
             "secret": {"secretName": config.secret, "defaultMode": 0o444, "optional": True},
         },
     ]
-    if (annotations.get(SPOOL) or "").strip().lower() == "pvc":
+    if _uses_claim(annotations):
         volumes.append(
             {"name": VOLUME_SPOOL, "persistentVolumeClaim": {"claimName": config.spool_claim}}
         )
@@ -219,6 +230,7 @@ def _patch(
         for existing in container.get("volumeMounts") or []:
             if any(_under(str(existing.get("mountPath") or ""), m["mountPath"]) for m in mounts):
                 raise Skip("mount_path_taken")
+    env = _spool_bound(config, env, annotations)
     ops: list[dict[str, Any]] = _append("/spec/volumes", volumes, ours)
     notes: list[str] = []
     for index, container in enumerate(containers):
@@ -243,6 +255,17 @@ def _patch(
     if notes:
         marks[NOTE] = "; ".join(notes)
     return ops + _annotate(pod, marks)
+
+
+def _spool_bound(
+    config: Config, env: Mapping[str, str], annotations: Mapping[str, str]
+) -> Mapping[str, str]:
+    """The namespace's variables, with the SDK's spool bound for an ``emptyDir`` spool:
+    the volume has a size limit and the kubelet evicts a pod that passes it, so the
+    spool is kept under it. A value the chart's ``injector.env`` gives wins."""
+    if not config.spool_max_bytes or _uses_claim(annotations):
+        return env
+    return {SPOOL_MAX_BYTES: str(config.spool_max_bytes), **env}
 
 
 def _twin(name: str) -> str:

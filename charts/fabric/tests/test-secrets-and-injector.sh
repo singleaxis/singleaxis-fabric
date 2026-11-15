@@ -198,6 +198,9 @@ env = config['namespaces']['agents']['env']
 assert env['FABRIC_OTLP_ENDPOINT'] == 'https://fabric-otel-collector.fabric-system.svc.cluster.local:4318', env
 assert env['FABRIC_OTLP_CERTIFICATE'] == '/var/run/fabric/secrets/ca.crt'
 assert 'FABRIC_OTLP_HEADERS_FILE' not in env  # a local Node takes no token
+# The emptyDir spool: the SDK's own bound is a quarter of the volume's limit, as an
+# integer, so the kubelet never evicts an agent pod for a spool that filled.
+assert config['spoolSizeLimit'] == '1Gi' and config['spoolMaxBytes'] == 268435456, config
 ca_job = one('Job', '-fabric-webhook-ca')
 assert hook(ca_job) == 'post-install,post-upgrade'
 assert ca_job['spec']['template']['spec']['containers'][0]['args'][-1] == '--webhook=fabric-injector-fabric-system-fabric'
@@ -213,6 +216,29 @@ assert one('MutatingWebhookConfiguration')['webhooks'][0]['clientConfig']['caBun
 assert not [d for d in kinds('Job') if d['metadata']['name'].endswith('-fabric-webhook-ca')]
 env = json.loads(one('ConfigMap', '-fabric-injector')['data']['config.json'])['namespaces']['agents']['env']
 assert env['FABRIC_WIRE_EXEC'] == '1'
+"
+render --set preset=local --set 'agentNamespaces={agents}' --set injector.enabled=true \
+  --set injector.spool.sizeLimit=2G >"${tmp}/spool.yaml"
+check "${tmp}/spool.yaml" "
+assert json.loads(one('ConfigMap', '-fabric-injector')['data']['config.json'])['spoolMaxBytes'] == 500000000
+"
+# A bound the operator gives is theirs: the chart sets none beside it.
+render --set preset=local --set 'agentNamespaces={agents}' --set injector.enabled=true \
+  --set injector.spool.sizeLimit=64Mi \
+  --set-string 'injector.env.FABRIC_WIRE_SPOOL_MAX_BYTES=16777216' >"${tmp}/spool-own.yaml"
+check "${tmp}/spool-own.yaml" "
+config = json.loads(one('ConfigMap', '-fabric-injector')['data']['config.json'])
+assert config['spoolMaxBytes'] == 0, config
+assert config['namespaces']['agents']['env']['FABRIC_WIRE_SPOOL_MAX_BYTES'] == '16777216'
+"
+reject "injector.spool.sizeLimit is too small. Use 512Mi or more" --set preset=local \
+  --set 'agentNamespaces={agents}' --set injector.enabled=true --set injector.spool.sizeLimit=64Mi
+reject "injector.spool.sizeLimit is not a size this chart reads" --set preset=local \
+  --set 'agentNamespaces={agents}' --set injector.enabled=true --set-string injector.spool.sizeLimit=1000000000Gi
+render --set preset=local --set 'agentNamespaces={agents}' --set injector.enabled=true \
+  --set-string injector.spool.sizeLimit=1073741824 >"${tmp}/spool-bytes.yaml"
+check "${tmp}/spool-bytes.yaml" "
+assert json.loads(one('ConfigMap', '-fabric-injector')['data']['config.json'])['spoolMaxBytes'] == 268435456
 "
 reject "PATH" --set preset=local --set 'agentNamespaces={agents}' --set injector.enabled=true \
   --set 'injector.env.PATH=/tmp'

@@ -132,6 +132,29 @@ seccompProfile:
 {{- end -}}
 
 {{/*
+The SDK spool bound of an injected pod with the emptyDir spool, in bytes: a
+quarter of injector.spool.sizeLimit. The kubelet evicts a pod whose emptyDir
+grows past its sizeLimit, and it counts disk blocks while the spool counts
+record bytes (one small file per record), so the spool's own bound has to sit
+well under the limit: a spool that fills while the Node is away must never
+cost an agent its pod. injector.env.FABRIC_WIRE_SPOOL_MAX_BYTES sets it by
+hand instead.
+*/}}
+{{- define "fabric.injectorSpoolMaxBytes" -}}
+{{- $quantity := .Values.injector.spool.sizeLimit | toString -}}
+{{- $units := dict "" 1 "k" 1000 "M" 1000000 "G" 1000000000 "T" 1000000000000 "Ki" 1024 "Mi" 1048576 "Gi" 1073741824 "Ti" 1099511627776 -}}
+{{- $unit := regexFind "[A-Za-z]+$" $quantity -}}
+{{- if not (regexMatch "^([0-9]{1,6}(Ki|Mi|Gi|Ti|k|M|G|T)|[0-9]{1,18})$" $quantity) -}}
+{{- fail "injector.spool.sizeLimit is not a size this chart reads. Use a whole number of at most 6 digits with a unit (1Gi, 512Mi), or a number of bytes" -}}
+{{- end -}}
+{{- $bytes := mul (regexFind "^[0-9]+" $quantity | int64) (index $units $unit | int64) -}}
+{{- if lt $bytes 536870912 -}}
+{{- fail "injector.spool.sizeLimit is too small. Use 512Mi or more: the SDK's spool is bounded to a quarter of it (so the kubelet never evicts an agent pod for its spool) and needs 65 MiB at least. To set the bound yourself, give injector.env.FABRIC_WIRE_SPOOL_MAX_BYTES" -}}
+{{- end -}}
+{{- div $bytes 4 -}}
+{{- end -}}
+
+{{/*
 The injector's configuration (JSON): for each agent namespace, the variables
 an injected container gets. Paths are the mounts the injector adds; the Node
 address is this release's Collector Service, on the namespace's own ingress
@@ -175,11 +198,16 @@ group on a production Node.
 {{- end -}}
 {{- $_ := set $namespaces $agent.name (dict "env" $env) -}}
 {{- end -}}
+{{- $spoolMaxBytes := 0 -}}
+{{- if not (hasKey (.Values.injector.env | default dict) "FABRIC_WIRE_SPOOL_MAX_BYTES") -}}
+{{- $spoolMaxBytes = include "fabric.injectorSpoolMaxBytes" . | int64 -}}
+{{- end -}}
 {{- dict
       "version" .Chart.AppVersion
       "secret" .Values.secretsJob.agentSecretName
       "shimConfigMap" "fabric-autoload"
       "spoolSizeLimit" .Values.injector.spool.sizeLimit
+      "spoolMaxBytes" $spoolMaxBytes
       "spoolClaim" "fabric-spool"
       "namespaces" $namespaces
   | toJson -}}

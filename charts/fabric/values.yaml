@@ -152,6 +152,10 @@ injector:
     # The emptyDir spool of an injected pod. The annotation
     # `fabric.singleaxis.ai/spool: pvc` uses the PersistentVolumeClaim
     # `fabric-spool` of the pod's namespace instead (you create it).
+    # 512Mi or more. With the emptyDir the SDK's spool is bounded to a
+    # quarter of this (FABRIC_WIRE_SPOOL_MAX_BYTES), because the kubelet
+    # evicts a pod whose emptyDir passes its limit: the spool stops first.
+    # injector.env.FABRIC_WIRE_SPOOL_MAX_BYTES sets the bound by hand.
     sizeLimit: 1Gi
   # Extra FABRIC_* variables for every injected container, e.g.
   #   env: {FABRIC_WIRE_EXEC: "1"}
