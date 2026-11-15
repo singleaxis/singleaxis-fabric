@@ -243,7 +243,18 @@ fabricguard):
   `fabric.grant.source_boundary=otlp` or
   `fabric.extension.observed_via=reported`. A profile cannot map or set
   them to anything else.
-- A record that matches no rule is untouched (fabricguard still applies).
+- A record that matches no rule is untouched (fabricguard still applies),
+  with one exception on a Node whose ingress is bound to one tenant and
+  source: there fabricguard refuses a whole logs request that holds any
+  record outside its bound log classes, so the Node removes a log record
+  that matches no rule and names no `event_class`. Your emitter's other log
+  records can then share a request with the ones the profile maps.
+- Nothing is dropped silently. The first source value a mapping cannot use
+  (a value missing from a `values` map, or an identifier that is not a
+  string or an integer) is logged once as a warning naming the target key;
+  with debug logging the Node writes one line of counts per request
+  (`fabricmap: mapping applied`). Neither carries an attribute name of
+  yours or a value.
 - A profile that breaks a rule stops the Node at startup with the place and
   the fix, for example `mapping profile refused at $.rules[0].map[2]:
   identifier target fabric.control.gated_tool_call_id must name its

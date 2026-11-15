@@ -35,7 +35,8 @@ it never makes, applies, waits for or returns one.
   that join the agents' own records. Helm: `fabric.mapping.enabled`,
   `fabric.mapping.profileConfigMap`, `fabric.mapping.idKeySecret`. Fabric
   ships no profile. A profile error stops the Node at startup with the
-  place and the fix; `fabric-gate` refuses `fabricmap` anywhere but
+  place and the fix; a source value a mapping cannot use is reported once
+  as a warning and counted per request in a debug line; `fabric-gate` refuses `fabricmap` anywhere but
   directly before `fabricguard`.
 - **OpenTelemetry GenAI keys as sources (spec 057 OD-12).** With
   `fabric.mapping.genaiSourceKeys: "1.42.0"`, `gen_ai.tool.call.id` and

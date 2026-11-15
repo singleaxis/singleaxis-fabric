@@ -239,7 +239,9 @@ fabric:
   # Fabric's neutral fabric.control.* / fabric.grant.* / fabric.hook.* /
   # fabric.extension.* / fabric.mcp.* keys, every attribute the profile does
   # not map is dropped, and the identifiers it names become keyed pseudonyms.
-  # Records that match no rule are untouched. The chart and the image hold no
+  # Records that match no rule are untouched (on a bound ingress, a log
+  # record that matches no rule and names no event_class is removed, since
+  # fabricguard would refuse the whole request for it). The chart and the image hold no
   # profile: you write one (the profile schema is in the repository under
   # contracts/capture/v1/schema) and supply it as a ConfigMap. Not available
   # together with receiver.sourceBindings.
