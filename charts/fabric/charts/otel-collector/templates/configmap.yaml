@@ -6,6 +6,8 @@
 {{- include "otel-collector.validateProfile" . -}}
 {{- include "otel-collector.validateNetworkPolicy" . -}}
 {{- include "otel-collector.validateHostSensorEgress" . -}}
+{{- include "otel-collector.validateMapping" . -}}
+{{- $mapped := include "otel-collector.mappingEnabled" . -}}
 {{- $content := .Values.content -}}
 {{- $persist := .Values.exporter.sendingQueue.persistence -}}
 {{- $exporters := include "otel-collector.exporterNames" . -}}
@@ -167,6 +169,33 @@ data:
       memory_limiter:
         check_interval: {{ .Values.memoryLimiter.checkIntervalSeconds }}s
         limit_mib: {{ include "otel-collector.memoryLimitMiB" . }}
+      {{- if $mapped }}
+      # Spec 057 §4.5: rewrites telemetry from emitters with their own
+      # attribute names by the customer's mapping profile, directly before
+      # fabricguard. Everything the profile does not map is dropped.
+      fabricmap:
+        {{- if .Values.fabric.mapping.profileConfigMap.name }}
+        profile_file: /etc/fabric/mapping/profile.json
+        {{- end }}
+        {{- if .Values.fabric.mapping.idKeySecret.name }}
+        id_key_file: /etc/fabric/mapping-id-key/key
+        {{- end }}
+        {{- with .Values.fabric.mapping.genaiSourceKeys }}
+        genai_source_keys: {{ . | quote }}
+        {{- end }}
+        {{- if .Values.fabric.mapping.profileConfigMap.name }}
+        {{- if .Values.receiver.evidenceSourceBinding.enabled }}
+        # The ingress binding, as on fabricguard: stamped on mapped records.
+        source_binding:
+          tenant_id: {{ .Values.receiver.evidenceSourceBinding.tenantId | quote }}
+          source_id: {{ .Values.receiver.evidenceSourceBinding.sourceId | quote }}
+        {{- else if and $production $workload.enabled }}
+        source_binding:
+          tenant_id: {{ $workload.tenantId | quote }}
+          source_id: {{ $workload.sourceId | quote }}
+        {{- end }}
+        {{- end }}
+      {{- end }}
       fabricguard:
         event_class_attribute: {{ .Values.fabric.guard.eventClassAttribute | quote }}
         drop_unknown_classes: {{ .Values.fabric.guard.dropUnknownClasses }}
@@ -335,11 +364,11 @@ data:
       pipelines:
         logs:
           receivers: [otlp]
-          processors: [memory_limiter, fabricguard{{ if .Values.batch.enabled }}, batch{{ end }}]
+          processors: [memory_limiter, {{ if $mapped }}fabricmap, {{ end }}fabricguard{{ if .Values.batch.enabled }}, batch{{ end }}]
           exporters: [{{ $exporters }}]
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, fabricguard{{ if .Values.batch.enabled }}, batch{{ end }}]
+          processors: [memory_limiter, {{ if $mapped }}fabricmap, {{ end }}fabricguard{{ if .Values.batch.enabled }}, batch{{ end }}]
           exporters: [{{ $exporters }}]
         {{- if $content.enabled }}
         # Content bodies bypass fabricguard (they must pass unchanged); the
