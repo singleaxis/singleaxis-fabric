@@ -31,7 +31,11 @@ it never makes, applies, waits for or returns one.
   directory. When the module cannot be used, capture stays off and the
   status names one reason (`platform_unsupported`, `native_missing`,
   `native_digest_mismatch`, `native_load_failed`, `native_abi_mismatch` or
-  `native_selftest_failed`) with its fix; there is no lockfile fallback.
+  `native_selftest_failed`) with its fix; there is no lockfile fallback. A
+  failed self-test also names the step that failed, so a full disk or a
+  spool directory that is missing or open to other users is reported as
+  that. The module stays loaded for the life of the process, so locks taken
+  from a worker thread are not stranded when that thread ends.
 
 - **Node.js capture groundwork: settings, endpoint matching and run ids
   (spec 055, unit 055-t2).** Still no Node.js capture; this is the shared
