@@ -40,7 +40,8 @@ def test_release_policy_is_recorder_only() -> None:
         "first_party_app_charts": ["otel-collector"],
         "third_party_app_charts": [],
     }
-    assert policy["images"] == ["fabric-otelcol", "fabric-host-emitter"]
+    # Spec 058 §11.1: the operator CLI image (its content check: test_cli_image_check.py).
+    assert policy["images"] == ["fabric-otelcol", "fabric-host-emitter", "fabric-cli"]
     # Spec 058 §5.1 (I1, OQ-1): the operator CLI and its alias, exactly; nothing else.
     assert policy["python_distribution"]["required_console_scripts"] == {
         "fabric": "fabric.cli:main",
@@ -176,7 +177,9 @@ def test_redaction_service_example_is_not_a_release_artifact() -> None:
     package = json.loads(
         (ROOT / "sdk/typescript/package.json").read_text(encoding="utf-8")
     )
-    assert set(package["files"]) <= {"dist", "README.md", "LICENSE"}
+    # bin/: the npm launcher (spec 058 §1.4), `fabric run` and `fabric doctor` only.
+    assert set(package["files"]) <= {"bin", "dist", "README.md", "LICENSE"}
+    assert package["bin"] == {"fabric": "bin/fabric.mjs"}
     scanned = [
         *(ROOT / ".github/workflows").glob("release*.yml"),
         *(ROOT / "scripts/release").rglob("*"),

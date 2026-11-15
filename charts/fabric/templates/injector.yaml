@@ -1,0 +1,214 @@
+{{- /*
+Spec 058 §10.4: opt-in pod injection, off by default. A stateless mutating
+admission webhook (the Fabric CLI image, `python -m fabric.cli._injector`)
+that adds Fabric's variables and mounts to pods in a namespace labelled
+fabric.singleaxis.ai/injection=enabled that is also in agentNamespaces, when
+the pod carries fabric.singleaxis.ai/inject: "python" or "env". It never
+denies a pod: failurePolicy Ignore and a 2 s timeout, so an injector that is
+down costs an annotated pod at most 2 s and the pod then starts uncaptured.
+It holds no API token and opens no outbound connection (its NetworkPolicy
+allows no egress).
+*/ -}}
+{{- if .Values.injector.enabled }}
+{{- $plan := include "fabric.secretsPlan" . | fromYaml }}
+{{- if not $plan.agents }}
+{{- fail "injector.enabled=true needs agentNamespaces: list the namespaces whose pods it may inject (each one gets its Secret and the autoload shim)" }}
+{{- end }}
+{{- $name := include "fabric.injectorName" . }}
+{{- $config := include "fabric.injectorConfig" . }}
+{{- $component := dict "root" . "component" "injector" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fabric.componentLabels" $component | nindent 4 }}
+data:
+  config.json: {{ $config | quote }}
+{{- range $agent := $plan.agents }}
+---
+# The standard-library autoload shim, in the agent namespace (a ConfigMap
+# volume cannot cross namespaces). It imports the image's own SDK.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fabric-autoload
+  namespace: {{ $agent.name }}
+  labels:
+    {{- include "fabric.componentLabels" (dict "root" $ "component" "injector") | nindent 4 }}
+data:
+  sitecustomize.py: {{ $.Files.Get "files/autoload/sitecustomize.py" | quote }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fabric.componentLabels" $component | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: fabric-injector
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fabric.componentLabels" $component | nindent 4 }}
+spec:
+  replicas: {{ .Values.injector.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fabric-injector
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fabric-injector
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: injector
+      annotations:
+        checksum/config: {{ $config | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- include "fabric.restrictedPod" . | nindent 8 }}
+      {{- with .Values.cliImagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: injector
+          image: {{ include "fabric.cliImage" . | quote }}
+          imagePullPolicy: {{ .Values.cliImage.pullPolicy }}
+          command: [python, -m, fabric.cli._injector]
+          args:
+            - --config=/etc/fabric-injector/config/config.json
+            - --tls-dir=/etc/fabric-injector/tls
+            - --port={{ .Values.injector.port }}
+          ports:
+            - name: https
+              containerPort: {{ .Values.injector.port }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: https
+              scheme: HTTPS
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            {{- include "fabric.restrictedContainer" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.injector.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/fabric-injector/config
+              readOnly: true
+            - name: tls
+              mountPath: /etc/fabric-injector/tls
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.injector.tlsSecretName }}
+---
+# Ingress on the webhook port from the API server (any address: the API
+# server's source address depends on the cluster). No egress at all: the
+# injector answers admission reviews and contacts nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fabric.componentLabels" $component | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fabric-injector
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.injector.port }}
+  egress: []
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "fabric.webhookName" . }}
+  labels:
+    {{- include "fabric.componentLabels" $component | nindent 4 }}
+webhooks:
+  - name: inject.fabric.singleaxis.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    # Never block a pod (I3): an injector that is down or slow is skipped.
+    failurePolicy: Ignore
+    timeoutSeconds: 2
+    reinvocationPolicy: Never
+    matchPolicy: Equivalent
+    clientConfig:
+      service:
+        name: {{ $name }}
+        namespace: {{ .Release.Namespace }}
+        path: /mutate
+        port: 443
+      {{- $bundle := .Values.injector.caBundle }}
+      {{- if not $bundle }}
+      {{- $ca := lookup "v1" "Secret" .Release.Namespace .Values.secretsJob.caSecretName }}
+      {{- if and $ca $ca.data (index $ca.data "ca.crt") }}
+      {{- $bundle = index $ca.data "ca.crt" }}
+      {{- end }}
+      {{- end }}
+      {{- with $bundle }}
+      caBundle: {{ . | quote }}
+      {{- end }}
+    rules:
+      - operations: [CREATE]
+        apiGroups: [""]
+        apiVersions: [v1]
+        resources: [pods]
+        scope: Namespaced
+    # Both markers: the namespace label (and the namespace is one this chart
+    # serves) here, the pod annotation in the injector.
+    namespaceSelector:
+      matchExpressions:
+        - key: fabric.singleaxis.ai/injection
+          operator: In
+          values: [enabled]
+        - key: kubernetes.io/metadata.name
+          operator: In
+          {{- $names := list }}
+          {{- range $plan.agents }}{{ $names = append $names .name }}{{ end }}
+          values: {{ toJson $names }}
+    {{- with .Values.injector.objectSelector }}
+    objectSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{- end }}

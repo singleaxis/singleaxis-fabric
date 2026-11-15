@@ -4,7 +4,7 @@
 > state of the planned work. Each roadmap row says whether it is released or
 > not built.
 
-This page lists what Fabric v0.11 does not do, the known defects found by
+This page lists what Fabric v0.12.1 does not do, the known defects found by
 testing, and the work planned in
 [spec 049](../specs/049-four-layer-capture-coverage.md) §8. If a capability
 is not described in the other pages of this documentation set, assume it is
@@ -109,7 +109,7 @@ ledger); and `fabric.reconstruct` exhausting memory under heavy loss
 
 ## Production qualification
 
-Fabric v0.8 has been tested on a developer workstation and in CI (unit,
+Fabric v0.12.1 has been tested on a developer workstation and in CI (unit,
 installed-package, Compose and kind tests). No customer production
 deployment has been qualified. Before production, run the tests in
 [deployment](deployment.md) against your own Node, store and agents, and

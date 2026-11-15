@@ -15,6 +15,41 @@ the customer. It requires no SingleAxis-only backend.
 Fabric Node is asynchronous to the monitored AI system. A Collector or
 destination outage must not become a production request-path dependency.
 
+## Install from the published chart
+
+The chart is published at `oci://ghcr.io/singleaxis/charts/fabric`, with the
+profiles inside it. Pull it once to have the profile files:
+
+```bash
+helm pull oci://ghcr.io/singleaxis/charts/fabric --version 0.12.1 --untar
+helm upgrade --install fabric-node ./fabric \
+  --namespace fabric-system --create-namespace \
+  --values ./fabric/profiles/shadow-dev.yaml
+```
+
+The commands below use `charts/fabric`, the chart's path in a clone of this
+repository. With the pulled chart, use `./fabric` and
+`./fabric/profiles/<profile>.yaml` instead.
+
+## Presets, generated Secrets and opt-in injection
+
+Spec 058 section 10; details in
+[docs/deployment.md](../../docs/deployment.md#kubernetes-without-hand-work).
+
+- `preset=local|production|production-host-sensor` selects a profile as a
+  chart value (the profile files below keep working with `-f`).
+- `agentNamespaces: [ns, ...]` gives each listed namespace its Secrets and,
+  on a production Node, its own ingress group. A pre-install/pre-upgrade
+  hook Job (the `fabric-cli` image, `cliImage`) creates every missing
+  Secret; none is ever part of the Helm release. `secretsJob.enabled=false`
+  and `fabric init --kubernetes [--render DIR]` do the same from a
+  workstation.
+- `injector.enabled=true` (off by default) adds Fabric's variables and
+  mounts to annotated pods of those namespaces: `failurePolicy: Ignore`,
+  2 s timeout, no API token, no egress.
+- [`examples/production-host-sensor-content.yaml`](examples/production-host-sensor-content.yaml)
+  is a worked production example with host sensors and content delivery.
+
 ## Profiles
 
 ### `shadow-dev`
@@ -71,10 +106,12 @@ Fails closed at render time unless the recorder has:
   names another tenant or source is refused, and admitted spans carry
   `fabric.source.authenticated=true`. A span that names no source is
   dropped on its own.
-  **Deployment limit:** one production Node serves exactly one agent
-  source. A Node shared by many pods, such as a DaemonSet, works only if
-  every pod runs with the same `FABRIC_SOURCE_ID`. Otherwise run one Node
-  per source.
+  **Deployment limit:** with this single workload credential, one
+  production Node serves exactly one agent source. A Node shared by many
+  pods, such as a DaemonSet, works only if every pod runs with the same
+  `FABRIC_SOURCE_ID`. To serve several sources from one Node (agents and
+  host sensors), use [ingress groups](#ingress-groups-and-host-sensors-shadow-production-host-ingress),
+  one source per group; otherwise run one Node per source.
 - with content, the Node key Secret `content.encryption.keySecret` (default
   `fabric-node-content-key`; 32 random bytes or their base64), which seals
   the persistent content queue with AES-256-GCM. `fabric-gate` refuses a

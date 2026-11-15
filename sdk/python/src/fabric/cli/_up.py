@@ -55,6 +55,16 @@ def _seconds(text: str) -> float:
 def add_up_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-sensor", action="store_true",
                         help="do not start the host sensor")  # fmt: skip
+    # G1 (§3.2): the one flag of the local path when the model host is in neither the
+    # built-in table nor a base-URL variable. It is `init --provider`, applied before up.
+    parser.add_argument(
+        "--provider",
+        action="append",
+        default=[],
+        metavar="[DIALECT=]URL",
+        help="a model endpoint outside the built-in table, by its base URL "
+        "(added to fabric.yaml as `fabric init --provider` adds it)",
+    )
     parser.add_argument(
         "--wait",
         type=_seconds,
@@ -99,11 +109,15 @@ def _load_or_init(options: argparse.Namespace, environ: Mapping[str, str], cwd: 
     located = _config.discover(options.config, environ, cwd)
     lines: list[str] = []
     findings: list[Finding] = []
-    if located.path is None or not located.path.is_file():
+    providers = list(getattr(options, "provider", None) or [])
+    if located.path is None or not located.path.is_file() or providers:
+        if located.path is not None and located.path.is_file():
+            _refuse_other_project(options, _project.load(located, {}, environ))
         defaults = argparse.ArgumentParser()
         _init.add_arguments(defaults)
         init_options = defaults.parse_args([])
         init_options.config, init_options.project = options.config, options.project
+        init_options.provider = providers  # `up --provider` is `init --provider`, then up
         located, document, _, _, findings, lines = _init.write_config(init_options, environ, cwd)
         project = _project.load(located, {}, environ, document)
     else:

@@ -16,6 +16,7 @@ in git.
 
 | Page | What it covers |
 |---|---|
+| [Get started: Python](get-started/python.md) | Your own Python agent recorded and verified on this machine: one install, three commands |
 | [Quickstart](quickstart.md) | Offline example and zero-code capture through a local Node |
 | [Architecture](architecture.md) | Components, data flow, what ships |
 | [Deployment](deployment.md) | Compose and Helm, local and production profiles, required keys and policy, upgrade notes |
