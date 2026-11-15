@@ -82,7 +82,7 @@ if [ "$want_os" = Linux ]; then
   fi
   # shellcheck disable=SC2086
   $cc $cflags $defines -shared -pthread -Wl,--version-script=native/exports.map \
-    -Wl,--build-id=none -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now $sources -o "$out"
+    -Wl,--build-id=none -Wl,-z,nodelete -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now $sources -o "$out"
   exported=$(nm -D --defined-only "$out" | awk '{print $NF}' | sort | tr '\n' ' ')
 else
   # shellcheck disable=SC2086

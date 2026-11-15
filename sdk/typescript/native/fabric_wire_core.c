@@ -22,6 +22,14 @@
  * descriptor is O_CLOEXEC, so fork-then-exec children (child_process, cluster) inherit
  * nothing at all.
  *
+ * The library is never unloaded. Node calls dlclose on an addon when the last environment
+ * that loaded it is torn down, so a module loaded only by a Worker would otherwise leave
+ * with that Worker: the tables would be lost while their descriptors stayed open (a flock
+ * nothing can release), the detached-environment ring would be dropped before anyone
+ * polled it, and the pthread_atfork handler would point into unmapped memory. Linux builds
+ * link with -z nodelete (musl never unloads); on macOS fw_init takes one reference to the
+ * already-loaded image and never returns it.
+ *
  * Nothing here allocates, starts threads, calls back into JavaScript, logs or reads the
  * environment (test builds compiled with FABRIC_WIRE_FAULTS read one variable, once).
  */
@@ -33,6 +41,9 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#if defined(__APPLE__)
+#include <dlfcn.h>
+#endif
 #include <pthread.h>
 #include <stdatomic.h>
 #include <string.h>
@@ -147,9 +158,23 @@ static void fw_atfork_child(void) {
   }
 }
 
+#if defined(__APPLE__)
+/* Keeps this image loaded for the life of the process: one more reference to the image
+ * that is already loaded (RTLD_NOLOAD never reads a file), never released. */
+static void fw_pin_image(void) {
+  Dl_info info;
+  if (dladdr((const void *)&fw_pin_image, &info) != 0 && info.dli_fname != NULL) {
+    (void)dlopen(info.dli_fname, RTLD_NOLOAD | RTLD_LAZY | RTLD_LOCAL);
+  }
+}
+#endif
+
 static void fw_init_once(void) {
 #ifdef FABRIC_WIRE_FAULTS
   fw_faults_init();
+#endif
+#if defined(__APPLE__)
+  fw_pin_image();
 #endif
   (void)pthread_atfork(NULL, NULL, fw_atfork_child);
 }

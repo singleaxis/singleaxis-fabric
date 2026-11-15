@@ -308,10 +308,19 @@ describe("codes that need a failing kernel call (the fault-injection build)", ()
   });
 
   it("OVERFLOW is reported once", () => {
-    // The C unit tests fill the 1,024-entry ring for real; here the flag is preset.
+    // The C unit tests fill the 1,024-entry ring for real; here the flag is preset, and
+    // the same process polls twice: OVERFLOW first, then an ordinary (empty) drain.
     const fdir = privateDir("fault");
     try {
-      expect(runChild(build.faults, "fault", fdir, ["takeDetachedEnvs"]).code).toBe(0);
+      expect(runChild(build.faults, "fault", fdir, ["takeDetachedEnvs"], "ring=overflow")).toEqual({
+        code: C.OVERFLOW,
+        again: 0,
+      });
+      // Without the fault nothing was dropped, so neither poll reports OVERFLOW.
+      expect(runChild(build.faults, "fault", fdir, ["takeDetachedEnvs"])).toEqual({
+        code: 0,
+        again: 0,
+      });
     } finally {
       rmSync(fdir, { recursive: true, force: true });
     }
@@ -556,6 +565,50 @@ describe("Worker teardown", () => {
     expect(n.flock(other, FLOCK_EXCLUSIVE)).toBe(C.WOULD_BLOCK);
     expect(n.close(other)).toBe(0);
     expect(n.close(h)).toBe(0);
+  });
+});
+
+describe("the module is never unloaded", () => {
+  it("handles, locks and the ring outlive the only Worker that loaded the module", () => {
+    const wdir = privateDir("worker-only");
+    try {
+      const result = runChild(build.release, "worker-only", wdir) as Record<string, unknown>;
+      expect(result.flock).toBe(0);
+      expect(result.env).toBeGreaterThan(0);
+      // Unloaded with the Worker, the table would be new (BAD_HANDLE), the id lost and the
+      // flock held by a descriptor nothing can reach until the process exits.
+      expect(result.fsync).toBe(0);
+      expect(result.detached).toEqual([result.env]);
+      expect(result.otherFlock).toBe(C.WOULD_BLOCK);
+      expect(result.unlock).toBe(0);
+      expect(result.otherFlockAfter).toBe(0);
+    } finally {
+      rmSync(wdir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the shipped module carries no test hook", () => {
+  it("only the fault-injection build reads FABRIC_WIRE_TEST_FAULT", () => {
+    const marker = Buffer.from("FABRIC_WIRE_TEST_FAULT");
+    expect(readFileSync(build.faults).includes(marker)).toBe(true);
+    expect(readFileSync(build.release).includes(marker)).toBe(false);
+  });
+
+  it("the shipped module does not read the environment", () => {
+    const args = process.platform === "darwin" ? ["-u"] : ["-D", "--undefined-only"];
+    const undefinedSymbols = (file: string): string => {
+      const result = spawnSync("nm", [...args, file], { encoding: "utf8" });
+      if (result.error !== undefined || result.status !== 0) {
+        throw new Error(
+          `'nm' failed (${result.error?.message ?? result.stderr}); install binutils (Linux) ` +
+            "or the Xcode command line tools (macOS) to run this test",
+        );
+      }
+      return result.stdout;
+    };
+    expect(undefinedSymbols(build.faults)).toMatch(/getenv/);
+    expect(undefinedSymbols(build.release)).not.toMatch(/getenv/);
   });
 });
 

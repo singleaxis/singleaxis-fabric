@@ -12,15 +12,21 @@ import { spawn } from "node:child_process";
 import process from "node:process";
 import { setInterval } from "node:timers";
 
+import { Worker } from "node:worker_threads";
+
 const [file, op, dir, ...args] = process.argv.slice(2);
-const holder = { exports: {} };
-process.dlopen(holder, file);
-const n = holder.exports;
+const load = () => {
+    const holder = { exports: {} };
+    process.dlopen(holder, file);
+    return holder.exports;
+};
+// "worker-only" loads the module in a Worker first; every other operation loads it here.
+const n = op === "worker-only" ? null : load();
 
 const say = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
 const stay = () => setInterval(() => {}, 1000);
 
-const d = n.openDir(dir);
+const d = n === null ? -1 : n.openDir(dir);
 
 if (op === "hold") {
     // hold <name>: an exclusive flock on <name> and a write record lock on bytes [0, 10)
@@ -84,8 +90,11 @@ if (op === "hold") {
     // fault <function>: the code the function returns under FABRIC_WIRE_TEST_FAULT.
     const name = args[0];
     if (name === "openDir") say({ code: d });
-    else if (name === "takeDetachedEnvs") say({ code: n.takeDetachedEnvs(new Uint32Array(4)) });
-    else {
+    else if (name === "takeDetachedEnvs") {
+        // Two polls: OVERFLOW is reported once, then the (empty) ring drains normally.
+        const dst = new Uint32Array(4);
+        say({ code: n.takeDetachedEnvs(dst), again: n.takeDetachedEnvs(dst) });
+    } else {
         const h = n.openFile(d, "fault", true);
         const other = name === "openFile" ? -1 : n.openFile(d, "fault", false);
         const byte = new Uint8Array(1);
@@ -101,6 +110,37 @@ if (op === "hold") {
             say({ code: n.mapShared(h, 4096) });
         } else say({ code: null });
     }
+} else if (op === "worker-only") {
+    // The only isolate that has loaded the module is a Worker: it takes a flock, attaches
+    // its environment and is terminated. Node closes an addon with the last environment
+    // that loaded it; the module must stay loaded, with its tables and its ring.
+    const source = `
+        const { parentPort, workerData } = require("node:worker_threads");
+        const holder = { exports: {} };
+        process.dlopen(holder, workerData.file);
+        const n = holder.exports;
+        const d = n.openDir(workerData.dir);
+        const h = n.openFile(d, "worker-only", true);
+        parentPort.postMessage({ d, h, flock: n.flock(h, 1), env: n.envAttach() });
+        setInterval(() => {}, 1000);
+    `;
+    const worker = new Worker(source, { eval: true, workerData: { file, dir } });
+    worker.once("message", (first) => {
+        void worker.terminate().then(() => {
+            const main = load();
+            const taken = new Uint32Array(4);
+            const count = main.takeDetachedEnvs(taken);
+            const other = main.openFile(first.d, "worker-only", false);
+            say({
+                ...first,
+                fsync: main.fsync(first.h), // the Worker's handle is still the process's
+                detached: [...taken.subarray(0, count)],
+                otherFlock: main.flock(other, 1), // still held, by a handle that can release it
+                unlock: main.flock(first.h, 2),
+                otherFlockAfter: main.flock(other, 1),
+            });
+        });
+    });
 } else if (op === "forked") {
     // Every function in a process marked as a fork()-without-exec child.
     say({

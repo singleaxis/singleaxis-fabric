@@ -22,6 +22,7 @@
                     {
                         "ldflags": [
                             "-Wl,--version-script=<(module_root_dir)/exports.map",
+                            "-Wl,-z,nodelete",
                             "-Wl,-z,noexecstack",
                             "-Wl,-z,relro",
                             "-Wl,-z,now",
