@@ -5,10 +5,10 @@
 // loader refuses a file whose digest is not the one listed here.
 
 export const NATIVE_DIGESTS: Readonly<Record<string, string>> = {
-  "linux-x64-glibc": "373a765eefb9c486cbab08f1bc16cdc438e49170eeeb20276f3bbef505a0f87b",
-  "linux-arm64-glibc": "da41894a43fd05a5b1c460145a9a719a5a3dc3fac5bf7d638f1f6b0147f008fe",
-  "linux-x64-musl": "2b19cd2596420e9fd4f01329d7004d2cfbee009031d8b815c5a25eaada98a667",
-  "linux-arm64-musl": "ca12a12fd42d7140275c5be52204b9183b1508593b3657592ce3e11d0a0fc464",
-  "darwin-x64": "6d7dfc54bfc625f402a0830ff175360b2ff04ad64ee974f675e6bc346cbc0a85",
-  "darwin-arm64": "58fadcf5ca6ee9d4ee99413ed237c19d9358a1ac68e9503db7fc1757a6d19249",
+  "linux-x64-glibc": "4dfdd765dfc9cb1760114afde3cbf632da324b70384aab7db118f7c131261ba2",
+  "linux-arm64-glibc": "93ed0b30438afb929e18187eba636692986b877b7a45a4db38d6feaa65d841aa",
+  "linux-x64-musl": "aba176dce048691ae6ed2da7980281b4e717957f69511b4141cf9c044f27dbc6",
+  "linux-arm64-musl": "da548db74997d0c0decf282e812a35bc6fec1d835d270513f44fecc48db880e8",
+  "darwin-x64": "3174ac9bc9658984259fb63872dcb365a4c4abbb71b5ae84e06f199f85ca35a8",
+  "darwin-arm64": "1336d927a7082b7511c4a39c307a162b791d260d7c7395093cadca19fe0a6529",
 };
