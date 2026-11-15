@@ -73,7 +73,9 @@ def _drop_unexpanded():
     When none sets it, Kubernetes leaves the reference as written: take that text out
     of sys.path and of PYTHONPATH, so neither this program nor one it starts looks
     for modules in a directory of that name."""
-    sys.path[:] = [entry for entry in sys.path if os.path.basename(entry) != _UNEXPANDED]
+    sys.path[:] = [
+        entry for entry in sys.path if os.path.basename(entry) != _UNEXPANDED
+    ]
     parts = os.environ.get("PYTHONPATH", "").split(os.pathsep)
     if _UNEXPANDED in parts:
         os.environ["PYTHONPATH"] = os.pathsep.join(p for p in parts if p != _UNEXPANDED)
