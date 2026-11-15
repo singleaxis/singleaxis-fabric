@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import re
 import stat
 from collections.abc import Mapping
@@ -353,7 +352,8 @@ def test_render_refuses_a_directory_open_to_others(
 ) -> None:
     out = tmp_path / "open"
     out.mkdir(mode=0o700)
-    os.chmod(out, 0o740)  # group-readable: the unsafe directory under test
+    # The unsafe directory under test: readable by the owner's group.
+    out.chmod(out.stat().st_mode | stat.S_IRGRP)
     report = _json(["init", "--kubernetes", "--render", str(out)], capsys)
     assert report["findings"][0]["id"] == "FC-012" and report["exit_code"] == 2
 
