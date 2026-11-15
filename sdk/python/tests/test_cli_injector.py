@@ -258,6 +258,27 @@ def test_review_always_allows_and_an_error_is_an_empty_patch(
     assert _injector.review_response({}, CONFIG)["response"]["allowed"] is True
 
 
+def test_review_log_line_is_one_line_whatever_the_request_names(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The namespace and pod name are request input: a line break in either must not
+    start a second log line (a forged entry)."""
+    pod = _pod()
+    pod["metadata"]["name"] = "agent\n2026-01-01 forged/pod: injected"
+    review = {"request": _request(pod, namespace="agents\r\nforged")}
+    with caplog.at_level("INFO", logger="fabric.injector"):
+        assert _injector.review_response(review, CONFIG)["response"]["allowed"] is True
+    (record,) = caplog.records
+    message = record.getMessage()
+    assert "\n" not in message and "\r" not in message
+    assert message.startswith("agents??forged/agent?2026-01-01?forged?pod??injected: ")
+
+
+def test_a_review_whose_request_is_not_an_object_is_allowed_unchanged() -> None:
+    answer = _injector.review_response({"request": ["not", "an", "object"]}, CONFIG)
+    assert answer["response"] == {"uid": "", "allowed": True}
+
+
 def test_config_from_the_chart_json() -> None:
     config = _injector.Config.from_json(
         {

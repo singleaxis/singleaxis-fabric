@@ -182,7 +182,8 @@ class Store(Protocol):
 
     where: str
 
-    def get(self, namespace: str, name: str) -> dict[str, bytes] | None: ...
+    def get(self, namespace: str, name: str) -> dict[str, bytes] | None:
+        """The Secret's data, or None when it does not exist."""
 
     def create(
         self,
@@ -191,7 +192,8 @@ class Store(Protocol):
         data: Mapping[str, bytes],
         labels: Mapping[str, str],
         object_type: str,
-    ) -> None: ...
+    ) -> None:
+        """Create the Secret; raise :class:`Exists` when it is already there."""
 
 
 def manifest(

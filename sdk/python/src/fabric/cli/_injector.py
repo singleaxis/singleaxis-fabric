@@ -41,6 +41,7 @@ import base64
 import json
 import logging
 import os
+import re
 import ssl
 import sys
 import threading
@@ -65,6 +66,7 @@ VOLUME_AUTOLOAD = "fabric-autoload"
 VOLUME_SPOOL = "fabric-spool"
 MAX_BODY_BYTES = 8 * 1024 * 1024
 _LOG = logging.getLogger("fabric.injector")
+_NOT_NAME = re.compile(r"[^A-Za-z0-9._-]")
 
 
 @dataclass(frozen=True)
@@ -249,7 +251,9 @@ def _pythonpath(container: Mapping[str, Any], annotations: Mapping[str, str]) ->
 def review_response(review: Mapping[str, Any], config: Config) -> dict[str, Any]:
     """The AdmissionReview answer: always ``allowed: true``; a patch only when one applies.
     Any error yields no patch (the pod starts unchanged)."""
-    request = review.get("request") or {}
+    request = review.get("request")
+    if not isinstance(request, Mapping):
+        request = {}
     response: dict[str, Any] = {"uid": request.get("uid", ""), "allowed": True}
     try:
         ops, outcome = plan_patch(request, config)
@@ -258,12 +262,21 @@ def review_response(review: Mapping[str, Any], config: Config) -> dict[str, Any]
     if ops:
         response["patchType"] = "JSONPatch"
         response["patch"] = base64.b64encode(json.dumps(ops).encode("utf-8")).decode("ascii")
-    _LOG.info("%s/%s: %s", request.get("namespace", ""), _pod_name(request), outcome)
+    _LOG.info(
+        "%s/%s: %s", _log_name(request.get("namespace")), _log_name(_pod_name(request)), outcome
+    )
     return {
         "apiVersion": review.get("apiVersion") or "admission.k8s.io/v1",
         "kind": "AdmissionReview",
         "response": response,
     }
+
+
+def _log_name(value: object) -> str:
+    """A Kubernetes name as one safe log token: the request is input, so anything that
+    is not a name character (a line break above all) is replaced and the length capped."""
+    text = str(value or "").replace("\r", "?").replace("\n", "?")
+    return _NOT_NAME.sub("?", text)[:253]
 
 
 def _pod_name(request: Mapping[str, Any]) -> str:

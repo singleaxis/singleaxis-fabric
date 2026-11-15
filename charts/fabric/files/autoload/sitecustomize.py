@@ -35,9 +35,16 @@ def _record(state):
             return
         path = os.path.join(os.path.dirname(spool.rstrip("/")), "autoload-status.json")
         with open(path, "w") as handle:
-            json.dump({"state": state, "python": sys.version.split()[0],
-                       "executable": sys.executable, "pid": os.getpid()}, handle)
-    except Exception:  # noqa: BLE001 - recording is best effort
+            json.dump(
+                {
+                    "state": state,
+                    "python": sys.version.split()[0],
+                    "executable": sys.executable,
+                    "pid": os.getpid(),
+                },
+                handle,
+            )
+    except Exception:  # noqa: BLE001, S110 - recording is best effort
         pass
 
 
@@ -45,9 +52,7 @@ def _exec(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
         return
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    spec.loader.exec_module(importlib.util.module_from_spec(spec))
 
 
 def _chain(search):
@@ -65,7 +70,9 @@ def _find_autoload():
     nothing else is looked up here and the SDK's own chaining finds the image's
     sitecustomize, not this shim."""
     here = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
-    sys.path[:] = [entry for entry in sys.path if not _same(os.path.abspath(entry or "."), here)]
+    sys.path[:] = [
+        entry for entry in sys.path if not _same(os.path.abspath(entry or "."), here)
+    ]
     spec = importlib.machinery.PathFinder.find_spec("fabric", sys.path)
     for location in (spec.submodule_search_locations or []) if spec is not None else []:
         candidate = os.path.join(location, "_autoload", "sitecustomize.py")
