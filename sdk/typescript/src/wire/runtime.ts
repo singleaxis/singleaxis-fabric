@@ -17,7 +17,7 @@
  *   complete. Only the Fabric worker waits, with `Atomics.waitAsync`;
  * - nothing here throws into a caller, logs, reads a file or touches the network.
  */
-import { randomFillSync } from "node:crypto";
+import { randomBytes, randomFillSync } from "node:crypto";
 import { getEnvironmentData, setEnvironmentData } from "node:worker_threads";
 
 import { MAX_VECTOR_SLOTS, SLAB_BYTES, createPayload, createPool } from "./arena.js";
@@ -37,6 +37,8 @@ export const MAX_EXCHANGE_SLOTS = 65536;
 export const JOB_RECORD_BYTES = 2048;
 export const LOSS_RECORD_BYTES = 32;
 export const LOSS_RING_ENTRIES = 4096;
+/** At most this many mirror stores per allocation (see `WireRuntime.next`). */
+const MIRROR_ROUNDS = 8;
 /** The longest an application isolate spins for the control-block lock. */
 export const LOCK_SPIN_MS = 0.02;
 
@@ -47,7 +49,8 @@ const C_MAGIC = 0;
 const C_EPOCH = 1;
 const C_NEXT = 2;
 const C_NONCE = 3; // two words
-const C_MIRROR = 5;
+const C_MIRROR = 5; // the registration mirror's map handle, or -1
+const C_REG_FD = 6; // the registration file's descriptor handle, or -1
 const C_LOSSES = 8; // one counter per LossReason code
 const C_UNATTRIBUTED = 16;
 const C_LOCK_TIMEOUTS = 17;
@@ -103,7 +106,7 @@ export interface RuntimeShared {
 }
 
 export interface RuntimeOptions {
-  /** The epoch this process registered (spec 050 §3.2). */
+  /** The epoch to start in. Default: a fresh CSPRNG epoch ({@link newEpoch}). */
   readonly epoch?: bigint;
   /** The first position to allocate. */
   readonly firstSequence?: bigint;
@@ -123,6 +126,18 @@ export interface RuntimeOptions {
 }
 
 const MIB = 1024 * 1024;
+const EPOCH_MASK = (1n << 63n) - 1n;
+
+/**
+ * A fresh epoch (spec 050 §3.2 rule 1): 63 bits from the CSPRNG, redrawn while 0. Two
+ * processes sharing a spool are told apart by registration, never by the clock or pid.
+ */
+export function newEpoch(): bigint {
+  for (;;) {
+    const epoch = randomBytes(8).readBigUInt64BE(0) & EPOCH_MASK;
+    if (epoch !== 0n) return epoch;
+  }
+}
 
 /** Creates the shared memory. Installing thread only, once per process. */
 export function createRuntimeShared(options: RuntimeOptions = {}): RuntimeShared {
@@ -160,9 +175,10 @@ export function createRuntimeShared(options: RuntimeOptions = {}): RuntimeShared
   };
   const i64 = new BigInt64Array(shared.control);
   i64[C_MAGIC] = MAGIC;
-  i64[C_EPOCH] = options.epoch ?? 0n;
+  i64[C_EPOCH] = options.epoch ?? newEpoch();
   i64[C_NEXT] = options.firstSequence ?? 0n;
   i64[C_MIRROR] = -1n;
+  i64[C_REG_FD] = -1n;
   randomFillSync(new Uint8Array(shared.control, C_NONCE * 8, 16));
   Atomics.store(new Int32Array(shared.control), W_STATE, STATE_RUNNING);
   return shared;
@@ -231,8 +247,8 @@ export class WireRuntime {
   private readonly lossBytes = new Uint8Array(this.lossScratch.buffer);
   /**
    * The registration mirror (spec 050 §3.2): called with the next sequence after every
-   * allocation. Unit 055-t5 binds it to the native `store64`; a memory store, no system
-   * call.
+   * allocation. `registration.ts` binds it to the native `store64` (a memory store, no
+   * system call); see {@link next} for how concurrent isolates keep it current.
    */
   mirror: ((next: bigint) => void) | undefined;
 
@@ -267,6 +283,46 @@ export class WireRuntime {
   }
   get epoch(): bigint {
     return Atomics.load(this.i64, C_EPOCH);
+  }
+  /** The next position the allocator hands out (the count allocated so far in the epoch). */
+  get nextSequence(): bigint {
+    return Atomics.load(this.i64, C_NEXT);
+  }
+
+  // ------------------------------------------------------------------- registration
+
+  /**
+   * Adopts a registered epoch (spec 050 §3.2 rule 2): the epoch, the mirror's map handle
+   * and the file's descriptor handle go into the control block, where every isolate (the
+   * Fabric worker that later closes the file, an attaching application isolate that
+   * mirrors) reads them. A redrawn epoch replaces `drawnFrom` only while nothing was
+   * allocated in it; otherwise nothing changes and the result is `false`. Called at
+   * install, before any hook exists, so no allocation can race it.
+   */
+  adoptRegistration(drawnFrom: bigint, epoch: bigint, mirror: number, file: number): boolean {
+    const i64 = this.i64;
+    const current = Atomics.load(i64, C_EPOCH);
+    if (current !== drawnFrom || (epoch !== current && Atomics.load(i64, C_NEXT) !== 0n)) {
+      return false;
+    }
+    Atomics.store(i64, C_EPOCH, epoch);
+    Atomics.store(i64, C_REG_FD, BigInt(file));
+    Atomics.store(i64, C_MIRROR, BigInt(mirror));
+    return true;
+  }
+  /** Forgets the registration's handles (orderly close). Mirrors elsewhere become no-ops. */
+  releaseRegistration(): void {
+    Atomics.store(this.i64, C_MIRROR, -1n);
+    Atomics.store(this.i64, C_REG_FD, -1n);
+    this.mirror = undefined;
+  }
+  /** The mirror's map handle, or -1 when the epoch is not registered. */
+  get mirrorHandle(): number {
+    return Number(Atomics.load(this.i64, C_MIRROR));
+  }
+  /** The registration file's descriptor handle, or -1 when the epoch is not registered. */
+  get registrationHandle(): number {
+    return Number(Atomics.load(this.i64, C_REG_FD));
   }
   /** The 16 random bytes that name this runtime instance. */
   get nonce(): Uint8Array {
@@ -347,12 +403,29 @@ export class WireRuntime {
     return { sequence, segmentHi, segmentLo, lost: false };
   }
 
+  /**
+   * One position, then the mirror. Isolates allocate without a lock, so two stores can
+   * land out of order (one isolate stores 7, another that allocated earlier then stores
+   * 6). Each isolate therefore re-reads the counter after its store, with a read-modify-
+   * write (a full fence after the native release store, on x64 and arm64), and stores
+   * again until the counter equals what it stored: whichever store lands last was
+   * followed by a read that saw no later allocation, so once allocation stops the
+   * mirror equals the counter. Bounded: under a long burst the isolates allocating
+   * later repeat the check themselves. No lock, no wait, no system call.
+   */
   private next(): bigint {
-    const sequence = Atomics.add(this.i64, C_NEXT, 1n);
+    const i64 = this.i64;
+    const sequence = Atomics.add(i64, C_NEXT, 1n);
     const mirror = this.mirror;
     if (mirror !== undefined) {
       try {
-        mirror(sequence + 1n);
+        let value = sequence + 1n;
+        for (let round = 0; round < MIRROR_ROUNDS; round++) {
+          mirror(value);
+          const now = Atomics.add(i64, C_NEXT, 0n);
+          if (now === value) break;
+          value = now;
+        }
       } catch {
         // A mirror failure is never the agent's problem; the orphan scan covers it.
       }
