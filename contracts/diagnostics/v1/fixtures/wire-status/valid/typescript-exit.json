@@ -1,0 +1,23 @@
+{
+  "capture": "closed",
+  "delivered": false,
+  "notice_ids": [
+    "FW-005"
+  ],
+  "phase": "exit",
+  "pid": 5151,
+  "schema": "fabric.wire-status/v1",
+  "sdk_language": "typescript",
+  "sdk_version": "0.13.0",
+  "stats": {
+    "content_rejected": 0,
+    "delivered": 9,
+    "matched": 12,
+    "queue_full": 0,
+    "spooled": 12
+  },
+  "warning_ids": [
+    "FW-033"
+  ],
+  "written_at": "2026-11-13T09:05:00.000Z"
+}
