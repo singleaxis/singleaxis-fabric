@@ -137,6 +137,19 @@ describe("starting the Fabric worker", () => {
     expect(() => fabric.start()).not.toThrow();
     await until(() => runtime.state === STATE_FAILED);
     expect(runtime.stats().workerRestarts).toBe(5);
+    expect(runtime.stats().failureReason).toBe("worker_crash_loop");
+    expect(table.begin()).toBe(-1);
+  });
+
+  it("a worker that cannot be constructed is a failed runtime with its reason", () => {
+    const { fabric, runtime, table } = start({ entry: "not-a-path.cjs" });
+    expect(runtime.stats().failureReason).toBeUndefined();
+    expect(() => fabric.start()).not.toThrow();
+    expect([runtime.state, runtime.stats().failureReason]).toEqual([
+      STATE_FAILED,
+      "worker_start_failed",
+    ]);
+    expect(fabric.worker).toBeUndefined();
     expect(table.begin()).toBe(-1);
   });
 });
@@ -255,6 +268,7 @@ describe("a crashed Fabric worker", () => {
     const sequence = send(table, 0xef); // every worker dies on this job
     await until(() => runtime.state === STATE_FAILED);
     expect(runtime.stats().workerRestarts).toBe(5);
+    expect(runtime.stats().failureReason).toBe("worker_crash_loop");
     expect(fabric.worker).toBeUndefined();
     // Hooks keep returning at once: nothing is captured, nothing throws.
     expect(table.begin()).toBe(-1);

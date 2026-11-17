@@ -59,6 +59,7 @@ const W_LOCK = 65;
 const W_WORKER_GENERATION = 66;
 const W_WORKER_RESTARTS = 67;
 const W_STOP = 68;
+const W_FAILURE = 69;
 // Run table: 4 BigInt64 words per run (segment hi, segment lo, positions, reserved).
 const RUN_BASE = 64;
 // Isolate table: 4 Int32 words per isolate (state, environment id, role, reserved).
@@ -69,6 +70,14 @@ export const STATE_CLOSING = 2;
 export const STATE_CLOSED = 3;
 /** The Fabric worker could not be kept running: capture is off, with a reason. */
 export const STATE_FAILED = 4;
+
+/**
+ * Why the runtime is {@link STATE_FAILED}, for the status document (spec 055 §4.7):
+ * the Fabric worker could not be constructed, or it died five times in a row, each
+ * within a second of its start.
+ */
+export const FAILURE_REASONS = ["worker_start_failed", "worker_crash_loop"] as const;
+export type RuntimeFailureReason = (typeof FAILURE_REASONS)[number];
 
 /** Reasons an allocated position is lost in the shared runtime (Python `LossReason`). */
 export const LOSS_REASONS = ["queue_full", "internal_error", "shutdown"] as const;
@@ -196,6 +205,8 @@ export interface Allocation {
 /** Content-free counters (spec 055 §4.7 reads these for the status document). */
 export interface RuntimeStats {
   readonly state: number;
+  /** Set when {@link state} is {@link STATE_FAILED}. */
+  readonly failureReason: RuntimeFailureReason | undefined;
   readonly nextSequence: bigint;
   readonly losses: Readonly<Record<RuntimeLossReason, bigint>>;
   /** Losses that did not fit the loss ring: their positions are gaps without a reason. */
@@ -248,6 +259,11 @@ export class WireRuntime {
   setState(state: number): void {
     Atomics.store(this.i32, W_STATE, state);
     this.jobs.wake();
+  }
+  /** Stops capture with a named reason: hooks return at once from now on. */
+  fail(reason: RuntimeFailureReason): void {
+    Atomics.store(this.i32, W_FAILURE, FAILURE_REASONS.indexOf(reason) + 1);
+    this.setState(STATE_FAILED);
   }
   get epoch(): bigint {
     return Atomics.load(this.i64, C_EPOCH);
@@ -430,6 +446,7 @@ export class WireRuntime {
     const i64 = this.i64;
     return {
       state: this.state,
+      failureReason: FAILURE_REASONS[Atomics.load(this.i32, W_FAILURE) - 1],
       nextSequence: Atomics.load(i64, C_NEXT),
       losses: {
         queue_full: Atomics.load(i64, C_LOSSES),

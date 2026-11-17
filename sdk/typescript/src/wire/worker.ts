@@ -27,7 +27,6 @@ import { ExchangeTable, JOB_EXCHANGE, JOB_RELEASING, type ExchangeJob } from "./
 import {
   type RuntimeLoss,
   type RuntimeShared,
-  STATE_FAILED,
   WireRuntime,
   waitAsync,
 } from "./runtime.js";
@@ -104,7 +103,7 @@ export class FabricWorker {
         stderr: true,
       });
     } catch {
-      this.runtime.setState(STATE_FAILED);
+      this.runtime.fail("worker_start_failed");
       return;
     }
     worker.unref();
@@ -130,7 +129,7 @@ export class FabricWorker {
     const quick = performance.now() - startedAt < (this.options.quickCrashMs ?? 1000);
     this.quickCrashes = quick ? this.quickCrashes + 1 : 0;
     if (this.quickCrashes >= (this.options.maxQuickCrashes ?? 5)) {
-      runtime.setState(STATE_FAILED);
+      runtime.fail("worker_crash_loop");
       return;
     }
     this.start();
