@@ -288,6 +288,15 @@ describe("a crashed Fabric worker", () => {
     await until(() => Atomics.load(report, 0) === 2);
   }, 30_000);
 
+  it("a worker that crashes while it drains for stop() is not reported as a clean stop", async () => {
+    const { fabric, table, runtime } = start();
+    fabric.start();
+    send(table, 0xef); // the worker dies on this job, after stop() asked it to drain
+    expect(await fabric.stop(10_000)).toBe(false);
+    expect(fabric.worker).toBeUndefined();
+    expect(runtime.stats().workerRestarts).toBe(0); // a stopping worker is not replaced
+  }, 30_000);
+
   it("stops capture with a failed state after five quick crashes; the agent's calls go on", async () => {
     const { fabric, table, runtime } = start();
     fabric.start();

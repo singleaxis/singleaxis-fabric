@@ -62,7 +62,7 @@ export interface FabricWorkerOptions {
 /** The installing thread's handle on the Fabric worker. */
 export class FabricWorker {
   private thread: Worker | undefined;
-  private stopping: (() => void) | undefined;
+  private stopping: ((clean: boolean) => void) | undefined;
   private quickCrashes = 0;
 
   constructor(
@@ -104,15 +104,17 @@ export class FabricWorker {
     worker.unref();
     // An uncaught error in the worker ends it; it is never rethrown on this thread.
     worker.on("error", () => undefined);
-    worker.once("exit", () => this.exited(worker, startedAt));
+    worker.once("exit", (code) => this.exited(worker, startedAt, code));
     this.thread = worker;
   }
 
-  private exited(worker: Worker, startedAt: number): void {
+  private exited(worker: Worker, startedAt: number, code: number): void {
     if (this.thread !== worker) return;
     this.thread = undefined;
     if (this.stopping !== undefined) {
-      this.stopping();
+      // Only a worker that left its loop exits with 0; a crash while it drained did not
+      // finish the jobs it was asked to.
+      this.stopping(code === 0);
       return;
     }
     const runtime = this.runtime;
@@ -132,20 +134,22 @@ export class FabricWorker {
 
   /**
    * Asks the worker to drain and exit, and terminates it after `timeoutMs`. Resolves
-   * `true` when it exited by itself.
+   * `true` only when it drained and exited by itself; `false` when it crashed while
+   * draining or had to be terminated.
    */
   async stop(timeoutMs: number): Promise<boolean> {
     const worker = this.thread;
     if (worker === undefined) return true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const exited = new Promise<boolean>((resolve) => {
-      this.stopping = () => resolve(true);
+      this.stopping = resolve;
       timer = setTimeout(() => resolve(false), timeoutMs);
       timer.unref();
     });
     this.runtime.requestStop();
     const clean = await exited;
     clearTimeout(timer);
+    this.stopping = undefined;
     if (!clean) {
       this.thread = undefined;
       await worker.terminate().catch(() => undefined);
