@@ -121,6 +121,24 @@ describe("finish-once in one isolate", () => {
     expect(Buffer.from(first!.meta).includes("secret")).toBe(false);
   });
 
+  it("a begin that fails inside the runtime never throws: the call goes on uncaptured", () => {
+    const { table, runtime } = isolate({ maxExchanges: 1 });
+    const allocate = runtime.allocate.bind(runtime);
+    runtime.allocate = () => {
+      throw new Error("allocation failed");
+    };
+    expect(table.begin()).toBe(-1);
+    // A malformed hook input is the same: no exception reaches the agent.
+    runtime.allocate = allocate;
+    expect(table.begin({ startNs: 5 as unknown as bigint })).toBe(-1);
+    // The slot was freed both times, and no position was spent or named.
+    expect(table.active).toBe(0);
+    const handle = table.begin();
+    expect(table.finish(handle, "complete")).toBe("enqueued");
+    const { jobs, losses } = drain(table);
+    expect([jobs.map((job) => job.sequence), losses]).toEqual([[0n], []]);
+  });
+
   it("a finish while the recorder is closing or failed is a named loss, never a record", () => {
     for (const [state, reason] of [
       [STATE_CLOSING, "shutdown"],

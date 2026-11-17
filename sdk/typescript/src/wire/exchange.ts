@@ -206,19 +206,31 @@ export class ExchangeTable {
     if (this.pool.low) runtime.jobs.wake();
     const { i32, i64, bytes } = this.pool;
     const word = index * SLOT_WORDS;
-    // The whole slot, hook-defined bytes included: nothing of the slot's previous
-    // exchange can appear in this one's record.
-    bytes.fill(0, index * 2048 + 8, index * 2048 + 2048);
-    i32[word + X_RUN] = runSlot;
-    i32[word + X_SIDE + SIDE_STATE] = 1; // a request with no body is an exact empty body
-    i64[index * SLOT_I64 + X_START_NS] = options.startNs ?? now();
-    this.writeIds(index, options.parent);
-    // A call that starts after its explicit scope ended is adopted at once, and keeps
-    // the scope's withheld flag (it survives scope exit).
-    if (ownership !== undefined && !provisional) i32[word + X_FLAGS] = FLAG_ADOPTED;
-    if (ownership?.withheld === true) i32[word + X_FLAGS] = i32[word + X_FLAGS]! | FLAG_WITHHELD;
-    if (!provisional && !this.position(index, runSlot)) {
-      this.recycle(index);
+    try {
+      // The whole slot, hook-defined bytes included: nothing of the slot's previous
+      // exchange can appear in this one's record.
+      bytes.fill(0, index * 2048 + 8, index * 2048 + 2048);
+      i32[word + X_RUN] = runSlot;
+      i32[word + X_SIDE + SIDE_STATE] = 1; // a request with no body is an exact empty body
+      i64[index * SLOT_I64 + X_START_NS] = options.startNs ?? now();
+      this.writeIds(index, options.parent);
+      // A call that starts after its explicit scope ended is adopted at once, and keeps
+      // the scope's withheld flag (it survives scope exit).
+      if (ownership !== undefined && !provisional) i32[word + X_FLAGS] = FLAG_ADOPTED;
+      if (ownership?.withheld === true) i32[word + X_FLAGS] = i32[word + X_FLAGS]! | FLAG_WITHHELD;
+      // Last: nothing below can fail once a position exists.
+      if (!provisional && !this.position(index, runSlot)) {
+        this.recycle(index);
+        return NO_EXCHANGE;
+      }
+    } catch {
+      // Never the caller's problem: the call goes on uncaptured. No position was
+      // allocated, so there is no gap to name.
+      try {
+        this.recycle(index);
+      } catch {
+        // Nothing more can be done here.
+      }
       return NO_EXCHANGE;
     }
     const generation = Atomics.load(i32, word) >>> 3;
