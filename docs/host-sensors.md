@@ -220,11 +220,15 @@ it when you deploy, when the file changes, or from your own scheduler.
   entry's `pth-` id (`fabric.grant.path_ref`, the same id as the sensor's
   `fabric.sensor.watch_id`). Never the path, a file name or any content.
 - **As content:** each file's SHA-256, size and contents verbatim, only when
-  your capture policy retains the `run.permissions` role. Under the default
-  production profile nothing of the file is kept (`FC-107` says so). At most
-  128 KiB of one file and 512 KiB of one entry are kept; a larger file is
-  recorded by digest and size (`FC-108`). Fabric never parses or applies
-  the rules.
+  your capture policy retains the `run.permissions` role (`retain_original`
+  or `original_plus_masked`; a masking mode keeps them masked, and the
+  command says so). Under the default production profile, and under `omit`
+  or `metadata_only`, nothing of the file is kept (`FC-107` says so). At
+  most 128 KiB of one file is kept, and the entry's document must fit the
+  role's 1 MiB body limit, which the SDK counts at up to 6 bytes per
+  character (about 170,000 characters of contents): the largest files'
+  contents are left out first until it fits. A file left out is recorded by
+  digest and size (`FC-108`). Fabric never parses or applies the rules.
 - **The same id key.** The sensor and `fabric snapshot` must use the same
   id key (`EMIT_ID_KEY_FILE` and the project's `secrets.id_key_file`), and
   the entry's `path` must be written the same way in both lists, or the two
