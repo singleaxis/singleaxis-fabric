@@ -297,7 +297,7 @@ describe("registration (rule 2) and the mirror (rule 3)", () => {
     registration.close(); // idempotent
     expect(rt.mirror).toBeUndefined();
     expect(rt.mirrorHandle).toBe(-1);
-    expect(rt.registrationHandle).toBe(-1);
+    expect(registration.fileHandle).toBe(-1);
     expect(rt.allocate().sequence).toBe(4n); // no mirror any more: still allocates
   });
 
@@ -306,7 +306,11 @@ describe("registration (rule 2) and the mirror (rule 3)", () => {
     const rt = runtime();
     const registration = reg(dir, rt, { addon: real });
     expect(rt.mirrorHandle).toBeGreaterThan(0);
-    expect(rt.registrationHandle).toBeGreaterThan(0);
+    // Only the map handle is published (spec 055 §4.4): the control block, which every
+    // application isolate shares, never carries the registration's fd handle.
+    expect(registration.fileHandle).toBeGreaterThan(0);
+    const words = new BigInt64Array(rt.shared.control);
+    expect(words.includes(BigInt(registration.fileHandle))).toBe(false);
     const other = new WireRuntime(rt.shared, "application");
     expect(other.mirror).toBeUndefined();
     attachMirror(other, real);

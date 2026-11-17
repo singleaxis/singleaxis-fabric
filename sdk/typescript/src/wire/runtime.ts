@@ -50,7 +50,7 @@ const C_EPOCH = 1;
 const C_NEXT = 2;
 const C_NONCE = 3; // two words
 const C_MIRROR = 5; // the registration mirror's map handle, or -1
-const C_REG_FD = 6; // the registration file's descriptor handle, or -1
+// Word 6 is unused: fd handles are never published to application isolates (§4.4).
 const C_LOSSES = 8; // one counter per LossReason code
 const C_UNATTRIBUTED = 16;
 const C_LOCK_TIMEOUTS = 17;
@@ -178,7 +178,6 @@ export function createRuntimeShared(options: RuntimeOptions = {}): RuntimeShared
   i64[C_EPOCH] = options.epoch ?? newEpoch();
   i64[C_NEXT] = options.firstSequence ?? 0n;
   i64[C_MIRROR] = -1n;
-  i64[C_REG_FD] = -1n;
   randomFillSync(new Uint8Array(shared.control, C_NONCE * 8, 16));
   Atomics.store(new Int32Array(shared.control), W_STATE, STATE_RUNNING);
   return shared;
@@ -292,37 +291,35 @@ export class WireRuntime {
   // ------------------------------------------------------------------- registration
 
   /**
-   * Adopts a registered epoch (spec 050 §3.2 rule 2): the epoch, the mirror's map handle
-   * and the file's descriptor handle go into the control block, where every isolate (the
-   * Fabric worker that later closes the file, an attaching application isolate that
-   * mirrors) reads them. A redrawn epoch replaces `drawnFrom` only while nothing was
-   * allocated in it; otherwise nothing changes and the result is `false`. Called at
-   * install, before any hook exists, so no allocation can race it.
+   * Adopts a registered epoch (spec 050 §3.2 rule 2): the epoch and the mirror's map
+   * handle go into the control block, where an attaching application isolate reads the
+   * handle to mirror. The file's descriptor handle never does: spec 055 §4.4 publishes
+   * only the mirror's map handle to application isolates. A redrawn epoch replaces
+   * `drawnFrom` only while nothing was allocated in it; otherwise nothing changes and the
+   * result is `false`. Called at install, before any hook exists, so no allocation can
+   * race it.
    */
-  adoptRegistration(drawnFrom: bigint, epoch: bigint, mirror: number, file: number): boolean {
+  adoptRegistration(drawnFrom: bigint, epoch: bigint, mirror: number): boolean {
     const i64 = this.i64;
     const current = Atomics.load(i64, C_EPOCH);
     if (current !== drawnFrom || (epoch !== current && Atomics.load(i64, C_NEXT) !== 0n)) {
       return false;
     }
     Atomics.store(i64, C_EPOCH, epoch);
-    Atomics.store(i64, C_REG_FD, BigInt(file));
     Atomics.store(i64, C_MIRROR, BigInt(mirror));
     return true;
   }
-  /** Forgets the registration's handles (orderly close). Mirrors elsewhere become no-ops. */
+  /** Forgets the registration's mirror (orderly close). Mirrors elsewhere become no-ops. */
   releaseRegistration(): void {
     Atomics.store(this.i64, C_MIRROR, -1n);
-    Atomics.store(this.i64, C_REG_FD, -1n);
     this.mirror = undefined;
   }
-  /** The mirror's map handle, or -1 when the epoch is not registered. */
+  /**
+   * The mirror's map handle, or -1 when the epoch is not registered: while it is set,
+   * this process holds the registration of {@link epoch}.
+   */
   get mirrorHandle(): number {
     return Number(Atomics.load(this.i64, C_MIRROR));
-  }
-  /** The registration file's descriptor handle, or -1 when the epoch is not registered. */
-  get registrationHandle(): number {
-    return Number(Atomics.load(this.i64, C_REG_FD));
   }
   /** The 16 random bytes that name this runtime instance. */
   get nonce(): Uint8Array {
@@ -408,10 +405,11 @@ export class WireRuntime {
    * land out of order (one isolate stores 7, another that allocated earlier then stores
    * 6). Each isolate therefore re-reads the counter after its store, with a read-modify-
    * write (a full fence after the native release store, on x64 and arm64), and stores
-   * again until the counter equals what it stored: whichever store lands last was
-   * followed by a read that saw no later allocation, so once allocation stops the
-   * mirror equals the counter. Bounded: under a long burst the isolates allocating
-   * later repeat the check themselves. No lock, no wait, no system call.
+   * again until the counter equals what it stored, at most 8 rounds. Once allocation
+   * stops, the mirror equals the counter unless one isolate spent all 8 rounds behind
+   * newer allocations and its last store landed after every later one: the mirror is
+   * then behind, as Python's is after a SIGKILL between its increment and its store, and
+   * the next allocation in any isolate repairs it. No lock, no wait, no system call.
    */
   private next(): bigint {
     const i64 = this.i64;

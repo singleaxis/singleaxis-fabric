@@ -388,7 +388,7 @@ export class Registration {
   bind(runtime: WireRuntime, drawnFrom: bigint): boolean {
     const addon = this.#addon;
     if (addon === undefined || this.#map < 0) return false;
-    if (!runtime.adoptRegistration(drawnFrom, this.epoch, this.#map, this.#file)) {
+    if (!runtime.adoptRegistration(drawnFrom, this.epoch, this.#map)) {
       return false;
     }
     this.#runtime = runtime;
@@ -400,6 +400,15 @@ export class Registration {
   /** Whether this registration holds its file (and so its lock) now. */
   get held(): boolean {
     return this.#file > 0;
+  }
+
+  /**
+   * @internal The file's descriptor handle, or -1. Never published to application
+   * isolates (spec 055 §4.4): the installing thread hands it to the Fabric worker in its
+   * `workerData`, so that worker, or a replacement, can close the file at shutdown.
+   */
+  get fileHandle(): number {
+    return this.#file;
   }
 
   /** The file's name inside `.epochs`, for a registered one. */
@@ -726,7 +735,7 @@ export interface ScanOptions {
 function heldHere(runtime: WireRuntime | undefined): Set<bigint> {
   const held = new Set<bigint>();
   for (const registration of HELD) if (registration.held) held.add(registration.epoch);
-  if (runtime !== undefined && runtime.registrationHandle > 0) held.add(runtime.epoch);
+  if (runtime !== undefined && runtime.mirrorHandle > 0) held.add(runtime.epoch);
   return held;
 }
 
