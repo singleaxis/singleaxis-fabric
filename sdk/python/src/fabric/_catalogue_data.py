@@ -854,8 +854,10 @@ CATALOGUE: dict[str, Any] = {
             "name": "snapshot_file_unreadable",
             "severity": "error",
             "text": "a watched permission file could not be read, so it was not snapshotted",
-            "fix": "the detail names the entry's label and the error; run `fabric snapshot` "
-            "as a user that can read the file, or correct the path in watched_paths",
+            "fix": "the detail names the entry's label and the cause; for an error reading "
+            "the file, run `fabric snapshot` as a user that can read it or correct "
+            "the path in watched_paths; for a failure while recording it, run "
+            "`fabric doctor`",
         },
         {
             "id": "FC-104",
@@ -906,6 +908,15 @@ CATALOGUE: dict[str, Any] = {
             "severity": "info",
             "text": "a permission file differs from its last snapshot",
             "fix": "nothing to do; the reader states the change as F2 (grant_changed)",
+        },
+        {
+            "id": "FC-110",
+            "name": "snapshot_folder_incomplete",
+            "severity": "warning",
+            "text": "a watched permission folder was snapshotted without some of its files",
+            "fix": "the detail names why; run `fabric snapshot` as a user that can read "
+            "every file under the folder, or list a large or deep folder's "
+            "subfolders as entries of their own",
         },
     ],
 }

@@ -182,9 +182,10 @@ def _read_file(path: str, *, follow: bool = True) -> tuple[str, int, bytes | Non
         os.close(fd)
 
 
-def _directory_files(root: str) -> tuple[list[str], list[str]]:
+def _directory_files(root: str, errors: list[str]) -> tuple[list[str], list[str]]:
     """The regular files under a ``prefix`` entry, sorted, never through a symbolic link;
-    and what was left out (``file_limit``, ``depth_limit``)."""
+    and what was left out (``unreadable``, ``file_limit``, ``depth_limit``). The reason of
+    each folder or file that could not be read is added to ``errors``."""
     try:
         if not stat.S_ISDIR(os.stat(root).st_mode):
             raise _UnreadableError("it is not a directory; list a single file with match: exact")
@@ -196,6 +197,7 @@ def _directory_files(root: str) -> tuple[list[str], list[str]]:
 
     def failed(exc: OSError) -> None:
         incomplete.add("unreadable")
+        errors.append(_reason(exc))
 
     for current, directories, names in os.walk(base, onerror=failed, followlinks=False):
         directories.sort()
@@ -208,8 +210,8 @@ def _directory_files(root: str) -> tuple[list[str], list[str]]:
             try:
                 if not stat.S_ISREG(os.lstat(full).st_mode):
                     continue
-            except OSError:
-                incomplete.add("unreadable")
+            except OSError as exc:
+                failed(exc)
                 continue
             if len(found) >= MAX_FILES:
                 incomplete.add("file_limit")
@@ -224,20 +226,22 @@ def read_entry(entry: Mapping[str, str], path_id: Callable[[str], str]) -> dict[
     verbatim (UTF-8 text, else base64). Raises :class:`_UnreadableError` when nothing of the
     entry can be read."""
     incomplete: set[str] = set()
+    errors: list[str] = []
     if entry["match"] == "exact":
         paths = [entry["path"]]
     else:
-        paths, left_out = _directory_files(entry["path"])
+        paths, left_out = _directory_files(entry["path"], errors)
         incomplete.update(left_out)
     files: list[dict[str, Any]] = []
     for path in paths:
         try:
             # A file under a prefix entry is never opened through a symbolic link.
             digest, size, data = _read_file(path, follow=entry["match"] == "exact")
-        except _UnreadableError:
+        except _UnreadableError as exc:
             if entry["match"] == "exact":
                 raise
             incomplete.add("unreadable")
+            errors.append(str(exc))
             continue
         row: dict[str, Any] = {"path_ref": path_id(path), "sha256": digest, "bytes": size}
         if data is None:
@@ -251,6 +255,10 @@ def read_entry(entry: Mapping[str, str], path_id: Callable[[str], str]) -> dict[
                 row["content"] = base64.b64encode(data).decode("ascii")
                 row["encoding"] = "base64"
         files.append(row)
+    if not files and errors:
+        # Nothing under the folder could be read: an empty snapshot would say the folder
+        # holds no rule file, which was not observed.
+        raise _UnreadableError(f"none of its files could be read ({errors[0]})")
     out: dict[str, Any] = {"match": entry["match"], "files": files}
     if incomplete:
         out["incomplete"] = sorted(incomplete)
@@ -329,6 +337,13 @@ def record(payload: Mapping[str, Any], status_file: str) -> dict[str, Any]:
     out["status"] = _status(status_file)
     return out
 
+
+#: Why files under a ``prefix`` entry were left out of its snapshot (``FC-110``).
+_LEFT_OUT = {
+    "unreadable": "a file or folder under it could not be read",
+    "file_limit": f"it holds more than {MAX_FILES} files; the first {MAX_FILES} were read",
+    "depth_limit": f"folders more than {MAX_DEPTH} levels deep were not read",
+}
 
 #: The ``run.permissions`` modes that keep the bytes as given, and those that keep none
 #: (``metadata_only`` stores a descriptor without bytes); any other mode keeps them masked.
@@ -434,13 +449,24 @@ def run_worker(
             check=False,
             cwd=str(project.directory),
         )
-        lines = result.stdout.strip().splitlines()
-        answer = json.loads(lines[-1]) if lines else {}
     except subprocess.TimeoutExpired:
         return {"installed": False, "error": f"no answer in {WORKER_TIMEOUT_S:g} s"}
-    except (OSError, ValueError):
-        return {"installed": False, "error": "the snapshot worker could not be started"}
-    return answer if isinstance(answer, dict) else {"installed": False, "error": "no answer"}
+    except OSError as exc:
+        return {"installed": False, "error": "the snapshot worker could not be started "
+                                             f"({type(exc).__name__})"}  # fmt: skip
+    lines = result.stdout.strip().splitlines()
+    try:
+        answer = json.loads(lines[-1]) if lines else None
+    except ValueError:
+        answer = None
+    if isinstance(answer, dict):
+        return answer
+    # The worker died before it answered (an import error, a crash): say so, with its exit
+    # code and the last line it wrote, instead of "capture did not install".
+    tail = (result.stderr.strip().splitlines() or [""])[-1].strip()[:300]
+    error = f"the snapshot worker exited with code {result.returncode} without an answer"
+    return {"installed": False, "worker_failed": True,
+            "error": error + (f" ({tail})" if tail else "")}  # fmt: skip
 
 
 # ---------------------------------------------------------------- the last ids
@@ -499,6 +525,9 @@ def _not_recorded(answer: Mapping[str, Any]) -> Finding:
             "FC-104", f"{reason_id or 'FW-001'}: {reason}" + (f"; fix: {fix}" if fix else "")
         )
     error = answer.get("error")
+    if answer.get("worker_failed"):
+        return Finding("FC-104", f"{error}; run `fabric doctor`, which checks the same "
+                                 "interpreter and configuration")  # fmt: skip
     if error == "records_inactive":
         return Finding("FC-104", "capture installed, but its records input did not start, so "
                                  "no record could be made; run `fabric doctor`")  # fmt: skip
@@ -556,7 +585,12 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per outcome the operator is told
         report.exit_code = EXIT_FINDINGS
         lines.append("snapshot: nothing was recorded (see the finding)")
         return report, lines
-    recorded = 0
+    recorded = partial = 0
+
+    def entries_path(row: Mapping[str, Any]) -> str:
+        index = row.get("index")
+        return entries[index]["path"] if type(index) is int and 0 <= index < len(entries) else "?"
+
     answered = {row.get("index") for row in rows}
     for number, entry in enumerate(entries):  # an entry the worker never reached is named
         if number not in answered:
@@ -570,9 +604,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per outcome the operator is told
                                 "recorded": bool(row.get("recorded"))}  # fmt: skip
         if not row.get("recorded"):
             why = str(row.get("error") or "the record was not accepted")
-            index = row.get("index")
-            where = entries[index]["path"] if type(index) is int and index < len(entries) else "?"
-            findings.append(Finding("FC-103", f"{name}: {where}: {why}"))
+            findings.append(Finding("FC-103", f"{name}: {entries_path(row)}: {why}"))
             lines.append(f"  {name}: not snapshotted ({why})")
             report.data["files"].append(item)
             continue
@@ -590,6 +622,11 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per outcome the operator is told
         )
         if row.get("changed"):
             findings.append(Finding("FC-109", name))
+        left_out = [_LEFT_OUT[r] for r in row.get("incomplete") or () if r in _LEFT_OUT]
+        if left_out:
+            partial += 1
+            findings.append(Finding("FC-110", f"{name}: {entries_path(row)}: "
+                                              + "; ".join(left_out)))  # fmt: skip
         if "size_limit" in (row.get("incomplete") or ()) and answer.get("contents") != "not_kept":
             findings.append(Finding("FC-108", f"{name}: at most {FILE_LIMIT // 1024} KiB of "
                                               "one file is kept, and the largest files' "
@@ -607,7 +644,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per outcome the operator is told
             findings.append(Finding("FC-107"))
         if not answer.get("delivered"):
             findings.append(Finding("FC-105"))
-        elif recorded == len(entries):
+        elif recorded == len(entries) and not partial:
             findings.append(Finding("FC-106", f"run {label}"))
     if any(finding.severity == "error" for finding in findings):
         report.exit_code = EXIT_FINDINGS

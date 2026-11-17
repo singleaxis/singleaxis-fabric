@@ -546,8 +546,9 @@ key the host sensor uses, so the snapshot and the watched opens carry the same i
 `snapshot_file_unreadable`, error: a watched permission file could not be read, so it was not
 snapshotted.
 
-Fix: the detail names the entry's label and the error; run `fabric snapshot` as a user that can read
-the file, or correct the path in watched_paths.
+Fix: the detail names the entry's label and the cause; for an error reading the file, run `fabric
+snapshot` as a user that can read it or correct the path in watched_paths; for a failure while
+recording it, run `fabric doctor`.
 
 ### FC-104
 
@@ -592,6 +593,14 @@ one.
 `snapshot_file_changed`, info: a permission file differs from its last snapshot.
 
 Fix: nothing to do; the reader states the change as F2 (grant_changed).
+
+### FC-110
+
+`snapshot_folder_incomplete`, warning: a watched permission folder was snapshotted without some of
+its files.
+
+Fix: the detail names why; run `fabric snapshot` as a user that can read every file under the
+folder, or list a large or deep folder's subfolders as entries of their own.
 
 ## The SDKs (wire capture, status, autoload)
 

@@ -235,6 +235,11 @@ it when you deploy, when the file changes, or from your own scheduler.
   ids differ and the reader cannot join them.
 - **A changed file** gives a new `grt-` id; the command says so (`FC-109`)
   and the reader states F2 (`grant_changed`).
+- **A folder entry** reads at most 256 files, 8 levels deep. A file it
+  cannot read, or files past those limits, are left out of the snapshot
+  and the command warns (`FC-110`). A folder none of whose files can be
+  read is not recorded at all (`FC-103`): an empty snapshot would claim
+  the folder holds no rule file.
 
 With host records and the snapshots in its input, `python -m
 fabric.reconstruct --view actions` shows each watched open with the

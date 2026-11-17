@@ -521,3 +521,108 @@ def test_one_entrys_fault_never_hides_the_others(lab: dict[str, Any]) -> None:
     recorded = {item["label"]: item["recorded"] for item in report["data"]["files"]}
     assert recorded == {"agent-acl": True, "boom": False}
     assert len(_grants(lab)) == 1
+
+
+# ---------------------------------------------------------------- second review fixes
+
+root_reads_all = pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0, reason="root reads every file"
+)
+
+
+@root_reads_all
+def test_a_folder_that_cannot_be_listed_is_not_recorded_as_empty(lab: dict[str, Any]) -> None:
+    """A folder the operator cannot list was recorded as a snapshot of no file at all,
+    with FC-106: an empty snapshot says the folder holds no rule file, which was never
+    observed. It is now FC-103 and nothing is recorded for it."""
+    locked = lab["tmp"] / "locked.d"
+    locked.mkdir()
+    (locked / "rules.json").write_text(RULES_V1)
+    entry = {"path": str(locked), "match": "prefix", "label": "locked",
+             "class": "permission_config"}  # fmt: skip
+    _use_policy(lab, _policy(lab["rule"], extra=[entry]))
+    locked.chmod(0)
+    try:
+        code, _, report = _snap(lab)
+    finally:
+        locked.chmod(0o755)
+    assert code == 1 and _ids(report) == ["FC-103"], report["findings"]
+    (finding,) = report["findings"]
+    assert finding["detail"].startswith(f"locked: {locked}: none of its files could be read")
+    assert "PermissionError" in finding["detail"]
+    recorded = {item["label"]: item["recorded"] for item in report["data"]["files"]}
+    assert recorded == {"agent-acl": True, "locked": False}
+    assert len(_grants(lab)) == 1
+
+
+@root_reads_all
+def test_files_left_out_of_a_folder_are_a_warning_not_a_full_snapshot(
+    lab: dict[str, Any],
+) -> None:
+    """An unreadable file under a folder entry was left out silently, and the command
+    still said every listed file was read (FC-106)."""
+    rules = lab["tmp"] / "part.d"
+    rules.mkdir()
+    (rules / "a.json").write_text('{"a": 1}')
+    hidden = rules / "b.json"
+    hidden.write_text('{"b": 2}')
+    entry = {"path": str(rules), "match": "prefix", "label": "part",
+             "class": "permission_config"}  # fmt: skip
+    _use_policy(lab, _policy(lab["rule"], extra=[entry]))
+    hidden.chmod(0)
+    try:
+        code, _, report = _snap(lab)
+    finally:
+        hidden.chmod(0o644)
+    assert code == 0 and _ids(report) == ["FC-110"], report["findings"]
+    (finding,) = report["findings"]
+    assert finding["severity"] == "warning" and finding["fix"]
+    assert finding["detail"] == f"part: {rules}: a file or folder under it could not be read"
+    part = {item["label"]: item for item in report["data"]["files"]}["part"]
+    assert part["recorded"] and part["files"] == 1 and part["incomplete"] == ["unreadable"]
+
+
+def test_a_folder_over_the_file_limit_is_a_warning(
+    lab: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rules = lab["tmp"] / "many.d"
+    rules.mkdir()
+    for i in range(3):
+        (rules / f"{i}.json").write_text("{}")
+    entry = {"path": str(rules), "match": "prefix", "label": "many",
+             "class": "permission_config"}  # fmt: skip
+    _use_policy(lab, _policy(lab["rule"], extra=[entry]))
+    member = _snapshot.read_entry(entry, lambda p: "pth-" + "0" * 32)
+    assert len(member["files"]) == 3 and "incomplete" not in member
+    monkeypatch.setattr(_snapshot, "MAX_FILES", 2)
+    member = _snapshot.read_entry(entry, lambda p: "pth-" + "0" * 32)
+    assert len(member["files"]) == 2 and member["incomplete"] == ["file_limit"]
+    row = {"index": 1, "label": "many", "path_ref": "pth-" + "a" * 32, "recorded": True,
+           "grant_id": "grt-" + "b" * 32, "changed": False, "files": 2, "bytes": 4,
+           "incomplete": ["file_limit"]}  # fmt: skip
+    first = {**row, "index": 0, "label": "agent-acl", "path_ref": "pth-" + "c" * 32}
+    first.pop("incomplete")
+    answer = {"installed": True, "delivered": True, "contents": "kept",
+              "entries": [first, row]}  # fmt: skip
+    code, _, report = _snap(lab, worker=lambda *_: answer)
+    assert code == 0 and _ids(report) == ["FC-110"], report["findings"]
+    assert "more than 256 files" in report["findings"][0]["detail"]
+
+
+def test_a_worker_that_dies_names_its_exit_code_and_last_line(
+    lab: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worker that crashed before answering was reported as "capture did not install
+    and gave no reason"."""
+    _use_policy(lab, _policy(lab["rule"]))
+    fake = lab["tmp"] / "python"
+    fake.write_text("#!/bin/sh\necho 'Traceback (most recent call last):' >&2\n"
+                    "echo 'ImportError: cannot import name x' >&2\nexit 3\n")  # fmt: skip
+    fake.chmod(0o755)
+    monkeypatch.setattr(sys, "executable", str(fake))
+    code, lines, report = _snap(lab)
+    assert code == 1 and _ids(report) == ["FC-104"], report["findings"]
+    detail = report["findings"][0]["detail"]
+    assert detail.startswith("the snapshot worker exited with code 3 without an answer "
+                             "(ImportError: cannot import name x)"), detail  # fmt: skip
+    assert "fabric doctor" in detail and "nothing was recorded" in lines[-1]
