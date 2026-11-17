@@ -179,6 +179,17 @@ jobs:
       - name: Install locked dependencies
         working-directory: sdk/typescript
         run: npm ci
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the Python SDK for the cross-language tests
+        # Spec 055 §9.5 (055-t5): the epoch registration tests run Python's
+        # fabric.wire._registration against the TypeScript one, both ways.
+        run: |
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+          echo "FABRIC_TEST_PYTHON=$(command -v python)" >> "${GITHUB_ENV}"
       - name: Lint, typecheck, build, and test
         working-directory: sdk/typescript
         run: |
