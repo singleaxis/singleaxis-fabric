@@ -443,17 +443,44 @@ export class ExchangeTable {
         // An owner inside `admit` holds the slot for the length of one copy: try again.
         if (live !== OPEN && live !== PROVISIONAL) continue;
         if (Atomics.compareExchange(i32, word, state, (state & ~7) | FINISHING) !== state) continue;
-        if (live === OPEN) {
-          this.loseSlot(index, "shutdown");
-          lost++;
-        } else {
-          this.releaseSides(index);
+        try {
+          if (live === OPEN) {
+            this.loseSlot(index, "shutdown");
+            lost++;
+          } else if (this.adoptAtShutdown(state, index)) {
+            lost++;
+          } else {
+            this.releaseSides(index);
+          }
+        } catch {
+          // A sweep that fails for one slot still frees it and goes on to the next.
         }
         this.recycle(index);
         break;
       }
     }
     return lost;
+  }
+
+  /**
+   * A provisional exchange swept by shutdown. If this isolate knows its explicit scope
+   * has already ended, `finish` would have adopted it and allocated a position, so
+   * shutdown does the same and loses that position as `shutdown` (§4.6): the call is a
+   * visible gap, never a silent miss. Returns `true` when a position was lost. A scope
+   * that is still live owns the call, and shutdown only releases its bytes.
+   */
+  private adoptAtShutdown(state: number, index: number): boolean {
+    const handle = (state >>> 3) * 65536 + index;
+    const ownership = this.owned.get(handle);
+    this.owned.delete(handle);
+    if (ownership === undefined || !ownership.ended) return false;
+    // On a lock timeout the position is already an internal_error loss.
+    if (this.position(index, this.pool.i32[index * SLOT_WORDS + X_RUN]!)) {
+      this.loseSlot(index, "shutdown");
+    } else {
+      this.releaseSides(index);
+    }
+    return true;
   }
 
   /** Reads a job record the Fabric worker took from the ring with `peek`. */

@@ -220,7 +220,32 @@ describe("mixed capture with an explicit ownership scope", () => {
     ]);
   });
 
-  it("shutdown drops a provisional exchange without a position and loses an adopted-pending one", () => {
+  it("shutdown loses a call whose explicit scope had already ended, as finish would have adopted it", () => {
+    const { table, runtime } = isolate();
+    expect(runtime.tryLock()).toBe(true);
+    runtime.setRunSegment(2, 8n, 9n);
+    runtime.unlock();
+    const ownership = scope();
+    const pending = table.begin({ runSlot: 2, ownership });
+    table.admit(pending, REQUEST, Buffer.from("kept"));
+    ownership.ended = true; // the scope ended while the call was still in flight
+    const live = table.begin({ runSlot: 2, ownership: scope() });
+    runtime.setState(STATE_CLOSING);
+    expect(table.shutdown()).toBe(1);
+    expect(table.finish(pending, "complete")).toBe("already_finished");
+    expect(table.finish(live, "complete")).toBe("already_finished");
+    // A visible gap in the run's segment, not a call that silently never happened.
+    expect(drain(table).losses).toEqual([
+      { reason: "shutdown", sequence: 0n, segmentHi: 8n, segmentLo: 9n },
+    ]);
+    expect([runtime.stats().nextSequence, table.active, table.arena.slabs.inUse]).toEqual([
+      1n,
+      0,
+      0,
+    ]);
+  });
+
+  it("shutdown drops a provisional exchange without a position and loses an open one", () => {
     const { table, runtime } = isolate();
     const provisional = table.begin({ ownership: scope() });
     table.admit(provisional, REQUEST, Buffer.from("x"));
