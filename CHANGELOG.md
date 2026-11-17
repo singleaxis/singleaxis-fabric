@@ -15,6 +15,29 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: the shared-memory runtime and the Fabric
+  worker (spec 055, unit 055-t4).** Still no Node.js capture; nothing here is
+  exported from the package yet. This is the in-process machinery the future
+  transport hooks hand a model call to, built so that a hook never waits,
+  never throws and never keeps a reference to the agent's buffers. A source
+  position is one atomic add and is never refused. Body bytes are copied
+  once, as they are observed, into 64 KiB slabs of shared memory, a whole
+  chunk or none of it. Completed calls go to a background worker thread
+  through a fixed-size ring, not a message queue, so there is no hidden
+  unbounded buffer. Every limit has a named outcome: a body over the
+  per-side cap is `truncated(body_cap)`, one over the process byte budget is
+  `truncated(inflight_budget)`, and a call that finds no slot or a full ring
+  is a `queue_full` loss at its position. A partly kept body is never
+  labelled exact. Each loss reaches the worker thread with its position and
+  reason, through its own small ring, so a full job ring can still say what
+  it dropped. A call is finished exactly once, whichever of end of body,
+  early close, transport error, garbage collection or recorder shutdown gets
+  there first. The worker thread starts with no command-line flags and an
+  empty environment, so it never runs the agent's `NODE_OPTIONS` preloads,
+  prints nothing to the agent's stdout or stderr, and never keeps the
+  agent's process alive. If it crashes it is started again on the same
+  memory, so positions continue where they were; after five quick crashes
+  capture stops with a reason and the agent carries on unaffected.
 - **Node.js capture groundwork: the native lock module (spec 055, unit
   055-t3).** Still no Node.js capture. Node has no file-lock or shared-memory
   API, so the TypeScript SDK gains a small C module (Node-API 8, no other
