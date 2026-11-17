@@ -15,6 +15,19 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **`fabric snapshot`: what the agent's permission files said (spec 057
+  P3b).** A host sensor already records that the agent opened a watched
+  permission file, never what it said. The operator can now run `fabric
+  snapshot` outside the agent: it reads the `watched_paths` entries of class
+  `permission_config` once and records each as a declared grant snapshot.
+  Telemetry carries keyed ids only (never the path or a file name); the
+  contents are kept only when your capture policy retains `run.permissions`,
+  so nothing of the file is kept under the default production profile. The
+  offline reader shows each watched open with the snapshot taken last before
+  it and the time between the two, and states a changed file as F2. The
+  agent process never opens the file for Fabric. New messages `FC-100` to
+  `FC-109` name each failure and its fix. See `docs/host-sensors.md`.
+
 - **Security context from other systems' OpenTelemetry (spec 057 P3a).** A
   gateway, policy service, approval system or agent runtime that already
   emits OpenTelemetry can report grants, control decisions, hook outcomes and
