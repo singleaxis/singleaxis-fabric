@@ -90,6 +90,7 @@ __all__ = [
     "FACT_CODES",
     "FACT_TEXT",
     "SECURITY_POINTS",
+    "WATCHED_CLASS",
     "ControlIndex",
     "SecurityResult",
     "SnapshotIndex",

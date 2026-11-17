@@ -401,11 +401,12 @@ def test_the_agent_process_never_opens_the_file_on_fabrics_behalf(lab: dict[str,
     rules_dir = str(lab["rule"].parent)
     assert [path for path in touched if path.startswith(rules_dir)] == []
     # and the capture path never loads the snapshot command
-    probe = subprocess.run(
-        [sys.executable, "-c",
-         "import sys, fabric, fabric.wire, fabric.records\n"
-         "print('fabric.cli._snapshot' in sys.modules or 'fabric.cli' in sys.modules)"],
-        capture_output=True, text=True, timeout=60, check=True,
-    )  # fmt: skip
+    loaded = (
+        "import sys, fabric, fabric.wire, fabric.records\n"
+        "print('fabric.cli._snapshot' in sys.modules or 'fabric.cli' in sys.modules)"
+    )
+    probe = subprocess.run(  # noqa: S603 - this interpreter, a fixed script
+        [sys.executable, "-c", loaded], capture_output=True, text=True, timeout=60, check=True
+    )
     assert probe.stdout.strip() == "False"
     assert secrets_dir(lab["env"]).is_dir()
