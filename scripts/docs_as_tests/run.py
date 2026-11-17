@@ -60,12 +60,15 @@ class Target:
     lines: int
 
 
-#: The paths tested today (E1). G1: 1 install + at most 3 commands, no flag on the
+#: The paths tested today (E1, E2). G1: 1 install + at most 3 commands, no flag on the
 #: default path, one when the model host is in neither the table nor a base-URL variable,
 #: and a Get started page of at most 80 lines.
 TARGETS: Mapping[str, Target] = {
     "laptop-python": Target(commands=3, flags=0, lines=80),
     "laptop-python-provider": Target(commands=3, flags=1, lines=80),
+    # G4: one install with a preset, one namespace label, one pod annotation, then
+    # verify. G4 limits no flag count; this bound only keeps the page from growing.
+    "kubernetes": Target(commands=4, flags=10, lines=120),
 }
 #: Pages whose every command block is tested, and the internal ids they may not name.
 TESTED_DIRS = ("get-started", "shapes", "production")

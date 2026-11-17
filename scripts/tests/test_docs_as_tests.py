@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """Spec 058 §3.3 and §14.2: documentation executed as written.
 
-The Get started page for Python holds G1's budgets (one install, three commands, no flag
+The Get started pages hold their budgets: Python G1 (one install, three commands, no flag
 on the default path and one on the provider path, at most 80 lines), every command block
 on it is marked, and no block makes a hand-made item. The runner's rules are pinned on
-synthetic pages. The page itself is executed by the ``ttfr-laptop-python`` CI job
-(``scripts/ttfr/ttfr.py``)."""
+synthetic pages. The pages themselves are executed by the ``ttfr-laptop-python`` and
+``ttfr-kubernetes`` CI jobs (``scripts/ttfr/``); Kubernetes holds G4's (one install with
+a preset, one label, one annotation, verify)."""
 
 from __future__ import annotations
 
@@ -49,6 +50,38 @@ def test_the_python_page_runs_install_up_run_verify() -> None:
     verify = docs.blocks_for(blocks, "laptop-python")[-1]
     assert verify.expects == ["FC-069"], (
         "verify must prove the agent's own run, not the canary"
+    )
+
+
+KUBERNETES = ROOT / "docs" / "get-started" / "kubernetes.md"
+
+
+def test_the_kubernetes_page_meets_g4() -> None:
+    """G4: one install with a preset, one namespace label, one pod annotation, then
+    verify; no Secret, key or certificate made by hand (``ttfr-kubernetes`` runs it)."""
+    counts = docs.lint(KUBERNETES, ROOT / "docs")
+    assert (
+        counts["kubernetes"]["install"] == 1 and counts["kubernetes"]["commands"] == 4
+    )
+    assert counts["kubernetes"]["lines"] <= docs.TARGETS["kubernetes"].lines
+    blocks, unmarked = docs.parse(KUBERNETES)
+    assert unmarked == []
+    commands = [c for b in docs.blocks_for(blocks, "kubernetes") for c in b.commands]
+    assert commands[0] == 'pip install "singleaxis-fabric[cli,s3]"'
+    assert commands[1].startswith(
+        "fabric up --kubernetes --preset production-host-sensor "
+    )
+    assert commands[2] == ("kubectl label namespace agents "
+                           "fabric.singleaxis.ai/injection=enabled")  # fmt: skip
+    assert commands[3].startswith("kubectl -n agents patch deployment ")
+    assert '"fabric.singleaxis.ai/inject":"python"' in commands[3]
+    assert commands[4] == "fabric verify --kubernetes --spans destination-export"
+    text = KUBERNETES.read_text("utf-8")
+    for hand_made in ("kubectl create secret", "openssl", "kubectl apply"):
+        assert hand_made not in text
+    verify = docs.blocks_for(blocks, "kubernetes")[-1]
+    assert verify.expects == ["FC-069", "corroboration: complete"], (
+        "verify must prove the agent's own run, corroborated by the host sensor"
     )
 
 

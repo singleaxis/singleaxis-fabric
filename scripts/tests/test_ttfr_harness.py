@@ -241,3 +241,79 @@ def test_only_cached_images_are_reported_evicted(
     )  # fmt: skip
     with pytest.raises(ttfr.TtfrError, match="not a cold start"):
         ttfr.evict_images(["stuck"])
+
+
+# ---------------------------------------------------------------- ttfr-kubernetes
+
+KUBE = TTFR / "kubernetes"
+
+
+def _kube_module(name: str) -> object:
+    sys.path.insert(0, str(KUBE))
+    try:
+        return __import__(name)
+    finally:
+        sys.path.remove(str(KUBE))
+
+
+def test_kubernetes_fixtures_import_nothing_of_fabric_or_this_repository() -> None:
+    """The destination, model and agent the Kubernetes TTFR stands up are the customer's,
+    not Fabric's: no fixture imports Fabric or anything of this repository."""
+    for path in sorted(KUBE.glob("*.py")):
+        if path.name == "ttfr_kubernetes.py":
+            continue  # the harness, which drives the page
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        names = {
+            alias.name.split(".")[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        }
+        names |= {(node.module or "").split(".")[0] for node in ast.walk(tree)
+                  if isinstance(node, ast.ImportFrom) and node.level == 0}  # fmt: skip
+        assert not names & {"fabric", "ttfr", "scripts"}, (path.name, names)
+
+
+def test_the_kubernetes_ttfr_holds_g4s_budget_on_an_enforcing_cni() -> None:
+    harness = _kube_module("ttfr_kubernetes")
+    assert harness.BUDGET_S == 600.0  # type: ignore[attr-defined]
+    assert harness.PATH_NAME == "kubernetes"  # type: ignore[attr-defined]
+    # Pinned by digest, and new enough that kindnet enforces NetworkPolicy: the default-
+    # deny regression of the E2 acceptance is only real where the policy is in force.
+    image = harness.KIND_NODE_IMAGE  # type: ignore[attr-defined]
+    assert "@sha256:" in image and image.startswith("kindest/node:v1.35.")
+    fixtures = _kube_module("fixtures")
+    assert "@sha256:" in fixtures.S3_IMAGE  # type: ignore[attr-defined]
+
+
+def test_the_kubernetes_canonical_image_name_is_what_containerd_lists() -> None:
+    harness = _kube_module("ttfr_kubernetes")
+    canonical = harness.canonical  # type: ignore[attr-defined]
+    assert canonical("fabric-cli:e2e") == "docker.io/library/fabric-cli:e2e"
+    assert canonical("acme/agent:1") == "docker.io/acme/agent:1"
+    assert (
+        canonical("ghcr.io/singleaxis/fabric-cli:1")
+        == "ghcr.io/singleaxis/fabric-cli:1"
+    )
+    assert canonical("localhost:5000/x:1") == "localhost:5000/x:1"
+
+
+def test_ci_runs_ttfr_kubernetes_then_the_e2_acceptance_and_keeps_ttfr_json() -> None:
+    ci = yaml.safe_load((ROOT / ".github/workflows/e2e.yml").read_text())
+    job = ci["jobs"]["ttfr-kubernetes"]
+    steps = json.dumps(job["steps"])
+    harness = steps.index("scripts/ttfr/kubernetes/ttfr_kubernetes.py")
+    acceptance = steps.index("charts/fabric/tests/kind/e2e-kubernetes.sh")
+    assert harness < acceptance and "--keep-cluster" in steps
+    assert "upload-artifact" in steps and "ttfr.json" in steps
+    assert "kind delete cluster" in steps
+    assert (
+        job["env"]["KIND_NODE_IMAGE"] == _kube_module("ttfr_kubernetes").KIND_NODE_IMAGE
+    )  # type: ignore[attr-defined]
+    filters = json.dumps(ci["jobs"]["detect"]["steps"])
+    for path in (
+        "components/host-emitter/**",
+        "docs/get-started/kubernetes.md",
+        "charts/fabric/**",
+    ):
+        assert path in filters
