@@ -11,7 +11,9 @@ import {
   MAX_VECTOR_SLOTS,
   SLAB_BYTES,
   SLABS_PER_VECTOR,
+  SlotPool,
   VECTOR_BYTES,
+  createPool,
 } from "../../../src/wire/arena.js";
 import { META_BYTES, NO_EXCHANGE, REQUEST, RESPONSE } from "../../../src/wire/exchange.js";
 import {
@@ -299,3 +301,29 @@ describe("the configured sizes", () => {
   });
 });
 
+describe("arena growth", () => {
+  it("a growth step cut short and run again never frees a slot twice", () => {
+    const pool = new SlotPool(
+      createPool({ slotBytes: 64, maxSlots: 64, initialSlots: 4, lowWater: 8, growStep: 16 }),
+    );
+    // The Fabric worker is terminated part-way through committing a step ...
+    const free = pool.free.bind(pool);
+    let calls = 0;
+    pool.free = (index: number, wasInUse?: boolean) => {
+      if (++calls === 6) throw new Error("terminated");
+      free(index, wasInUse);
+    };
+    expect(() => pool.growIfLow()).toThrow("terminated");
+    pool.free = free;
+    // ... and its replacement grows from the committed count.
+    while (pool.growIfLow() > 0);
+    const taken = new Set<number>();
+    for (let index = pool.take(); index >= 0; index = pool.take()) {
+      expect(taken.has(index)).toBe(false);
+      taken.add(index);
+    }
+    // At most the one slot in flight leaked.
+    expect(taken.size).toBeGreaterThanOrEqual(pool.committed - 1);
+    expect(Math.max(...taken)).toBeLessThan(pool.committed);
+  });
+});

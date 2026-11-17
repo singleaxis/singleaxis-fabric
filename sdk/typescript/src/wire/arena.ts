@@ -151,9 +151,18 @@ export class SlotPool {
     const committed = this.committed;
     if (committed >= maxSlots || committed - this.inUse >= lowWater) return 0;
     const target = Math.min(maxSlots, committed + growStep);
-    (this.shared.data as unknown as GrowableShared).grow(target * slotBytes);
-    for (let index = committed; index < target; index++) this.free(index, false);
-    Atomics.store(this.words, P_COMMITTED, target);
+    // A Fabric worker terminated part-way through a step leaves the buffer grown; its
+    // replacement must not shrink it (a RangeError) or grow it again.
+    if (this.shared.data.byteLength < target * slotBytes) {
+      (this.shared.data as unknown as GrowableShared).grow(target * slotBytes);
+    }
+    // Count each slot as committed before it is freed: a step cut short by a terminated
+    // worker can leak the one slot in flight, but its replacement, which starts from the
+    // committed count, never frees a slot twice (two exchanges would share a slab).
+    for (let index = committed; index < target; index++) {
+      Atomics.store(this.words, P_COMMITTED, index + 1);
+      this.free(index, false);
+    }
     return target - committed;
   }
 }
