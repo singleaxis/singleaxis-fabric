@@ -1,0 +1,104 @@
+name: Security context over OTLP (SC-RA-3)
+
+# Spec 057 §10.4 SC-RA-3, the P3 acceptance run: a decision made in another service and
+# emitted as OTLP through a mapping profile joins to the agent's tool call by a clear
+# control id across runs, and the controls chain reports control_unmatched when the
+# agent side is missing (qualification/security-context/sc_ra3). Not one of the
+# release-required workflows.
+#
+# - fixture: a plain hand-written tool loop on a scripted model, a fixture approval
+#   service with its own OpenTelemetry attribute names, and a natively built Node with
+#   the mapping processor (fabricmap) directly before fabricguard, delivering to a
+#   loopback sink read by python -m fabric.reconstruct. Capture off and on.
+# - The live mode needs the model endpoint's key and is run by hand
+#   (run_sc_ra3.py --mode live); it is not run here.
+#
+# Passive by construction: the agent records that it asked; Fabric never answers, waits
+# for or applies a decision.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdk/python/src/fabric/reconstruct/**"
+      - "sdk/python/src/fabric/records/**"
+      - "contracts/capture/**"
+      - "components/otel-collector-fabric/**"
+      - "qualification/security-context/**"
+      - "qualification/action-record/ar1/sink.py"
+      - "qualification/action-record/ar1/node.py"
+      - ".github/workflows/security-context-otlp.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "sdk/python/src/fabric/reconstruct/**"
+      - "sdk/python/src/fabric/records/**"
+      - "contracts/capture/**"
+      - "components/otel-collector-fabric/**"
+      - "qualification/security-context/**"
+      - "qualification/action-record/ar1/sink.py"
+      - "qualification/action-record/ar1/node.py"
+      - ".github/workflows/security-context-otlp.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: security-context-otlp-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    name: SC-RA-3 fixture (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26"
+          cache-dependency-path: components/otel-collector-fabric/**/go.sum
+      - name: Build the Fabric Node (fabric-gate and otelcol-fabric)
+        run: |
+          go install go.opentelemetry.io/collector/cmd/builder@v0.164.0
+          make -C components/otel-collector-fabric build OCB="$(go env GOPATH)/bin/builder"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the SDK and the harness dependencies
+        # sdk/python/uv.lock with pip --require-hashes; the dev group carries the harness
+        # tools and the OpenTelemetry SDK the fixture approval service emits with.
+        run: |
+          scripts/ci/install-python-locked.sh --extra otlp --group dev --group ci
+          python -m pip install --no-deps --no-build-isolation -e sdk/python
+      - name: Lint and type-check the harness
+        working-directory: qualification/security-context
+        env:
+          MYPYPATH: ../action-record # the AR-1 sink and Node the harness reuses
+        run: |
+          ruff check sc_ra3 run_sc_ra3.py tests/test_sc_ra3_checks.py tests/test_sc_ra3_live_mode.py
+          ruff format --check sc_ra3 run_sc_ra3.py tests/test_sc_ra3_checks.py tests/test_sc_ra3_live_mode.py
+          mypy --strict --config-file ../../sdk/python/pyproject.toml sc_ra3 run_sc_ra3.py tests/test_sc_ra3_checks.py tests/test_sc_ra3_live_mode.py
+      - name: Harness tests (a real run, each check's negative edits, the live plumbing)
+        run: >-
+          python -m pytest qualification/security-context/tests -q -p no:cacheprovider
+          -k "sc_ra3"
+      - name: SC-RA-3 fixture
+        run: |
+          python qualification/security-context/run_sc_ra3.py --out "${RUNNER_TEMP}/sc-ra3"
+      - name: Upload the SC-RA-3 record
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sc-ra3-${{ matrix.os }}
+          path: ${{ runner.temp }}/sc-ra3
+          if-no-files-found: ignore
+          retention-days: 14

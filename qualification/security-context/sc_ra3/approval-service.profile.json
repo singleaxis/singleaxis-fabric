@@ -1,0 +1,38 @@
+{
+  "schema_version": "fabric.otlp-mapping-profile/v1",
+  "profile_id": "sc-ra3-approval-service",
+  "profile_version": 1,
+  "rules": [
+    {
+      "match": {"span_name": "approvals.decide"},
+      "record": "control",
+      "assertion_origin": "service",
+      "map": [
+        {
+          "source": "approvals.ticket",
+          "target": "fabric.control.resolves",
+          "pseudonymise": "control"
+        },
+        {
+          "source": "approvals.result",
+          "target": "fabric.control.decision",
+          "values": [
+            {"from": "approved", "to": "allow"},
+            {"from": "rejected", "to": "deny"}
+          ]
+        },
+        {"source": "approvals.policy_name", "target": "fabric.control.engine.name"},
+        {"source": "approvals.policy_release", "target": "fabric.control.engine.version"},
+        {"source": "approvals.reason", "target": "fabric.control.reason_code"},
+        {"source": "approvals.took_ms", "target": "fabric.control.latency_ms"}
+      ],
+      "set": [
+        {"target": "fabric.control.kind", "value": "approval"},
+        {"target": "fabric.control.phase", "value": "resolution"},
+        {"target": "fabric.control.stage", "value": "pre_tool"},
+        {"target": "fabric.control.gated_kind", "value": "tool_call"},
+        {"target": "fabric.control.mode", "value": "enforcing"}
+      ]
+    }
+  ]
+}
