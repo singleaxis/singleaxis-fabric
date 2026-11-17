@@ -1044,6 +1044,7 @@ class ActionReader:
         self._run_claims: dict[str, list[tuple[str, dict[str, Any], Attribution, dict[str, Any]]]]
         self._run_claims = defaultdict(list)
         self._index: tuple[Any, _security.ControlIndex] | None = None
+        self._snapshots: tuple[Any, _security.SnapshotIndex] | None = None
         self._sensor_cache: tuple[Any, dict[str, Any], dict[str, Any]] | None = None
 
     def _mcp_hosts(self) -> frozenset[str]:
@@ -1108,7 +1109,9 @@ class ActionReader:
         if host is not None:
             self._sensor_rows(inp, result, host, reader._classification())
         self._os_refusals(inp, result, host)
-        security = _security.analyse(inp, result, sec, self._control_index(run.verifier))
+        self._watched_opens(inp, host)
+        security = _security.analyse(inp, result, sec, self._control_index(run.verifier),
+                                     snapshots=self._snapshot_index(run.verifier))  # fmt: skip
         _apply_security(result, security)
         self._claim_run_links(report, result)
         if self.keep_runs:
@@ -1369,6 +1372,45 @@ class ActionReader:
                     row["own_attempt"] = own
             rows.append(row)
         return rows
+
+    # -- spec 057 WP7-17: watched rule files and operator snapshots ------------------
+
+    def _watched_opens(self, inp: dict[str, Any], host: Any) -> None:
+        """The run's opens of a watched ``permission_config`` entry, as a host source
+        recorded them (label, class and keyed ``pth-`` id; never a path), added to the
+        input as ``watched_opens`` for ``_security.analyse``. An event of another process
+        or outside the run is not the run's. Fabric opened none of these files: the
+        agent did, and the sensor saw it (spec 057 §4.3)."""
+        if host is None:
+            return
+        traced = host.trace_host_events
+        outside = ("outside_run", "H4-other-process", "H4-other-lineage", "H4-earlier-process",
+                   "sandbox-unlinked")  # fmt: skip
+        rows: list[dict[str, Any]] = []
+        for event in self._host_events():
+            rule = traced.get(event.event_id)
+            if (rule is None or rule in outside or event.event_class != "file"
+                    or event.watch_class != _security.WATCHED_CLASS
+                    or event.watch_id is None):  # fmt: skip
+                continue
+            row: dict[str, Any] = {
+                "event_id": event.event_id, "start_ns": event.time_ns,
+                "sequence": event.sequence or 0, "via": event.source,
+                "watch_class": event.watch_class, "watch_id": event.watch_id,
+                "result": event.result,
+            }  # fmt: skip
+            if event.watch_label is not None:
+                row["watch_label"] = event.watch_label
+            rows.append(row)
+        if rows:
+            inp["watched_opens"] = rows
+
+    def _snapshot_index(self, verifier: Any) -> _security.SnapshotIndex:
+        """Every operator snapshot of the input, once per verifier: a snapshot is recorded
+        outside the agent, in a run of its own."""
+        if self._snapshots is None or self._snapshots[0] is not verifier:
+            self._snapshots = (verifier, _security.SnapshotIndex.build(verifier.records))
+        return self._snapshots[1]
 
     def _control_index(self, verifier: Any) -> _security.ControlIndex:
         """Every control record of the input, once per verifier (052 §4.9 rule 3)."""

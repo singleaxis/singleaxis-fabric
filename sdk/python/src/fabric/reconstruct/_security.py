@@ -56,12 +56,27 @@ open window -> ``sequence_bracket``, inferred, tentative; several -> ``ambiguous
 every candidate; none -> no link. A tentative link gates its call like any other resolved
 link (F5-F7).
 
+**Watched rule files and operator snapshots** (§4.10.2, §6.1 ``path_ref``; WP7-17). An
+operator snapshot is a ``declared`` grant with source boundary ``operator_snapshot`` and
+``fabric.grant.path_ref``, the keyed ``pth-`` id of a watched ``permission_config`` entry.
+It is recorded outside the agent, in a run of its own, so the reader indexes the snapshots
+of the whole input (``SnapshotIndex``). Each open of such an entry a host source saw in a
+run is shown with the snapshot of the same ``pth-`` id taken last before the open, or,
+when none was, the first taken after it, and the time between the two; the reader never
+assumes the file was the same at the open. The link is ``path_ref`` (reported snapshot,
+certain identity). A snapshot differs from the one it replaced when its ``grt-`` id is not
+that of the previous snapshot of the same ``pth-`` id (in the input, or the
+``previous_id`` it names): F2 in its own run, and in every run one of whose opens it is
+shown with. A run with a watched open and no snapshot is shown the open and nothing else
+changes.
+
 "Gates T" (F5-F7) means a link to T that is not ``ambiguous``: a ``pending_set`` row gates
 no call until the caller passes the id.
 """
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -77,6 +92,7 @@ __all__ = [
     "SECURITY_POINTS",
     "ControlIndex",
     "SecurityResult",
+    "SnapshotIndex",
     "analyse",
     "extract",
     "fact_rows",
@@ -224,12 +240,23 @@ def _hook(record: Any, attrs: Mapping[str, Any]) -> dict[str, Any]:
     return item
 
 
+_PTH = re.compile(r"pth-[0-9a-f]{32}")
+OPERATOR_SNAPSHOT: Final = "operator_snapshot"
+WATCHED_CLASS: Final = "permission_config"
+
+
 def _grant(record: Any, attrs: Mapping[str, Any]) -> dict[str, Any] | None:
     basis = _str(attrs, _G + "basis")
     if basis not in _BASES:
         return None
     item = _position(record)
     item["basis"] = basis
+    path_ref = _str(attrs, _G + "path_ref")
+    if (basis == "declared" and path_ref is not None and _PTH.fullmatch(path_ref)
+            and _str(attrs, _G + "source_boundary") == OPERATOR_SNAPSHOT):  # fmt: skip
+        # WP7-17: an operator snapshot of one watched file. Two files are two grants, not
+        # a change of one (``scope``, as a listed grant's MCP session).
+        item["path_ref"] = item["scope"] = path_ref
     for name in ("id", "trigger", "previous_id", "source_boundary", "permission_mode",
                  "tool_choice", "sandbox_kind", "network_default"):  # fmt: skip
         value = _str(attrs, _G + name)
@@ -376,6 +403,56 @@ class ControlIndex:
 # --------------------------------------------------------------------------
 
 
+@dataclass
+class SnapshotIndex:
+    """Every operator snapshot of the input (spec 057 §4.10.2, WP7-17) by the ``pth-`` id
+    of the watched file it read, in time order. Snapshots are recorded outside the agent,
+    each in a run of its own, so a run's watched opens are joined across runs."""
+
+    by_path: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+
+    @classmethod
+    def build(cls, records: Iterable[Any]) -> SnapshotIndex:
+        by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for record in records:
+            attrs = record.span.attributes
+            if attrs.get("fabric.step.kind") != "run":
+                continue
+            grant = _grant(record, attrs)
+            if grant is not None and "path_ref" in grant:
+                grant["run_id"] = record.run_id
+                by_path[grant["path_ref"]].append(grant)
+        for snapshots in by_path.values():
+            # Snapshots come from separate processes: only wall clocks order them.
+            snapshots.sort(key=lambda g: (g["start_ns"], g["event_id"]))
+            last: str | None = None
+            for index, grant in enumerate(snapshots):
+                if snapshot_changed(grant, last, first=index == 0):
+                    grant["changed"] = True
+                last = grant.get("id")
+        return cls(dict(by_path))
+
+    def find(self, path_ref: str, at_ns: int) -> dict[str, Any] | None:
+        """The snapshot of ``path_ref`` taken last at or before ``at_ns``; when none was,
+        the first taken after it. ``None`` when the input holds no snapshot of it."""
+        snapshots = self.by_path.get(path_ref)
+        if not snapshots:
+            return None
+        before = [g for g in snapshots if g["start_ns"] <= at_ns]
+        return before[-1] if before else snapshots[0]
+
+
+def snapshot_changed(grant: Mapping[str, Any], last_id: str | None, *, first: bool) -> bool:
+    """Whether an operator snapshot differs from the one it replaced: from the previous
+    snapshot of its file (``last_id``; ``first``: there is none in view), or from the
+    ``previous_id`` it names itself (the snapshot before it may lie outside the input)."""
+    current = grant.get("id")
+    if not first and (current is None or current != last_id):
+        return True
+    previous = grant.get("previous_id")
+    return previous is not None and previous != current
+
+
 @dataclass(slots=True)
 class SecurityResult:
     """The spec 057 result for one run: the ``controls`` chain, ``security_context``, the
@@ -399,6 +476,9 @@ class SecurityResult:
     call_grants: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: MCP ``tools/call`` and inventory-change rows derived from MCP messages (WP7-7/8).
     mcp_calls: list[dict[str, Any]] = field(default_factory=list)
+    #: Opens of a watched ``permission_config`` file a host source saw in the run, each
+    #: with the operator snapshot it is shown with, if any (§6.1 ``path_ref``, WP7-17).
+    watched_opens: list[dict[str, Any]] = field(default_factory=list)
 
 
 def zero_context() -> dict[str, Any]:
@@ -698,8 +778,48 @@ def _fact(facts: dict[str, list[str]], code: str, event_id: str) -> None:
     facts[code].append(event_id)
 
 
+def link_watched_opens(
+    opens: Iterable[Mapping[str, Any]], snapshots: SnapshotIndex | None
+) -> list[dict[str, Any]]:
+    """§6.1 ``path_ref``: each watched open with the operator snapshot of the same ``pth-``
+    id (``SnapshotIndex.find``) and the time between the two (``gap_ns``: positive when
+    the snapshot was taken before the open). Consecutive opens of one file shown with the
+    same snapshot are one row (``opens``: how many), at the first open."""
+    rows: list[dict[str, Any]] = []
+    for item in sorted(opens, key=lambda o: (o["start_ns"], o["event_id"])):
+        row = dict(item)
+        row["opens"] = 1
+        found = snapshots.find(row["watch_id"], row["start_ns"]) if snapshots else None
+        if found is not None:
+            snapshot: dict[str, Any] = {
+                "event_id": found["event_id"], "gap_ns": row["start_ns"] - found["start_ns"],
+            }  # fmt: skip
+            for key in ("id", "run_id"):
+                if found.get(key) is not None:
+                    snapshot[key] = found[key]
+            if found.get("changed"):
+                snapshot["changed"] = True
+            row["snapshot"] = snapshot
+            row["link"] = {
+                "type": "described_by", "target": {"namespace": "event",
+                                                   "id": found["event_id"]},
+                "provenance": "reported", "method": "path_ref", "confidence": "certain",
+                "state": "resolved",
+            }  # fmt: skip
+        last = rows[-1] if rows else None
+        if (last is not None and last["watch_id"] == row["watch_id"]
+                and last.get("result") == row.get("result")
+                and last.get("snapshot", {}).get("event_id")
+                == row.get("snapshot", {}).get("event_id")):  # fmt: skip
+            last["opens"] += 1
+            continue
+        rows.append(row)
+    return rows
+
+
 def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
     inp: Mapping[str, Any], attribution: Any, sec: Mapping[str, Any], index: ControlIndex,
+    snapshots: SnapshotIndex | None = None,
 ) -> SecurityResult:  # fmt: skip
     """Joins, facts F1-F14, the ``controls`` chain and ``security_context`` of one run.
     ``inp`` is the 056 normalized input, ``attribution`` its 056 result and ``sec`` the
@@ -734,12 +854,19 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
     controls += [*contacts, *refusals]
     by_uid.update((c["attempt_uid"], c) for c in (*contacts, *refusals))
 
+    # Watched rule files (WP7-17): an open is evidence of this chain only when the input
+    # holds a snapshot to show it with; an open alone is shown and changes nothing (§9.1).
+    watched = link_watched_opens(inp.get("watched_opens", ()), snapshots)
+    linked = [w for w in watched if "snapshot" in w]
+
     facts: dict[str, list[str]] = defaultdict(list)
     observed = (present(sec) or bool(sec.get("active_points")) or bool(derived_hooks)
                 or bool(contacts) or bool(refusals)
-                or bool(sec.get("mcp_calls")))  # fmt: skip
+                or bool(sec.get("mcp_calls")) or bool(linked))  # fmt: skip
     declared = [g for g in grants if g["basis"] == "declared"]
-    if observed and not declared:
+    # An operator snapshot shown with one of the run's watched opens is the customer's
+    # declared permission configuration for the run (§4.10.2), recorded outside it.
+    if observed and not declared and not linked:
         facts["no_declared_grant"] = []
     # A listed grant changes per MCP session (``scope``): two servers' listings are two
     # grants, not a change of one.
@@ -747,11 +874,21 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
     seen_basis: set[tuple[str, Any]] = set()
     for grant in sorted(grants, key=lambda g: (g["start_ns"], g["sequence"])):
         basis = (grant["basis"], grant.get("scope"))
-        if basis in seen_basis and (grant.get("id") is None or grant.get("id") != last_id[basis]):
+        if "path_ref" in grant:  # an operator snapshot may also name what it replaced
+            changed = snapshot_changed(grant, last_id.get(basis), first=basis not in seen_basis)
+        else:
+            changed = basis in seen_basis and (grant.get("id") is None
+                                               or grant.get("id") != last_id[basis])  # fmt: skip
+        if changed:
             grant["changed"] = True
             _fact(facts, "grant_changed", grant["event_id"])
         seen_basis.add(basis)
         last_id[basis] = grant.get("id")
+    own = {g["event_id"] for g in grants}
+    for event_id in dict.fromkeys(w["snapshot"]["event_id"] for w in linked
+                                  if w["snapshot"].get("changed")):  # fmt: skip
+        if event_id not in own:  # the snapshot of a file this run opened differs from the last
+            _fact(facts, "grant_changed", event_id)
     for item in sorted([*controls, *hooks], key=lambda i: (i["start_ns"], i["sequence"])):
         if item["unmatched"]:
             _fact(facts, "control_unmatched", item["event_id"])
@@ -891,7 +1028,10 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
                         if "kind" in c and "decision" in c)  # fmt: skip
         context["controls"] = [{"kind": k, "decision": d, "derivation": v, "count": n}
                                for (k, d, v), n in sorted(kinds.items())][:1024]  # fmt: skip
-        context["control_links"] = dict(sorted(Counter(c["method"] for c in controls).items()))
+        methods = Counter(c["method"] for c in controls)
+        if linked:
+            methods["path_ref"] += len(linked)
+        context["control_links"] = dict(sorted(methods.items()))
         outcomes = Counter((h["basis"], h["outcome"]) for h in hooks)
         context["hooks"] = [{"basis": b, "outcome": o, "count": n}
                             for (b, o), n in sorted(outcomes.items())][:64]  # fmt: skip
@@ -938,7 +1078,7 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         controls=controls, hooks=hooks, grants=grants, extensions=extensions,
         facts=fact_list if observed else [], denied_calls=dict(denied_calls),
         deny_with_effect=deny_with_effect, observed=observed, call_grants=call_grants,
-        mcp_calls=mcp_calls,
+        mcp_calls=mcp_calls, watched_opens=watched,
     )  # fmt: skip
 
 
@@ -1081,6 +1221,17 @@ def view_events(  # noqa: PLR0912, PLR0915 - one branch per row kind and optiona
                 row[key] = grant[key]
         order = -1 if grant.get("derived") else 1  # before the model call it came from
         out.append((grant["start_ns"], order, grant["sequence"], row))
+    for item in security.watched_opens:
+        row = {"kind": "watched_open", "event_id": item["event_id"],
+               "watch_class": item["watch_class"], "watch_id": item["watch_id"],
+               "opens": item["opens"], "provenance": "observed"}  # fmt: skip
+        for key in ("watch_label", "result", "via", "snapshot"):
+            if key in item:
+                row[key] = dict(item[key]) if key == "snapshot" else item[key]
+        if "link" in item:
+            row["link"] = {k: item["link"][k]
+                           for k in ("method", "provenance", "confidence", "state")}  # fmt: skip
+        out.append((item["start_ns"], 1, item.get("sequence", 0), row))
     for ext in security.extensions:
         row = {"kind": "extension", "event_id": ext["event_id"], "extension_kind": ext["kind"],
                "observed_via": ext["observed_via"], "signature_status": ext["signature_status"],
