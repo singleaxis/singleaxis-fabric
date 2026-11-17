@@ -12,7 +12,7 @@ import { Worker } from "node:worker_threads";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { REQUEST } from "../../../src/wire/exchange.js";
+import { JOB_EXCHANGE, JOB_RELEASING, REQUEST } from "../../../src/wire/exchange.js";
 import { STATE_FAILED, STATE_RUNNING } from "../../../src/wire/runtime.js";
 import {
   FABRIC_WORKER_MARKER,
@@ -209,6 +209,29 @@ describe("a crashed Fabric worker", () => {
     await until(() => Atomics.load(report, 0) === 3);
     expect(report[8]).toBe(2);
     await until(() => table.arena.slabs.inUse === 0);
+    expect(drain(table).losses).toEqual([]);
+  }, 30_000);
+
+  it("a job the dead worker had handled and half released is not handled again with missing bytes", async () => {
+    const { fabric, table, report, runtime } = start();
+    const handled = send(table);
+    // What a worker leaves when it dies after the handler returned and the request
+    // side was released, but before the record left the ring.
+    const record = runtime.jobs.peek()!;
+    expect(record.kind).toBe(JOB_EXCHANGE);
+    runtime.jobs.retag(JOB_RELEASING);
+    table.arena.release(table.job(record.byteOffset).request.words);
+
+    fabric.start();
+    const next = send(table);
+    await until(() => Atomics.load(report, 0) === 1);
+    await until(() => runtime.stats().queuedJobs === 0);
+    // Only the second job reached the handler, with all four of its bytes.
+    expect([Atomics.load(report, 0), BigInt(report[6]!), report[7]]).toEqual([1, next, 10]);
+    expect(next).toBe(handled + 1n);
+    await until(() => table.arena.slabs.inUse === 0);
+    expect(table.arena.vectors.inUse).toBe(0);
+    expect(runtime.stats().jobsUnprocessed).toBe(0n);
     expect(drain(table).losses).toEqual([]);
   }, 30_000);
 

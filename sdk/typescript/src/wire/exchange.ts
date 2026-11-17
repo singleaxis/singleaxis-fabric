@@ -69,6 +69,12 @@ const FLAG_LOST = 4;
 
 /** Ring record kind of a completed exchange. */
 export const JOB_EXCHANGE = 1;
+/**
+ * A completed exchange the Fabric worker has already handled and is releasing. A worker
+ * that replaces one that died here finishes the release and never handles the job
+ * again: its sides may already be empty, and an empty side must not be read as exact.
+ */
+export const JOB_RELEASING = 2;
 
 export const REQUEST = 0;
 export const RESPONSE = 1;

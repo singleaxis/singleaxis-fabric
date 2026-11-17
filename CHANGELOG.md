@@ -36,7 +36,8 @@ it never makes, applies, waits for or returns one.
   empty environment, so it never runs the agent's `NODE_OPTIONS` preloads,
   prints nothing to the agent's stdout or stderr, and never keeps the
   agent's process alive. If it crashes it is started again on the same
-  memory, so positions continue where they were; after five quick crashes
+  memory, so positions continue where they were, and a call it had already
+  handled is not handled a second time with its bytes gone; after five quick crashes
   capture stops with a reason and the agent carries on unaffected.
 - **Node.js capture groundwork: the native lock module (spec 055, unit
   055-t3).** Still no Node.js capture. Node has no file-lock or shared-memory

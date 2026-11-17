@@ -23,7 +23,7 @@
 import { Worker, isMainThread, workerData } from "node:worker_threads";
 
 import { SlotPool } from "./arena.js";
-import { ExchangeTable, JOB_EXCHANGE, type ExchangeJob } from "./exchange.js";
+import { ExchangeTable, JOB_EXCHANGE, JOB_RELEASING, type ExchangeJob } from "./exchange.js";
 import {
   type RuntimeLoss,
   type RuntimeShared,
@@ -225,13 +225,18 @@ async function consume(
   for (;;) {
     const seen = Atomics.load(jobs.wakeWords, jobs.wakeIndex);
     for (let record = jobs.peek(); record !== undefined; record = jobs.peek()) {
-      if (record.kind === JOB_EXCHANGE) {
+      if (record.kind === JOB_EXCHANGE || record.kind === JOB_RELEASING) {
         const job = exchanges.job(record.byteOffset);
-        try {
-          if (handlers.job === undefined) runtime.countUnprocessed();
-          else await handlers.job(job, context);
-        } catch {
-          runtime.lose("internal_error", job.sequence, job.segmentHi, job.segmentLo);
+        if (record.kind === JOB_EXCHANGE) {
+          try {
+            if (handlers.job === undefined) runtime.countUnprocessed();
+            else await handlers.job(job, context);
+          } catch {
+            runtime.lose("internal_error", job.sequence, job.segmentHi, job.segmentLo);
+          }
+          // Handled. From here a replacement worker only finishes the release: a side
+          // that is already empty must never reach the handler as an exact body.
+          jobs.retag(JOB_RELEASING);
         }
         exchanges.arena.release(job.request.words);
         exchanges.arena.release(job.response.words);

@@ -132,6 +132,16 @@ export class Ring {
     };
   }
 
+  /**
+   * Changes the kind of the record {@link peek} returned, in place. Consumer only: it
+   * marks how far the record's handling got, for a consumer that replaces this one.
+   */
+  retag(kind: number): void {
+    const words = this.words;
+    const head = Atomics.load(words, Q_HEAD);
+    Atomics.store(words, HEADER_BYTES / 4 + (head & this.mask) * this.recordWords + 1, kind);
+  }
+
   /** Removes the record {@link peek} returned. Consumer only. */
   commit(): void {
     const words = this.words;
