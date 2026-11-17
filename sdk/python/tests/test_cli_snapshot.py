@@ -451,3 +451,73 @@ def test_a_document_that_fits_is_left_unchanged() -> None:
     (row,) = fitted[_snapshot.EXTENSION]["files"]
     assert "content" not in row and row["content_omitted"] == "size_limit"
     assert fitted[_snapshot.EXTENSION]["incomplete"] == ["size_limit"]
+
+
+@pytest.mark.parametrize(
+    ("mode", "said"),
+    [("retain_original", "kept"), ("original_plus_masked", "kept"), ("omit", "not_kept"),
+     ("metadata_only", "not_kept"), ("redact", "masked"), ("tokenize", "masked"),
+     ("masked_only", "masked")],
+)  # fmt: skip
+def test_what_becomes_of_the_contents_follows_the_roles_mode(mode: str, said: str) -> None:
+    assert _snapshot.contents_of(mode) == said
+
+
+def test_metadata_only_keeps_no_contents_and_says_so(lab: dict[str, Any]) -> None:
+    """``metadata_only`` stores a descriptor without bytes: before the fix the command
+    reported the contents kept."""
+    policy = _policy(lab["rule"], keep=False)
+    policy["privacy"]["run.permissions"] = "metadata_only"
+    _use_policy(lab, policy)
+    code, _, report = _snap(lab)
+    assert code == 0 and report["data"]["contents"] == "not_kept", report["findings"]
+    assert _ids(report) == ["FC-107", "FC-106"]
+    assert CANARY.encode() not in _telemetry(lab) + _stored(lab)
+
+
+def test_an_entry_the_worker_never_reached_is_named(lab: dict[str, Any]) -> None:
+    other = {"path": "/etc/other.json", "match": "exact", "label": "other",
+             "class": "permission_config"}  # fmt: skip
+    _use_policy(lab, _policy(lab["rule"], extra=[other]))
+    row = {"index": 0, "label": "agent-acl", "path_ref": "pth-" + "a" * 32, "recorded": True,
+           "grant_id": "grt-" + "b" * 32, "changed": False, "files": 1, "bytes": 3}  # fmt: skip
+    answer = {"installed": True, "delivered": True, "contents": "kept", "entries": [row],
+              "error": "MemoryError"}  # fmt: skip
+    code, lines, report = _snap(lab, worker=lambda *_: answer)
+    assert code == 1 and _ids(report) == ["FC-103"], report["findings"]
+    assert report["findings"][0]["detail"] == "other: /etc/other.json: not reached (MemoryError)"
+    assert any("other: not snapshotted" in line for line in lines)
+    assert {f["label"]: f["recorded"] for f in report["data"]["files"]} == {
+        "agent-acl": True,
+        "other": False,
+    }
+
+
+FAULT = """
+import fabric._rec_grant as grants
+_real = grants.check_document
+def check_document(value):
+    if value.get("source", {}).get("name") == "boom":
+        raise RuntimeError("injected")
+    return _real(value)
+grants.check_document = check_document
+"""
+
+
+def test_one_entrys_fault_never_hides_the_others(lab: dict[str, Any]) -> None:
+    """A fault while recording one entry is that entry's finding; the worker goes on."""
+    boom = lab["tmp"] / "boom.json"
+    boom.write_text("{}")
+    entries = [{"path": str(boom), "match": "exact", "label": "boom",
+                "class": "permission_config"}]  # fmt: skip
+    _use_policy(lab, _policy(lab["rule"], extra=entries))
+    hook = lab["tmp"] / "hook"
+    hook.mkdir()
+    (hook / "sitecustomize.py").write_text(FAULT)
+    lab["shell"]["PYTHONPATH"] = str(hook)
+    code, _, report = _snap(lab)
+    assert code == 1 and _ids(report) == ["FC-103"], report["findings"]
+    assert report["findings"][0]["detail"].endswith("the snapshot failed (RuntimeError)")
+    recorded = {item["label"]: item["recorded"] for item in report["data"]["files"]}
+    assert recorded == {"agent-acl": True, "boom": False}
+    assert len(_grants(lab)) == 1

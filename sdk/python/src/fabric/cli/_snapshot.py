@@ -312,19 +312,35 @@ def record(payload: Mapping[str, Any], status_file: str) -> dict[str, Any]:
             if records is None or key is None:
                 out["error"] = "no_id_key" if records is not None else "records_inactive"
             else:
-                out["contents"] = (
-                    "kept" if records.mode_of("run.permissions") != "omit" else "not_kept"
-                )
+                mode = str(records.mode_of("run.permissions"))
+                out["contents"] = contents_of(mode)
+                out["contents_mode"] = mode
                 for index, entry in enumerate(payload["entries"]):
-                    out["entries"].append(
-                        _record_entry(index, entry, records, key, previous, _rec_grant,
-                                      pseudonym_v2)
-                    )  # fmt: skip
+                    try:
+                        row = _record_entry(index, entry, records, key, previous, _rec_grant,
+                                            pseudonym_v2)  # fmt: skip
+                    except Exception as exc:  # one entry's fault never hides the others
+                        row = {"index": index, "label": entry.get("label"), "recorded": False,
+                               "error": f"the snapshot failed ({type(exc).__name__})"}  # fmt: skip
+                    out["entries"].append(row)
     except Exception as exc:  # reported, never raised: the answer names the class only
         out["error"] = type(exc).__name__
     out["delivered"] = bool(handle.close(CLOSE_TIMEOUT_S))
     out["status"] = _status(status_file)
     return out
+
+
+#: The ``run.permissions`` modes that keep the bytes as given, and those that keep none
+#: (``metadata_only`` stores a descriptor without bytes); any other mode keeps them masked.
+_KEEPING = frozenset({"retain_original", "original_plus_masked"})
+_DROPPING = frozenset({"omit", "metadata_only"})
+
+
+def contents_of(mode: str) -> str:
+    """What becomes of the files' contents under the ``run.permissions`` mode ``mode``."""
+    if mode in _KEEPING:
+        return "kept"
+    return "not_kept" if mode in _DROPPING else "masked"
 
 
 def _record_entry(
@@ -482,8 +498,12 @@ def _not_recorded(answer: Mapping[str, Any]) -> Finding:
         return Finding(
             "FC-104", f"{reason_id or 'FW-001'}: {reason}" + (f"; fix: {fix}" if fix else "")
         )
+    error = answer.get("error")
+    if error == "records_inactive":
+        return Finding("FC-104", "capture installed, but its records input did not start, so "
+                                 "no record could be made; run `fabric doctor`")  # fmt: skip
     fallback = "capture did not install and gave no reason; run `fabric doctor`"
-    return Finding("FC-104", str(answer.get("error") or fallback))
+    return Finding("FC-104", str(error or fallback))
 
 
 def run(  # noqa: PLR0912, PLR0915 - one branch per outcome the operator is told about
@@ -537,6 +557,13 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per outcome the operator is told
         lines.append("snapshot: nothing was recorded (see the finding)")
         return report, lines
     recorded = 0
+    answered = {row.get("index") for row in rows}
+    for number, entry in enumerate(entries):  # an entry the worker never reached is named
+        if number not in answered:
+            why = f"not reached ({answer.get('error') or 'the worker gave no answer for it'})"
+            findings.append(Finding("FC-103", f"{entry['label']}: {entry['path']}: {why}"))
+            lines.append(f"  {entry['label']}: not snapshotted ({why})")
+            report.data["files"].append({"label": entry["label"], "recorded": False})
     for row in rows:
         name = str(row.get("label"))
         item: dict[str, Any] = {"label": name, "path_ref": row.get("path_ref"),
@@ -563,13 +590,17 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per outcome the operator is told
         )
         if row.get("changed"):
             findings.append(Finding("FC-109", name))
-        if "size_limit" in (row.get("incomplete") or ()):
+        if "size_limit" in (row.get("incomplete") or ()) and answer.get("contents") != "not_kept":
             findings.append(Finding("FC-108", f"{name}: at most {FILE_LIMIT // 1024} KiB of "
                                               "one file is kept, and the largest files' "
                                               "contents are left out until the document fits "
                                               "the run.permissions body limit"))  # fmt: skip
     report.data["contents"] = answer.get("contents")
     report.data["delivered"] = bool(answer.get("delivered"))
+    if answer.get("contents") == "masked":
+        mode = answer.get("contents_mode")
+        lines.append(f"  contents: kept after masking (run.permissions is {mode} in the "
+                     "capture policy), not verbatim")  # fmt: skip
     if recorded:
         save_state(project, state)
         if answer.get("contents") == "not_kept":
