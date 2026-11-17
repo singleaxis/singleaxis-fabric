@@ -24,10 +24,13 @@ it never makes, applies, waits for or returns one.
   once, as they are observed, into 64 KiB slabs of shared memory, a whole
   chunk or none of it. Completed calls go to a background worker thread
   through a fixed-size ring, not a message queue, so there is no hidden
-  unbounded buffer. Every limit has a named outcome: a body over the
-  per-side cap is `truncated(body_cap)`, one over the process byte budget is
-  `truncated(inflight_budget)`, and a call that finds no slot or a full ring
-  is a `queue_full` loss at its position. A partly kept body is never
+  unbounded buffer; the ring's memory becomes resident only as calls use
+  it. Every limit has a named outcome: a body over the per-side cap is
+  `truncated(body_cap)`, one over the process byte budget is
+  `truncated(inflight_budget)` (one whole side is always kept ready, so a
+  single large write within both limits is kept whole), and a call that
+  finds no slot or a full ring is a `queue_full` loss at its position. A
+  partly kept body is never
   labelled exact. Each loss reaches the worker thread with its position and
   reason, through its own small ring, so a full job ring can still say what
   it dropped. A call is finished exactly once, whichever of end of body,
