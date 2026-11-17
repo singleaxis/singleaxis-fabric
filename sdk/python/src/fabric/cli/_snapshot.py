@@ -56,9 +56,10 @@ SNAPSHOT_CLASS = "permission_config"
 EXTENSION = "x-fabric-rule-file"
 STATE_SCHEMA = "fabric.cli-snapshots/v1"
 #: The bytes of one file a snapshot keeps as content; a larger file is recorded by digest
-#: and size. The whole document must fit the ``run.permissions`` role's body limit.
+#: and size. The whole document must also fit the ``run.permissions`` role's body limit as
+#: the SDK's bounded walker counts it (every character as up to 6 bytes, spec 051 §4.2):
+#: the contents of the largest files are left out first until it does (:func:`fit`).
 FILE_LIMIT = 128 * 1024
-ENTRY_LIMIT = 512 * 1024
 #: A file is hashed in full up to this size; beyond it the entry is refused.
 HASH_LIMIT = 64 * 1024 * 1024
 MAX_FILES = 256  # the files of one directory entry
@@ -144,11 +145,15 @@ def _reason(exc: OSError) -> str:
     return f"{type(exc).__name__}" + (f" ({name})" if name else "")
 
 
-def _read_file(path: str) -> tuple[str, int, bytes | None]:
+def _read_file(path: str, *, follow: bool = True) -> tuple[str, int, bytes | None]:
     """One regular file as ``(sha256 hex, size, bytes or None)``; the bytes only up to
-    :data:`FILE_LIMIT`. Never follows a FIFO or device into a blocking read."""
+    :data:`FILE_LIMIT`. Never follows a FIFO or device into a blocking read, nor, with
+    ``follow`` false, a symbolic link."""
+    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+    if not follow:
+        flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0))
+        fd = os.open(path, flags)
     except OSError as exc:
         raise _UnreadableError(_reason(exc)) from None
     try:
@@ -225,21 +230,20 @@ def read_entry(entry: Mapping[str, str], path_id: Callable[[str], str]) -> dict[
         paths, left_out = _directory_files(entry["path"])
         incomplete.update(left_out)
     files: list[dict[str, Any]] = []
-    budget = ENTRY_LIMIT
     for path in paths:
         try:
-            digest, size, data = _read_file(path)
+            # A file under a prefix entry is never opened through a symbolic link.
+            digest, size, data = _read_file(path, follow=entry["match"] == "exact")
         except _UnreadableError:
             if entry["match"] == "exact":
                 raise
             incomplete.add("unreadable")
             continue
         row: dict[str, Any] = {"path_ref": path_id(path), "sha256": digest, "bytes": size}
-        if data is None or len(data) > budget:
+        if data is None:
             row["content_omitted"] = "size_limit"
             incomplete.add("size_limit")
         else:
-            budget -= len(data)
             try:
                 row["content"] = data.decode("utf-8")
                 row["encoding"] = "utf-8"
@@ -251,6 +255,26 @@ def read_entry(entry: Mapping[str, str], path_id: Callable[[str], str]) -> dict[
     if incomplete:
         out["incomplete"] = sorted(incomplete)
     return out
+
+
+def fit(document: dict[str, Any], cap: int) -> dict[str, Any]:
+    """``document`` with the contents of its largest files left out (``size_limit``) until
+    the SDK's bounded walker accepts it within ``cap``, the ``run.permissions`` role's body
+    limit: a document over it would be recorded with no body at all (``payload_too_large``)
+    while the snapshot reported its contents kept. Deterministic, so an unchanged file set
+    gives the same grant id."""
+    from fabric.records._walker import walk  # noqa: PLC0415 - the worker only
+
+    member = document[EXTENSION]
+    held = sorted((row for row in member["files"] if "content" in row),
+                  key=lambda row: (-len(row["content"]), row["path_ref"]))  # fmt: skip
+    for row in held:
+        if walk(document, cap).outcome == "ok":
+            break
+        del row["content"], row["encoding"]
+        row["content_omitted"] = "size_limit"
+        member["incomplete"] = sorted({*member.get("incomplete", ()), "size_limit"})
+    return document
 
 
 # ---------------------------------------------------------------- the worker process
@@ -334,6 +358,9 @@ def _record_entry(
     if document is None or EXTENSION not in document:
         row["error"] = "the snapshot document was refused"
         return row
+    from fabric._records_api import role_cap  # noqa: PLC0415 - the worker only
+
+    member = fit(document, role_cap("run.permissions"))[EXTENSION]
     grant_id = grants.grant_id(grants.grant_digest(document), key)
     last = previous.get(path_ref)
     changed = isinstance(last, str) and last != grant_id
@@ -538,8 +565,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per outcome the operator is told
             findings.append(Finding("FC-109", name))
         if "size_limit" in (row.get("incomplete") or ()):
             findings.append(Finding("FC-108", f"{name}: at most {FILE_LIMIT // 1024} KiB of "
-                                              f"one file and {ENTRY_LIMIT // 1024} KiB of one "
-                                              "entry are kept"))  # fmt: skip
+                                              "one file is kept, and the largest files' "
+                                              "contents are left out until the document fits "
+                                              "the run.permissions body limit"))  # fmt: skip
     report.data["contents"] = answer.get("contents")
     report.data["delivered"] = bool(answer.get("delivered"))
     if recorded:

@@ -410,3 +410,44 @@ def test_the_agent_process_never_opens_the_file_on_fabrics_behalf(lab: dict[str,
     )
     assert probe.stdout.strip() == "False"
     assert secrets_dir(lab["env"]).is_dir()
+
+
+# ---------------------------------------------------------------- review fixes
+
+
+def test_an_entry_over_the_body_limit_keeps_what_fits_and_says_so(lab: dict[str, Any]) -> None:
+    """The ``run.permissions`` walker counts every character as up to 6 bytes against the
+    role's 1 MiB limit: four 128 KiB text files do not fit. Before the fix the whole body
+    was dropped (``payload_too_large``) while the command said the contents were kept."""
+    rules = lab["tmp"] / "big.d"
+    rules.mkdir()
+    texts = {f"f{i}.txt": (chr(ord("a") + i) * _snapshot.FILE_LIMIT) for i in range(4)}
+    for name, text in texts.items():
+        (rules / name).write_text(text)
+    small = lab["tmp"] / "small.bin"
+    small.write_bytes(b"\xff" * _snapshot.FILE_LIMIT)  # base64 alone is over the limit
+    entries = [{"path": str(rules), "match": "prefix", "label": "big",
+                "class": "permission_config"},
+               {"path": str(small), "match": "exact", "label": "bin",
+                "class": "permission_config"}]  # fmt: skip
+    _use_policy(lab, _policy(lab["rule"], extra=entries))
+    code, _, report = _snap(lab)
+    assert code == 0 and report["data"]["contents"] == "kept", report["findings"]
+    detail = [f["detail"] for f in report["findings"] if f["id"] == "FC-108"]
+    assert sorted(d.split(":")[0] for d in detail) == ["big", "bin"]
+    stored = _stored(lab)
+    kept = [name for name, text in texts.items() if text.encode() in stored]
+    assert kept, "no file's contents reached the store"  # a body was stored, not a descriptor
+    assert len(kept) < len(texts) and stored.count(b"content_omitted") >= 2
+    assert RULES_V1.strip().encode() in stored.replace(b'\\"', b'"')  # the other entry too
+
+
+def test_a_document_that_fits_is_left_unchanged() -> None:
+    files = [{"path_ref": "pth-" + "a" * 32, "sha256": "0" * 64, "bytes": 2,
+              "content": "{}", "encoding": "utf-8"}]  # fmt: skip
+    document = {"basis": "declared", _snapshot.EXTENSION: {"match": "exact", "files": files}}
+    assert _snapshot.fit(json.loads(json.dumps(document)), 1 << 20) == document
+    fitted = _snapshot.fit(json.loads(json.dumps(document)), 64)
+    (row,) = fitted[_snapshot.EXTENSION]["files"]
+    assert "content" not in row and row["content_omitted"] == "size_limit"
+    assert fitted[_snapshot.EXTENSION]["incomplete"] == ["size_limit"]
