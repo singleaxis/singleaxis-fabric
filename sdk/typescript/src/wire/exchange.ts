@@ -169,6 +169,9 @@ export type Encoding = NonNullable<Parameters<Buffer["toString"]>[0]>;
 
 const now = (): bigint => BigInt(Date.now()) * 1_000_000n;
 
+/** Encodings whose `Buffer.byteLength` is an estimate, not the encoded length. */
+const ESTIMATED_ENCODINGS: ReadonlySet<string> = new Set(["base64", "base64url", "hex"]);
+
 export class ExchangeTable {
   readonly arena: PayloadArena;
   readonly pool: SlotPool;
@@ -287,11 +290,21 @@ export class ExchangeTable {
       // Another thread may write these bytes while they are copied: no atomic snapshot.
       return this.truncate(at, 3);
     }
-    const data = typeof chunk === "string" ? Buffer.from(chunk, encoding) : chunk;
-    if (data.length === 0) return true;
-    if (i32[at + 3]! + data.length > this.runtime.shared.maxRetainBytes) {
+    const cap = this.runtime.shared.maxRetainBytes;
+    // A string in a text encoding is measured before it is encoded, so a chunk past the
+    // side cap costs the hook no allocation and no encoding. base64 and hex are not:
+    // Node's measure of them is an estimate that invalid input can exceed, and their
+    // decoded bytes are fewer than the string's characters anyway.
+    if (
+      typeof chunk === "string" &&
+      !ESTIMATED_ENCODINGS.has(encoding?.toLowerCase() ?? "") &&
+      i32[at + 3]! + Buffer.byteLength(chunk, encoding) > cap
+    ) {
       return this.truncate(at, 1);
     }
+    const data = typeof chunk === "string" ? Buffer.from(chunk, encoding) : chunk;
+    if (data.length === 0) return true;
+    if (i32[at + 3]! + data.length > cap) return this.truncate(at, 1);
     const result = this.arena.append({ i32, at }, data);
     if (result === APPEND_OK) {
       // Hooks never grow an arena: they wake the Fabric worker to grow it ahead of use.

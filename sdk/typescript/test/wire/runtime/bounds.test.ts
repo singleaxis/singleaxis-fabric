@@ -5,7 +5,7 @@
  * ever labelled exact: slab, chunk-vector, exchange-slot and ring exhaustion, the side
  * cap, and the byte-ownership rules.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   MAX_VECTOR_SLOTS,
@@ -91,6 +91,43 @@ describe("the per-side cap", () => {
       1000,
     ]);
     expect([job.request.state, job.request.reason]).toEqual(["exact", undefined]);
+  });
+});
+
+describe("a string chunk past the side cap", () => {
+  it("is refused as body_cap before it is encoded: no copy of it is made in the hook", () => {
+    const { table } = isolate({ maxRetainBytes: 1000 });
+    const handle = table.begin();
+    expect(table.admit(handle, REQUEST, "a".repeat(600))).toBe(true);
+    const from = vi.spyOn(Buffer, "from");
+    try {
+      // 3 bytes per character in UTF-8: 1,200 bytes, although only 400 characters.
+      expect(table.admit(handle, REQUEST, "€".repeat(400), "utf8")).toBe(false);
+      expect(from).not.toHaveBeenCalled();
+    } finally {
+      from.mockRestore();
+    }
+    table.finish(handle, "complete");
+    const job = drain(table).jobs[0]!;
+    expect([job.request.state, job.request.reason, job.request.byteLength]).toEqual([
+      "truncated",
+      "body_cap",
+      600,
+    ]);
+  });
+
+  it("is still kept when it fits once encoded, whatever the encoding", () => {
+    const { table } = isolate({ maxRetainBytes: 8 });
+    const handle = table.begin();
+    // Twelve characters of base64 are 8 bytes; invalid hex stops at the first bad pair.
+    expect(table.admit(handle, REQUEST, "AAECAwQFBgc=", "base64")).toBe(true);
+    table.finish(handle, "complete");
+    const other = table.begin();
+    expect(table.admit(other, REQUEST, "0102zz" + "00".repeat(20), "hex")).toBe(true);
+    table.finish(other, "complete");
+    const [first, second] = drain(table).jobs;
+    expect([...first!.requestBytes]).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect([second!.request.state, [...second!.requestBytes]]).toEqual(["exact", [1, 2]]);
   });
 });
 
