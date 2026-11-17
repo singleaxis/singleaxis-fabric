@@ -185,16 +185,32 @@ export interface PayloadShared {
   readonly vectors: PoolShared;
 }
 
-export function createPayload(maxBytes: number, initialBytes: number): PayloadShared {
+/**
+ * The payload arena. `headroomBytes` is the free space the Fabric worker keeps committed
+ * ahead of use: at least one whole side (`max_retain_bytes`), so a single large chunk
+ * that is within the side cap and the global budget is never refused only because
+ * growth had not caught up. Committing a growable `SharedArrayBuffer` reserves address
+ * space; pages become resident only when a slab is first written.
+ */
+export function createPayload(
+  maxBytes: number,
+  initialBytes: number,
+  headroomBytes = 0,
+): PayloadShared {
   const maxSlabs = Math.max(1, Math.floor(maxBytes / SLAB_BYTES));
-  const initialSlabs = Math.max(1, Math.min(maxSlabs, Math.ceil(initialBytes / SLAB_BYTES)));
+  const lowWater = Math.min(maxSlabs, Math.max(32, Math.ceil(headroomBytes / SLAB_BYTES)));
+  const initialSlabs = Math.max(
+    lowWater,
+    Math.min(maxSlabs, Math.ceil(initialBytes / SLAB_BYTES)),
+    1,
+  );
   return {
     slabs: createPool({
       slotBytes: SLAB_BYTES,
       maxSlots: maxSlabs,
       initialSlots: initialSlabs,
-      lowWater: Math.min(maxSlabs, Math.max(32, initialSlabs)),
-      growStep: Math.max(64, initialSlabs),
+      lowWater,
+      growStep: Math.max(64, lowWater),
     }),
     vectors: createPool({
       slotBytes: VECTOR_BYTES,

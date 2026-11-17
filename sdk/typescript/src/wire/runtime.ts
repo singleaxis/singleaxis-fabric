@@ -120,7 +120,14 @@ export function createRuntimeShared(options: RuntimeOptions = {}): RuntimeShared
   const maxInflight = Number(options.maxInflightBytes ?? 256 * MIB);
   const maxExchanges = Math.min(MAX_EXCHANGE_SLOTS, Math.max(1, options.maxExchanges ?? 65536));
   const queue = Math.min(65536, Math.max(1, options.queueMaxItems ?? 16384));
-  const payload = createPayload(maxInflight, options.initialPayloadBytes ?? 4 * MIB);
+  const maxRetainBytes = Math.min(0x7fff_ffff, Math.max(0, options.maxRetainBytes ?? 64 * MIB));
+  // One whole side stays committed ahead of use, so a chunk within the side cap and the
+  // global budget is never refused because the Fabric worker had not grown the arena yet.
+  const payload = createPayload(
+    maxInflight,
+    options.initialPayloadBytes ?? 4 * MIB,
+    maxRetainBytes,
+  );
   const maxVectors = Math.min(MAX_VECTOR_SLOTS, options.maxVectors ?? MAX_VECTOR_SLOTS);
   const shared: RuntimeShared = {
     control: new SharedArrayBuffer(CONTROL_BYTES),
@@ -140,7 +147,7 @@ export function createRuntimeShared(options: RuntimeOptions = {}): RuntimeShared
     }),
     jobs: createRing(JOB_RECORD_BYTES, queue),
     losses: createRing(LOSS_RECORD_BYTES, options.lossRingEntries ?? LOSS_RING_ENTRIES),
-    maxRetainBytes: Math.min(0x7fff_ffff, Math.max(0, options.maxRetainBytes ?? 64 * MIB)),
+    maxRetainBytes,
   };
   const i64 = new BigInt64Array(shared.control);
   i64[C_MAGIC] = MAGIC;

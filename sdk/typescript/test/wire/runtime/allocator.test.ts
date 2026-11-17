@@ -73,6 +73,9 @@ describe("allocation under 8 concurrent producers", () => {
     const shared = createRuntimeShared({
       maxInflightBytes: 48 * 1024 * 1024,
       initialPayloadBytes: 1024 * 1024,
+      // Bodies here are under 150 KiB; a 1 MiB side cap keeps the committed headroom
+      // small, so the producers run on slabs this thread grows while they run.
+      maxRetainBytes: 1024 * 1024,
       queueMaxItems: 64,
     });
     const table = new ExchangeTable(new WireRuntime(shared, "worker"));

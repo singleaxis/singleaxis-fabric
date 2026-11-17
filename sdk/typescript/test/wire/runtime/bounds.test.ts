@@ -275,8 +275,27 @@ describe("the configured sizes", () => {
     const shared = createRuntimeShared({ maxInflightBytes: 256 * KIB * KIB, queueMaxItems: 16384 });
     const growable = shared.payload.slabs.data as unknown as { maxByteLength: number };
     expect(growable.maxByteLength).toBe(256 * KIB * KIB);
-    expect(shared.payload.slabs.data.byteLength).toBe(4 * KIB * KIB); // grown later, by the worker
+    // One whole side (64 MiB) is committed ahead of use; the rest is grown by the worker.
+    expect(shared.payload.slabs.data.byteLength).toBe(64 * KIB * KIB);
     expect(shared.jobs.limit).toBe(16384);
     expect(shared.exchanges.maxSlots).toBe(65536);
   });
+
+  it("retains a single chunk as large as the side cap with the default sizes, before any growth", () => {
+    const { table } = isolate({ maxInflightBytes: 256 * KIB * KIB });
+    const body = Buffer.alloc(40 * KIB * KIB);
+    for (let at = 0; at < body.length; at += 4096) body[at] = (at >> 12) & 0xff;
+    const handle = table.begin();
+    // A 40 MiB request sent as one write (spec 055 §4.5), and a response at the 64 MiB cap.
+    expect(table.admit(handle, REQUEST, body)).toBe(true);
+    table.responseStarted(handle);
+    const response = Buffer.alloc(64 * KIB * KIB - body.length, 3);
+    expect(table.admit(handle, RESPONSE, response)).toBe(true);
+    table.finish(handle, "complete");
+    const job = drain(table).jobs[0]!;
+    expect([job.request.state, job.request.byteLength]).toEqual(["exact", body.length]);
+    expect(job.requestBytes.equals(body)).toBe(true);
+    expect([job.response.state, job.response.byteLength]).toEqual(["exact", response.length]);
+  });
 });
+
