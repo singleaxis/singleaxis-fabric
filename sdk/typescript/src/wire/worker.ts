@@ -190,6 +190,9 @@ export function runFabricWorker(handlers: FabricWorkerHandlers = {}): Promise<vo
   if (data === undefined) return undefined;
   silence();
   const runtime = new WireRuntime(data.shared, "worker");
+  // A predecessor terminated inside a commit left the read position one record behind.
+  runtime.jobs.recover();
+  runtime.lossRing.recover();
   runtime.workerStarted();
   const exchanges = new ExchangeTable(runtime);
   return consume({ runtime, exchanges, snapshot: data.snapshot }, handlers);

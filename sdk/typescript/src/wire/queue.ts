@@ -13,6 +13,10 @@
  *
  * No `MessagePort` carries a record: there is no hidden unbounded queue and no
  * structured clone.
+ *
+ * Each cell's sequence word is stored relative to the cell's index, so a zero-filled
+ * buffer is already an empty ring: creating it writes nothing, and a page of records
+ * becomes resident only when a record is first written to it.
  */
 
 const HEADER_BYTES = 64;
@@ -42,8 +46,6 @@ export function createRing(recordBytes: number, limit: number): RingShared {
     limit,
     cells,
   };
-  const words = new Int32Array(shared.buffer);
-  for (let cell = 0; cell < cells; cell++) words[(HEADER_BYTES + cell * recordBytes) / 4] = cell;
   return shared;
 }
 
@@ -88,8 +90,9 @@ export class Ring {
     if (held > Atomics.load(words, Q_PEAK)) Atomics.store(words, Q_PEAK, held);
     for (;;) {
       const tail = Atomics.load(words, Q_TAIL);
-      const cell = HEADER_BYTES / 4 + (tail & this.mask) * this.recordWords;
-      const turn = (Atomics.load(words, cell) - tail) | 0;
+      const index = tail & this.mask;
+      const cell = HEADER_BYTES / 4 + index * this.recordWords;
+      const turn = (Atomics.load(words, cell) + index - tail) | 0;
       if (turn < 0) {
         // The consumer has not released this cell yet; `count` admitted us, so this is
         // a consumer between `peek` and `commit`. Refuse rather than spin.
@@ -101,7 +104,7 @@ export class Ring {
       }
       words[cell + 1] = kind;
       this.bytes.set(body, cell * 4 + RECORD_PREFIX_BYTES);
-      Atomics.store(words, cell, (tail + 1) | 0);
+      Atomics.store(words, cell, (tail + 1 - index) | 0);
       this.wake();
       return true;
     }
@@ -122,8 +125,9 @@ export class Ring {
     { readonly kind: number; readonly body: Uint8Array; readonly byteOffset: number } | undefined {
     const words = this.words;
     const head = Atomics.load(words, Q_HEAD);
-    const cell = HEADER_BYTES / 4 + (head & this.mask) * this.recordWords;
-    if (((Atomics.load(words, cell) - (head + 1)) | 0) !== 0) return undefined;
+    const index = head & this.mask;
+    const cell = HEADER_BYTES / 4 + index * this.recordWords;
+    if (((Atomics.load(words, cell) + index - (head + 1)) | 0) !== 0) return undefined;
     const byteOffset = cell * 4 + RECORD_PREFIX_BYTES;
     return {
       kind: words[cell + 1]!,
@@ -146,9 +150,30 @@ export class Ring {
   commit(): void {
     const words = this.words;
     const head = Atomics.load(words, Q_HEAD);
-    const cell = HEADER_BYTES / 4 + (head & this.mask) * this.recordWords;
-    Atomics.store(words, cell, (head + this.shared.cells) | 0);
+    const index = head & this.mask;
+    const cell = HEADER_BYTES / 4 + index * this.recordWords;
+    Atomics.store(words, cell, (head + this.shared.cells - index) | 0);
     Atomics.store(words, Q_HEAD, (head + 1) | 0);
     Atomics.sub(words, Q_COUNT, 1);
+  }
+
+  /**
+   * Finishes a {@link commit} that a terminated consumer cut short after it released the
+   * head cell but before it moved the read position: without this the head cell never
+   * holds the record the consumer expects, and the ring is stuck for good. Consumer
+   * only, once, before its first {@link peek}. Returns `true` when it repaired one.
+   */
+  recover(): boolean {
+    const words = this.words;
+    const head = Atomics.load(words, Q_HEAD);
+    const index = head & this.mask;
+    const cell = HEADER_BYTES / 4 + index * this.recordWords;
+    // 1: a record waits at the head; 0: none yet. A cell released for the next lap (and
+    // perhaps refilled by a producer since) is a commit that did not finish.
+    const ahead = (Atomics.load(words, cell) + index - head) | 0;
+    if (ahead < this.shared.cells) return false;
+    Atomics.store(words, Q_HEAD, (head + 1) | 0);
+    Atomics.sub(words, Q_COUNT, 1);
+    return true;
   }
 }

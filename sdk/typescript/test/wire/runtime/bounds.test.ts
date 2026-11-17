@@ -16,6 +16,7 @@ import {
   createPool,
 } from "../../../src/wire/arena.js";
 import { META_BYTES, NO_EXCHANGE, REQUEST, RESPONSE } from "../../../src/wire/exchange.js";
+import { Ring, createRing } from "../../../src/wire/queue.js";
 import {
   EXCHANGE_SLOT_BYTES,
   JOB_RECORD_BYTES,
@@ -148,6 +149,37 @@ describe("completed-job ring exhaustion", () => {
     // The consumer made room: the ring admits again.
     const next = table.begin();
     expect(table.finish(next, "complete")).toBe("enqueued");
+  });
+
+  it("creating the ring writes nothing, so no page of it is resident before a job uses it", () => {
+    const shared = createRuntimeShared({ queueMaxItems: 65536 });
+    expect(shared.jobs.buffer.byteLength).toBeGreaterThan(128 * KIB * KIB);
+    expect(new BigInt64Array(shared.jobs.buffer).every((word) => word === 0n)).toBe(true);
+    expect(new BigInt64Array(shared.losses.buffer).every((word) => word === 0n)).toBe(true);
+  });
+
+  it("a replacement consumer finishes a commit its predecessor was terminated inside", () => {
+    const shared = createRing(32, 4);
+    const ring = new Ring(shared);
+    for (let lap = 0; lap < 3; lap++) {
+      for (let n = 1; n <= 3; n++) expect(ring.push(n, new Uint8Array([lap, n]))).toBe(true);
+      // The consumer is terminated after releasing the head cell, before moving on.
+      const words = ring.wakeWords;
+      ring.commit();
+      Atomics.sub(words, 1, 1);
+      Atomics.add(words, 2, 1);
+      const replacement = new Ring(shared);
+      expect(replacement.peek()).toBeUndefined(); // stuck without the repair
+      expect(replacement.recover()).toBe(true);
+      expect(replacement.recover()).toBe(false); // once
+      const kinds: number[] = [];
+      for (let record = replacement.peek(); record !== undefined; record = replacement.peek()) {
+        expect(record.body[0]).toBe(lap);
+        kinds.push(record.kind);
+        replacement.commit();
+      }
+      expect([kinds, replacement.count]).toEqual([[2, 3], 0]);
+    }
   });
 
   it("counts a loss that does not fit the loss ring, so its position stays a gap", () => {
