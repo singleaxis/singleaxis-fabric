@@ -745,6 +745,7 @@ def security_context_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "fabric.grant.trigger": field_enum("G02"),
         "fabric.grant.previous_id": pseudonym("grt"),
         "fabric.grant.source_boundary": field_enum("G04"),
+        "fabric.grant.path_ref": pseudonym("pth"),  # spec 057 WP7-17
         "fabric.grant.permission_mode": string(
             "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$", "ask_on_write", "acceptEdits"
         ),

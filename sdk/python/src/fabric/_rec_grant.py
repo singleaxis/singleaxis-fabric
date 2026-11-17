@@ -729,6 +729,10 @@ def grant_attributes(doc: Mapping[str, Any]) -> dict[str, Any]:  # noqa: PLR0912
         "fabric.grant.basis": doc["basis"],
         "fabric.grant.source_boundary": doc["source"]["boundary"],
     }
+    if doc["source"]["boundary"] == "operator_snapshot" and "path_ref" in doc["source"]:
+        # WP7-17: the keyed id of the watched file an operator snapshot read, the id its
+        # watched opens carry (``fabric.sensor.watch_id``); never the path.
+        attrs["fabric.grant.path_ref"] = doc["source"]["path_ref"]
     if "permission_mode" in doc:
         attrs["fabric.grant.permission_mode"] = doc["permission_mode"]
     if "execution_mode" in doc:  # G06: the 049 C30/C31 keys, set from a declared snapshot
