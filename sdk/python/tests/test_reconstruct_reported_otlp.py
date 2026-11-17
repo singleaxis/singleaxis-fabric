@@ -25,7 +25,7 @@ from typing import Any
 import pytest
 
 from fabric.reconstruct import reconstruct
-from fabric.reconstruct.__main__ import actions_main
+from fabric.reconstruct.__main__ import actions_main, main
 from fabric.reconstruct._attribute import ActionReader
 from fabric.reconstruct._inputs import SpanRecord, reported_record
 from tests.test_reconstruct_security import (
@@ -324,6 +324,39 @@ def test_an_export_of_reported_records_only_still_lists_them(tmp_path: Path) -> 
     validate(report)
     assert report["runs"] == []
     assert report["reported_outside_runs"]["controls"]["reasons"] == ["control_unmatched"]
+
+
+def test_an_export_of_reported_records_only_says_where_they_are(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    service = write_rows(tmp_path, [otlp_control(resolves=TICKET)])
+    assert main(["--spans", str(service)]) == 1
+    err = capsys.readouterr().err
+    assert "no runs reconstructed" in err
+    assert "1 control or hook records another service reported over OTLP" in err
+    assert "reported_outside_runs" in err
+    assert "TypeScript" not in err  # not mistaken for explicit-API spans
+
+
+def test_a_resolution_lands_only_in_a_run_holding_a_request_with_its_id(
+    tmp_path: Path,
+) -> None:
+    """A resolution answers a request (052 §4.2.2): a run whose control with that id is a
+    resolution, not a request, does not hold what it names."""
+    capture = SecurityCapture(tmp_path)
+    segment = begin(capture)
+    loop = Loop(capture)
+    loop.turn(("call_1", "issue_refund"))
+    capture.control("approval", "resolution", "allow", control_id=TICKET, stage="pre_tool")
+    loop.turn(results=(("call_1", "ok"),))
+    end(capture, segment)
+    service = write_rows(tmp_path, [otlp_control(resolves=TICKET, decision="deny")])
+    report, _, _, _ = read([capture.write(), service], capture.store)
+    (run,) = report["runs"]
+    assert all(c["derivation"] == "reported" and c["decision"] == "allow"
+               for c in run["security_context"]["controls"])  # fmt: skip
+    outside = report["reported_outside_runs"]
+    assert outside["controls"] == {"verdict": "partial", "reasons": ["control_unmatched"]}
 
 
 def test_no_reported_record_leaves_the_report_as_it_was(tmp_path: Path) -> None:

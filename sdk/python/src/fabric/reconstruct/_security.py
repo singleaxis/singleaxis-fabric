@@ -101,7 +101,7 @@ __all__ = [
     "fact_rows",
     "present",
     "reported_item",
-    "reported_targets",
+    "reported_joins",
     "resolve_refs",
     "view_events",
     "with_no_effect_rows",
@@ -265,16 +265,23 @@ def reported_item(obs: Any) -> dict[str, Any]:
     return item
 
 
-def reported_targets(item: Mapping[str, Any]) -> tuple[str | None, str | None, str | None]:
-    """What a reported item names, for placing it in a run (rev 3.14): the provider
-    tool-call id (D40, E04), the control id a resolution or revocation answers (D05), and
-    the gated step (D06)."""
-    call = item.get("gated_tool_call_id")
-    answers = item.get("resolves") if item.get("phase") in _TARGET_PHASES else None
-    step = item.get("gated_step_id")
-    return (call if isinstance(call, str) else None,
-            answers if isinstance(answers, str) else None,
-            step if isinstance(step, str) else None)  # fmt: skip
+def reported_joins(
+    item: Mapping[str, Any], calls: set[str], controls: Iterable[Mapping[str, Any]],
+    attempts: set[str],
+) -> bool:  # fmt: skip
+    """Whether a reported item names something a run holds, for placing it there (rev
+    3.14): one of the run's captured tool calls by its D40 or E04 id; a control record
+    of the run its D05 may answer (a request for a resolution; a request or resolution
+    for a revocation, by ``fabric.control.id``, 052 §4.2.2); or one of its attempts by
+    D06."""
+    call, step = item.get("gated_tool_call_id"), item.get("gated_step_id")
+    if (isinstance(call, str) and call in calls) or (isinstance(step, str) and step in attempts):
+        return True
+    phases = _TARGET_PHASES.get(str(item.get("phase")), frozenset())
+    target = item.get("resolves")
+    return isinstance(target, str) and any(
+        c.get("id") == target and c.get("phase") in phases for c in controls
+    )
 
 
 _PTH = re.compile(r"pth-[0-9a-f]{32}")

@@ -1445,22 +1445,20 @@ class ActionReader:
                         verifier: Any) -> None:  # fmt: skip
         """Spec 057 rev 3.14: a record reported over OTLP is shown in every run that holds
         what it names: the tool call of its D40 or E04 id (a call this run captured on the
-        wire), the request its D05 answers (a control record of this run with that id),
-        or the step of its D06. There the run's joins apply to it as to any other record
-        (``provider_id``, ``ref_join``, ``reported_ref``). It never joins by position or
-        by trace: the reporting service's trace is not the agent's (052 B6)."""
+        wire), the request its D05 answers (a control record of this run with that id and
+        a phase it may answer), or the step of its D06. There the run's joins apply to it
+        as to any other record (``provider_id``, ``ref_join``, ``reported_ref``). It never
+        joins by position or by trace: the reporting service's trace is not the agent's
+        (052 B6)."""
         items = self._reported_items(verifier)
         if not items:
             return
         calls = {i for entry in report.get("exchanges", ())
                  for i in entry.get("tool_call_ids_emitted", ()) if isinstance(i, str)}  # fmt: skip
-        controls = {c["id"] for c in sec["controls"] if isinstance(c.get("id"), str)}
+        controls = list(sec["controls"])
         attempts = set(sec["attempts"])
         for item in items:
-            call, answers, step = _security.reported_targets(item)
-            joins = (call is not None and call in calls, answers is not None
-                     and answers in controls, step is not None and step in attempts)  # fmt: skip
-            if not any(joins):
+            if not _security.reported_joins(item, calls, controls, attempts):
                 continue
             placed = {k: v for k, v in item.items() if k != "record"}
             sec["hooks" if item["record"] == "hook" else "controls"].append(placed)
