@@ -24,12 +24,7 @@ import { Worker, isMainThread, workerData } from "node:worker_threads";
 
 import { SlotPool } from "./arena.js";
 import { ExchangeTable, JOB_EXCHANGE, JOB_RELEASING, type ExchangeJob } from "./exchange.js";
-import {
-  type RuntimeLoss,
-  type RuntimeShared,
-  WireRuntime,
-  waitAsync,
-} from "./runtime.js";
+import { type RuntimeLoss, type RuntimeShared, WireRuntime, waitAsync } from "./runtime.js";
 
 /** The `workerData` key that marks the Fabric worker. */
 export const FABRIC_WORKER_MARKER = "fabric.wire.worker/1";

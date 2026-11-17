@@ -190,9 +190,12 @@ describe("mixed capture with an explicit ownership scope", () => {
     expect(table.admit(later, REQUEST, Buffer.from("secret"))).toBe(false);
     table.finish(later, "complete");
     for (const job of drain(table).jobs) {
-      expect([job.adopted, job.withheld, job.request.byteLength, job.requestBytes.length]).toEqual(
-        [true, true, 0, 0],
-      );
+      expect([job.adopted, job.withheld, job.request.byteLength, job.requestBytes.length]).toEqual([
+        true,
+        true,
+        0,
+        0,
+      ]);
     }
     expect(table.arena.slabs.inUse).toBe(0);
   });
