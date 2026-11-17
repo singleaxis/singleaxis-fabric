@@ -61,7 +61,7 @@ def test_all_pinned_capture_artifacts_validate() -> None:
     #   chain does not bound; a fact-backed controls reason without its fact)
     # + spec 057 WP7-11: three host fixtures (an exit record, a watched open, a manifest
     #   with the sensor-class rows)
-    assert len(validated) == 170
+    assert len(validated) == 173
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
