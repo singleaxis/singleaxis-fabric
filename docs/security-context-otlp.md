@@ -279,3 +279,50 @@ production Node with a bound ingress, mapped records are stamped with the
 ingress binding so fabricguard keeps them; `fabric-gate` refuses a
 configuration that runs `fabricmap` anywhere but directly before
 `fabricguard`, or with a binding different from the guard's.
+
+## How the offline reader shows reported records
+
+`python -m fabric.reconstruct` reads the control and hook
+records that arrive over OTLP from the same export as the agent's own
+records. Such a record has no position in any run: it is never counted as a
+gap or a source, and it is never joined to a call by its time or by being
+the call in progress. It is shown in every run that holds what it names:
+
+| The record carries | Shown in the run that has | Link |
+|---|---|---|
+| `fabric.control.gated_tool_call_id` or `fabric.hook.gated_tool_call_id` | that tool call, captured from the model wire | `provider_id`, certain |
+| `fabric.control.resolves` (phase `resolution` or `revocation`) | a control record with that `fabric.control.id`, for example the agent's `record_control(..., control_id=ticket)` | `ref_join`, certain; the decision then applies to the tool call the request names |
+| `fabric.control.gated_step_id` | that step | `reported_ref`, certain |
+
+The join is by id only, never by trace: the service's trace is its own, and a
+run id never travels between services (spec 052 B6). This is how a decision
+made in another service joins the agent's tool call: the agent records that
+it asked, with a clear business id (a ticket or request id) as `control_id`;
+the service reports its answer with the same id, mapped to
+`fabric.control.resolves` with `"pseudonymise": "control"`; both sides key it
+with the same `FABRIC_WIRE_ID_KEY`, so the two `ctl-` ids are equal. The
+agent's request is then resolved, and a `deny` with no effect of the call is
+F5.
+
+A record that names something no run of the export holds (the agent never
+recorded its side, or the call was not captured) is listed once in the
+report's `reported_outside_runs`, with its own `controls` chain
+(`partial(control_unmatched)`) and F3. The action view prints it after the
+runs:
+
+```text
+reported over OTLP, in no run  controls: partial(control_unmatched)
+  1    control    approval · pre_tool · allow  refund-limits  amount.within_limit  102 ms  mode enforcing  (reported, otlp.mapping_profile@1)   resolves request  ref_join · certain · unresolved
+  facts:
+    F3  decision recorded with no matching call: 1 (#1)
+```
+
+To fix an unmatched decision, check that the agent records its side with the
+same clear id the service reports, that both use the same id key, and that
+the export holds the agent's run. With `--run` the section is left out: the
+other runs were not read. Grants and extensions reported over OTLP without a
+run are not read by the reader yet, and OTLP log records are not read by it
+at all (the reader reads spans).
+
+The end-to-end check is SC-RA-3
+([`qualification/security-context/sc_ra3`](../qualification/security-context/sc_ra3/README.md)).

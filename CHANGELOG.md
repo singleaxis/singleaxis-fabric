@@ -15,6 +15,18 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **SC-RA-3: control decisions from another service, end to end (spec 057
+  P3 acceptance).** A new acceptance run
+  (`qualification/security-context/run_sc_ra3.py`, CI workflow
+  `security-context-otlp.yml`) checks that a decision a separate approval
+  service reports over OpenTelemetry, under its own attribute names and
+  through a customer mapping profile on the Node, joins the agent's tool call
+  by the ticket id both sides know, and that a decision whose agent side is
+  missing is reported as `control_unmatched`. It also checks that nothing the
+  profile does not map (an email, a free-text note, an organisation id, the
+  clear ticket ids) leaves the Node, and that capture on and off give the
+  agent the same results.
+
 - **`fabric snapshot`: what the agent's permission files said (spec 057
   P3b).** A host sensor already records that the agent opened a watched
   permission file, never what it said. The operator can now run `fabric
@@ -569,6 +581,24 @@ it never makes, applies, waits for or returns one.
   may prune the namespace.
 
 ### Fixed
+
+- **The offline reader ignored control decisions other services reported
+  over OpenTelemetry (spec 057, found by SC-RA-3).** A decision an approval
+  service or policy service sent to the Node, through a mapping profile or
+  with the neutral `fabric.control.*` keys, never reached
+  `python -m fabric.reconstruct`: the agent's request stayed "pending at run
+  end" even when the service had answered, and a decision with no agent side
+  was not shown at all. The reader now shows each such decision in the run
+  that holds what it names: the tool call of its
+  `fabric.control.gated_tool_call_id`, or the request whose id its
+  `fabric.control.resolves` answers (the way a decision made in another
+  service joins the agent's tool call: the agent records that it asked with
+  its ticket or request id as `control_id`, the service reports the same id).
+  A decision no run holds is listed once in the report's new
+  `reported_outside_runs`, with its own controls chain
+  `partial(control_unmatched)`; the action view prints it after the runs.
+  Hooks reported over OpenTelemetry are read the same way. See
+  `docs/security-context-otlp.md`. Nothing to change in your configuration.
 
 - **eBPF host emitter: file access and failed execs were missing on Linux
   6.19+ kernels such as Ubuntu's 7.0.** On those kernels, an eBPF program
