@@ -673,6 +673,30 @@ describe("registration never happens in a hook", () => {
     done(registration);
   });
 
+  it("opens registration and admission files only through the native module", () => {
+    // Spec 055 §4.4: closing any descriptor of a file releases the process's record locks
+    // on it, so node:fs may only name files (list, lstat, rename, remove), never open them.
+    const source = readFileSync(join(REPO, "sdk/typescript/src/wire/registration.ts"), "utf8");
+    const imports = [...source.matchAll(/import\s*\{([^}]*)\}\s*from\s*"node:fs"/g)];
+    expect(imports).toHaveLength(1);
+    const names = imports[0]![1]!
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean);
+    const allowed = new Set([
+      "chmodSync",
+      "lstatSync",
+      "mkdirSync",
+      "readdirSync",
+      "renameSync",
+      "unlinkSync",
+      "utimesSync",
+    ]);
+    expect(names.filter((name) => !allowed.has(name))).toEqual([]);
+    expect(source).not.toMatch(/from\s+"node:fs\/promises"|require\("(node:)?fs"\)/);
+    expect(source).not.toMatch(/\bimport\s+\*\s+as\s+\w+\s+from\s+"node:fs"/);
+  });
+
   it("is not reachable from the hook-path modules", () => {
     for (const name of ["runtime", "arena", "queue", "exchange"]) {
       const source = readFileSync(join(REPO, "sdk/typescript/src/wire", `${name}.ts`), "utf8");
