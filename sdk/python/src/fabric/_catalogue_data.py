@@ -1300,5 +1300,26 @@ CATALOGUE: dict[str, Any] = {
             "fix": "unset FABRIC_CHART to install this release's own chart; keep it only to "
             "test a chart under development",
         },
+        {
+            "id": "FC-153",
+            "name": "content_reader_missing",
+            "severity": "error",
+            "text": "the release delivers model bodies to an S3 content store, and reading "
+            "them back needs boto3, which this CLI install lacks",
+            "fix": 'pip install "singleaxis-fabric[cli,s3]" on this workstation, then run '
+            "fabric verify --kubernetes again",
+        },
+        {
+            "id": "FC-154",
+            "name": "content_not_readable",
+            "severity": "warning",
+            "text": "the release keeps no model bodies where this workstation can read "
+            "them, so the agent's model decisions cannot be verified and verify "
+            "cannot pass",
+            "fix": "deliver content to an S3 or S3-compatible store: "
+            "otel-collector.content.enabled=true and content.backend=s3 in your "
+            "values (docs/get-started/kubernetes.md); this workstation reads it with "
+            "your AWS configuration",
+        },
     ],
 }

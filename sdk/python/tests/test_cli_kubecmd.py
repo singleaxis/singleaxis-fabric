@@ -27,7 +27,8 @@ from fabric import cli
 from fabric._version import __version__
 from fabric.cli import _kubecmd, _kubectl, _kubeview
 from fabric.cli._kubectl import Forbidden
-from fabric.cli._report import CliError
+from fabric.cli._report import CliError, Finding
+from fabric.content_store.s3 import S3ContentStore
 
 NS = "fabric-system"
 AGENTS = "agents"
@@ -574,6 +575,205 @@ def test_verify_with_unreadable_spans_names_the_accepted_inputs(tmp_path: Path) 
     )  # fmt: skip
     assert report.exit_code == 1
     assert any(f.id in ("FC-073", "FC-067") for f in report.findings)
+
+
+def _run_doc(run_id: str, started: str, state: str | None) -> dict[str, Any]:
+    return {"run_id": run_id, "run_state": state, "exchanges": [{"started_at": started}]}
+
+
+def test_without_run_the_newest_ended_run_is_judged_never_one_still_running() -> None:
+    document = {"runs": [
+        _run_doc("r-old", "2026-11-17T00:00:01Z", None),
+        _run_doc("r-ended", "2026-11-17T00:00:05Z", "terminated"),
+        _run_doc("r-running", "2026-11-17T00:00:09Z", "in_progress"),
+    ]}  # fmt: skip
+    assert _kubecmd.ended_run_id(document) == "r-ended"
+    # None has ended yet: the newest run, so the report still names one.
+    running = {"runs": [_run_doc("r-a", "2026-11-17T00:00:01Z", "in_progress"),
+                        _run_doc("r-b", "2026-11-17T00:00:02Z", "in_progress")]}  # fmt: skip
+    assert _kubecmd.ended_run_id(running) == "r-b"
+    assert _kubecmd.ended_run_id({"runs": []}) is None
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.slept: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+def _reads(monkeypatch: pytest.MonkeyPatch,
+           answers: Sequence[tuple[str, str | None]]) -> list[int]:  # fmt: skip
+    """``_read_run`` answering (finding id, corroboration) in turn, the last one forever."""
+    calls: list[int] = []
+
+    def read(cluster: Any, install: Any, view: Any, *args: Any) -> dict[str, Any] | None:
+        finding, corroboration = answers[min(len(calls), len(answers) - 1)]
+        calls.append(1)
+        view.findings.append(Finding(finding, f"read {len(calls)}"))
+        view.lines.append(f"read {len(calls)}")
+        if finding == "FC-073":
+            return None
+        return {"run_id": "r", "chains": {"corroboration": corroboration}}
+
+    monkeypatch.setattr(_kubecmd, "_read_run", read)
+    return calls
+
+
+def test_verify_waits_for_a_complete_corroborated_run_and_reports_the_last_read_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:  # fmt: skip
+    calls = _reads(monkeypatch, [("FC-068", None), ("FC-069", "partial"),
+                                 ("FC-069", "complete")])  # fmt: skip
+    clock = _Clock()
+    report, lines = _kubecmd.run_verify(
+        _options("verify", "--kubernetes", "--spans", str(tmp_path)), {},
+        cluster=_c(_healthy()), probe=_never_probe, canary=_no_canary,
+        sleep=clock.sleep, clock=clock,
+    )  # fmt: skip
+    assert len(calls) == 3 and clock.slept == [_kubecmd._POLL_S] * 2
+    reads = [f.detail for f in report.findings if f.id in ("FC-068", "FC-069")]
+    assert reads == ["read 3"] and "read 3" in lines and "read 1" not in lines
+    assert report.exit_code == 0
+
+
+def test_verify_stops_waiting_at_its_bound_and_reports_what_it_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:  # fmt: skip
+    calls = _reads(monkeypatch, [("FC-068", None)])
+    clock = _Clock()
+    report, _ = _kubecmd.run_verify(
+        _options("verify", "--kubernetes", "--spans", str(tmp_path)), {},
+        cluster=_c(_healthy()), probe=_never_probe, canary=_no_canary,
+        sleep=clock.sleep, clock=clock,
+    )  # fmt: skip
+    # No --wait: the cluster default, for the operator's own rollout and a run.
+    assert clock.now == pytest.approx(_kubecmd.KUBERNETES_WAIT_S)
+    assert len(calls) == int(_kubecmd.KUBERNETES_WAIT_S / _kubecmd._POLL_S) + 1
+    assert _ids(report.findings).count("FC-068") == 1 and report.exit_code == 1
+    # --wait SECONDS is the operator's bound; an unreadable export is not waited for.
+    clock = _Clock()
+    _kubecmd.run_verify(
+        _options("verify", "--kubernetes", "--spans", str(tmp_path), "--wait", "12"), {},
+        cluster=_c(_healthy()), probe=_never_probe, canary=_no_canary,
+        sleep=clock.sleep, clock=clock,
+    )  # fmt: skip
+    assert clock.now == pytest.approx(12.0)
+    calls = _reads(monkeypatch, [("FC-073", None)])
+    clock = _Clock()
+    _kubecmd.run_verify(
+        _options("verify", "--kubernetes", "--spans", str(tmp_path)), {},
+        cluster=_c(_healthy()), probe=_never_probe, canary=_no_canary,
+        sleep=clock.sleep, clock=clock,
+    )  # fmt: skip
+    assert len(calls) == 1 and clock.slept == []
+
+
+def test_a_startup_export_failure_is_waited_out_not_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:  # fmt: skip
+    """A sensor that exported once before the Node listened (FC-135 on the first look)
+    is checked again with the run: the report holds the last look only."""
+    _reads(monkeypatch, [("FC-069", "complete")])
+    gather = _kubeview.gather
+    looks: list[int] = []
+
+    def flaky(*args: Any, **kwargs: Any) -> Any:
+        view = gather(*args, **kwargs)
+        looks.append(1)
+        if len(looks) == 1:
+            view.findings.append(Finding("FC-135", "node n: grpc_code=Unavailable"))
+        return view
+
+    monkeypatch.setattr(_kubeview, "gather", flaky)
+    clock = _Clock()
+    report, _ = _kubecmd.run_verify(
+        _options("verify", "--kubernetes", "--spans", str(tmp_path)), {},
+        cluster=_c(_healthy()), probe=_never_probe, canary=_no_canary,
+        sleep=clock.sleep, clock=clock,
+    )  # fmt: skip
+    assert len(looks) == 2 and "FC-135" not in _ids(report.findings)
+    assert report.exit_code == 0
+
+
+def test_the_content_port_is_checked_only_with_content_delivery_on() -> None:
+    cluster = _healthy()
+    cluster.lists[("networkpolicies", NS)] = [
+        {"metadata": {"name": "deny-all"},
+         "spec": {"podSelector": {}, "policyTypes": ["Ingress", "Egress"]}},
+        {"metadata": {"name": "fabric-node-ingress"},
+         "spec": {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "otel-collector"}},
+                  "policyTypes": ["Ingress"],
+                  "ingress": [{"ports": [{"port": 4337}, {"port": 4338}, {"port": 4417}]}]}},
+    ]  # fmt: skip
+    agents = [{"name": AGENTS, "secret": "fabric-agent", "nodeSecret": "fabric-ingress-agents",
+               "ports": {"grpc": 4337, "http": 4338, "content": 4339}}]  # fmt: skip
+    for content, blocked in ((False, False), (True, True)):
+        cluster.install = _install(
+            agentNamespaces=agents,
+            node={"service": "fabric-otel-collector", "healthPort": 13133, "content": content},
+        )
+        report, _ = _kubecmd.run_doctor(_options("doctor", "--kubernetes"), {},
+                                        cluster=_c(cluster), probe=_never_probe)  # fmt: skip
+        found = ("FC-137", f"Node ingress on TCP 4339 (agents of {AGENTS})") in {
+            (f.id, str(f.detail)) for f in report.findings
+        }
+        assert found is blocked, (content, report.findings)
+
+
+def _store_install(**store: Any) -> _kubeview.Install:
+    node = {"service": "fabric-otel-collector", "healthPort": 13133, "content": bool(store),
+            "contentStore": store or {"backend": ""}}  # fmt: skip
+    return _kubeview.Install(_install(node=node))
+
+
+def test_verify_reads_the_release_content_store_with_the_workstations_aws_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    """Decisions are verified against the model bodies: the S3 store the Node writes,
+    opened with the operator's AWS configuration. An endpoint that configuration names
+    wins over the Node's (which may be an address only the cluster reaches)."""
+    monkeypatch.setattr(S3ContentStore, "ensure_client", lambda self: None)
+    install = _store_install(backend="s3", bucket="acme-content", prefix="fabric/content/",
+                             region="us-east-1", endpoint="https://s3.store.svc:8333",
+                             pathStyle=True)  # fmt: skip
+    view = _kubeview.View()
+    store, tenant = _kubecmd.content_store(install, view, {})
+    assert isinstance(store, S3ContentStore) and tenant == "acme"
+    assert store.bucket == "acme-content" and store.prefix == "fabric/content/"
+    assert store.endpoint_url == "https://s3.store.svc:8333" and store.region_name == "us-east-1"
+    assert not view.findings
+    store, _ = _kubecmd.content_store(
+        install, _kubeview.View(), {"AWS_ENDPOINT_URL_S3": "https://127.0.0.1:30833"}
+    )
+    assert store is not None and store.endpoint_url is None  # botocore reads the variable
+
+
+def test_verify_says_why_decisions_cannot_be_verified_without_a_readable_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    for install, detail in (
+        (_store_install(), "content delivery is off"),
+        (_store_install(backend="file"), "content backend file"),
+    ):
+        view = _kubeview.View()
+        assert _kubecmd.content_store(install, view, {}) == (None, None)
+        assert _ids(view.findings) == ["FC-154"] and detail in str(view.findings[0].detail)
+
+    def no_boto3(self: Any) -> None:
+        raise ImportError("boto3")
+
+    monkeypatch.setattr(S3ContentStore, "ensure_client", no_boto3)
+    view = _kubeview.View()
+    install = _store_install(backend="s3", bucket="acme-content", region="us-east-1")
+    assert _kubecmd.content_store(install, view, {}) == (None, None)
+    assert _ids(view.findings) == ["FC-153"]
 
 
 def test_reader_peers_come_from_the_cluster_never_from_dns() -> None:

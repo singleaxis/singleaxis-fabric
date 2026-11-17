@@ -653,7 +653,7 @@ def reader_peers(
 def _read_run(
     cluster: Cluster, install: _kubeview.Install, view: _kubeview.View,
     options: argparse.Namespace, node_pods: Sequence[Mapping[str, Any]],
-    pods: Sequence[Mapping[str, Any]],
+    pods: Sequence[Mapping[str, Any]], environ: Mapping[str, str],
 ) -> dict[str, Any] | None:  # fmt: skip
     """§5.6 steps 5 and 6 for a cluster: the reader over the destination's export
     (``--spans``), the named run or the one that started last, judged, and its observed
@@ -664,7 +664,6 @@ def _read_run(
     from ..reconstruct._ids import report_run_id  # noqa: PLC0415
     from ..reconstruct._inputs import ReconstructInputError  # noqa: PLC0415
     from ..reconstruct._report import COMPLETE_VERDICTS, EXIT_RUN_STATES  # noqa: PLC0415
-    from ..reconstruct._select import latest_run_id  # noqa: PLC0415
     from ..reconstruct._verify import reconstruct  # noqa: PLC0415
     from . import _read  # noqa: PLC0415
 
@@ -681,9 +680,10 @@ def _read_run(
             known_peers=[p for a in known if (p := peer_id(a, key)) is not None],
         )
     reader = ActionReader(every_run=True, keep_runs=True, id_key=key, host_joiner=joiner)
+    store, tenant = content_store(install, view, environ)
     try:
         document = reconstruct(
-            [str(options.spans)], id_key=key, actions=reader,
+            [str(options.spans)], id_key=key, actions=reader, store=store, tenant_id=tenant,
             profile="production" if install.production else None,
             # --spans names the destination the operator chose for this Node (§5.6).
             trusted_source=install.production,
@@ -697,7 +697,7 @@ def _read_run(
                     else f"{text}; accepted: {ACCEPTED_INPUTS}")
         )  # fmt: skip
         return None
-    wanted = report_run_id(options.run, key) if options.run else latest_run_id(document)
+    wanted = report_run_id(options.run, key) if options.run else ended_run_id(document)
     run = next((r for r in document.get("runs") or [] if r["run_id"] == wanted), None)
     if run is None:
         view.findings.append(
@@ -736,6 +736,66 @@ def _read_run(
                                       .get("reasons") or []),
         "coverage": [row.to_json() for row in rows],
     }  # fmt: skip
+
+
+#: The AWS configuration that names an S3 endpoint for this workstation (botocore reads
+#: them when no endpoint is passed): it wins over the endpoint the Node writes to, which
+#: may be an address only the cluster reaches.
+_AWS_ENDPOINT_VARIABLES = ("AWS_ENDPOINT_URL_S3", "AWS_ENDPOINT_URL")
+
+
+def content_store(install: _kubeview.Install, view: _kubeview.View,
+                  environ: Mapping[str, str]) -> tuple[Any | None, str | None]:  # fmt: skip
+    """The release's content store, opened with this workstation's AWS configuration (the
+    default credential chain, ``AWS_CA_BUNDLE``, ``AWS_ENDPOINT_URL_S3``), and its tenant:
+    the model bodies the decisions chain is verified against (§5.6 step 5). ``FC-154``
+    when the release keeps none this workstation can read, ``FC-153`` without boto3."""
+    store = install.node.get("contentStore") or {}
+    backend = str(store.get("backend") or "")
+    tenant = str(install.info.get("tenantId") or "") or next(
+        (str(a.get("tenantId")) for a in install.agents if a.get("tenantId")), None
+    )
+    if backend != "s3" or not store.get("bucket") or not tenant:
+        why = (f"content backend {backend}: the bodies are on the Node's volume" if backend
+               else "content delivery is off (otel-collector.content.enabled=false)")  # fmt: skip
+        view.findings.append(Finding("FC-154", why))
+        return None, None
+    from ..content_store.s3 import S3ContentStore  # noqa: PLC0415
+
+    own_endpoint = any((environ.get(name) or "").strip() for name in _AWS_ENDPOINT_VARIABLES)
+    prefix = str(store.get("prefix") or "").strip("/")
+    try:
+        opened = S3ContentStore(
+            bucket=str(store["bucket"]),
+            prefix=f"{prefix}/" if prefix else "fabric/content/",
+            tenant_id=tenant,
+            region_name=str(store.get("region") or "") or None,
+            endpoint_url=None if own_endpoint else (str(store.get("endpoint") or "") or None),
+            addressing_style="path" if store.get("pathStyle") else None,
+        )
+        opened.ensure_client()
+    except ImportError:
+        view.findings.append(Finding("FC-153", f"s3://{store['bucket']}"))
+        return None, None
+    except ValueError:
+        # Fixed text: a constructor message can echo a bucket, prefix or credential.
+        view.findings.append(Finding("FC-154", "the release's content store settings are invalid"))
+        return None, None
+    view.lines.append(f"content store: s3://{store['bucket']}/{prefix} (tenant {tenant})")
+    return opened, tenant
+
+
+def ended_run_id(document: Mapping[str, Any]) -> str | None:
+    """The run to judge without ``RUN``: the newest run (by its first model exchange) whose
+    process has ended, so an agent that runs in a loop is never judged mid-run; the
+    newest run when none has ended yet."""
+    from ..reconstruct._report import EXIT_RUN_STATES  # noqa: PLC0415
+    from ..reconstruct._select import latest_run_id, run_start_ns  # noqa: PLC0415
+
+    ended = [(start, str(run["run_id"])) for run in document.get("runs") or []
+             if run.get("run_state") in EXIT_RUN_STATES
+             and (start := run_start_ns(run)) is not None]  # fmt: skip
+    return max(ended)[1] if ended else latest_run_id(document)
 
 
 def _coverage(install: _kubeview.Install, run: Mapping[str, Any],
@@ -860,6 +920,26 @@ def _canary(
     return data
 
 
+#: How long ``verify --kubernetes --spans`` waits for a judged run when ``--wait`` is not
+#: given: the operator's own rollout comes first, then a run, then the destination.
+KUBERNETES_WAIT_S = 180.0
+_POLL_S = 5.0
+
+
+#: Findings that may clear on their own while a release starts (a Node pod not ready
+#: yet, a sensor that exported before the Node listened): verify waits them out.
+_TRANSIENT = frozenset({"FC-126", "FC-133", "FC-135"})
+
+
+def _settled(found: dict[str, Any] | None, findings: Sequence[Finding], sensor: bool) -> bool:
+    """A judged run that needs no more waiting: complete with decisions complete, no
+    transient problem left and, with the host sensor installed, corroborated."""
+    ids = {f.id for f in findings}
+    if found is None or "FC-069" not in ids or ids & _TRANSIENT:
+        return False
+    return not sensor or found["chains"].get("corroboration") == "complete"
+
+
 def run_verify(
     options: argparse.Namespace,
     environ: Mapping[str, str] | None = None,
@@ -867,27 +947,49 @@ def run_verify(
     cluster: Cluster | None = None,
     probe: Callable[[int], bool] = health_probe,
     canary: Callable[..., dict[str, Any]] = run_canary,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
 ) -> tuple[Report, list[str]]:
-    """``fabric verify --kubernetes``."""
+    """``fabric verify --kubernetes``. With ``--spans``, §5.6 step 4 for a cluster: the
+    checks and the readback are repeated (bounded by ``--wait``) until the run is judged
+    complete and, with the sensor, corroborated, with nothing transient left; the last
+    attempt is reported. An unreadable export is reported at once."""
+    from ._args import DEFAULT_WAIT_S  # noqa: PLC0415
+
     environ = os.environ if environ is None else environ
     cluster = _cluster(environ, cluster)
     install = _kubeview.find_install(cluster, options.namespace)
-    view = _kubeview.gather(cluster, install, probe=probe)
-    pods = view.data.pop("agent_pods", [])
-    report = Report("verify", findings=view.findings)
-    report.data = {"kubernetes": view.data}
-    report.data["canary"] = _canary(cluster, install, environ, view, canary)
-    if not options.canary_only:
-        if options.spans:
+    reading = bool(options.spans) and not options.canary_only
+    wait = KUBERNETES_WAIT_S if options.wait == DEFAULT_WAIT_S else float(options.wait)
+    deadline = clock() + wait
+    sensor = bool(install.sensor.get("enabled"))
+    while True:
+        view = _kubeview.gather(cluster, install, probe=probe)
+        pods = view.data.pop("agent_pods", [])
+        attempt = _kubeview.View()
+        found: dict[str, Any] | None = None
+        if reading:
             node_pods: list[dict[str, Any]] = []
             with contextlib.suppress(Forbidden, CliError):
                 node_pods = _kubeview.node_pods(cluster, install)
-            report.data["run"] = _read_run(cluster, install, view, options, node_pods, pods)
-        else:
-            view.findings.append(
-                Finding("FC-074", "the Node sends records to the destination you configured: "
-                        "pass --spans PATH with its export to read the run back")
-            )  # fmt: skip
+            found = _read_run(cluster, install, attempt, options, node_pods, pods, environ)
+        unreadable = any(f.id in ("FC-073", "FC-153") for f in attempt.findings)
+        if (not reading or unreadable or clock() >= deadline
+                or _settled(found, [*view.findings, *attempt.findings], sensor)):  # fmt: skip
+            break
+        sleep(min(_POLL_S, max(deadline - clock(), 0.0)))
+    report = Report("verify", findings=view.findings)
+    report.data = {"kubernetes": view.data}
+    report.data["canary"] = _canary(cluster, install, environ, view, canary)
+    if reading:
+        view.findings.extend(attempt.findings)
+        view.lines.extend(attempt.lines)
+        report.data["run"] = found
+    elif not options.canary_only:
+        view.findings.append(
+            Finding("FC-074", "the Node sends records to the destination you configured: "
+                    "pass --spans PATH with its export to read the run back")
+        )  # fmt: skip
     _finish(report, strict=options.strict)
     view.lines.append(
         "result: "
@@ -898,7 +1000,10 @@ def run_verify(
 
 __all__ = [
     "CHART",
+    "KUBERNETES_WAIT_S",
     "PRESETS",
+    "content_store",
+    "ended_run_id",
     "health_probe",
     "helm_arguments",
     "reader_peers",

@@ -919,6 +919,23 @@ installed is not the one this release pins.
 Fix: unset FABRIC_CHART to install this release's own chart; keep it only to test a chart under
 development.
 
+### FC-153
+
+`content_reader_missing`, error: the release delivers model bodies to an S3 content store, and
+reading them back needs boto3, which this CLI install lacks.
+
+Fix: pip install "singleaxis-fabric[cli,s3]" on this workstation, then run fabric verify
+--kubernetes again.
+
+### FC-154
+
+`content_not_readable`, warning: the release keeps no model bodies where this workstation can
+read them, so the agent's model decisions cannot be verified and verify cannot pass.
+
+Fix: deliver content to an S3 or S3-compatible store: otel-collector.content.enabled=true and
+content.backend=s3 in your values (docs/get-started/kubernetes.md); this workstation reads it
+with your AWS configuration.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001

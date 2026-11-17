@@ -707,8 +707,12 @@ def check_network_policies(cluster: Cluster, install: Install, view: View) -> No
                 blocked.append(f"host sensor egress to the Node on TCP {port}")
             if _allows(policies, node_labels, "Ingress", port) is False:
                 blocked.append(f"Node ingress on TCP {port} (host sensor of {entry.get('name')})")
+    content = bool(install.node.get("content"))
     for agent in install.agents:
-        ports = [int(p) for p in (agent.get("ports") or {}).values() if isinstance(p, int)]
+        # The group's content port is served (and opened by the chart) only with content
+        # delivery on: without it nothing listens there and nothing needs to pass.
+        ports = [int(p) for name, p in (agent.get("ports") or {}).items()
+                 if isinstance(p, int) and (content or name != "content")]  # fmt: skip
         for port in ports or [4318]:
             if _allows(policies, node_labels, "Ingress", port) is False:
                 blocked.append(f"Node ingress on TCP {port} (agents of {agent.get('name')})")

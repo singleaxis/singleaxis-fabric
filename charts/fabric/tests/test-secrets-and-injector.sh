@@ -274,6 +274,12 @@ node = one('StatefulSet', '-otel-collector')['spec']['template']['spec']['contai
 assert any(e['name'] == 'AWS_CA_BUNDLE' for e in node['env'])
 args = one('Job', '-fabric-secrets')['spec']['template']['spec']['containers'][0]['args']
 assert '--content' in args and '--agent-namespace=agents=agents' in args, args
+import json
+info = json.loads(one('ConfigMap', '-fabric-install')['data']['info.json'])
+# Where verify reads the model bodies back (location only, never a credential).
+assert info['node']['contentStore'] == {'backend': 's3', 'bucket': 'acme-fabric-content',
+    'prefix': 'fabric/content/', 'region': 'us-east-1',
+    'endpoint': 'https://s3.storage.internal:9000', 'pathStyle': True}, info['node']
 "
 
 printf 'PASS: secrets Job, agent namespaces and the injector render as spec 058 section 10 says\n'

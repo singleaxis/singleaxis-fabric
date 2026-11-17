@@ -31,6 +31,20 @@ the profile files alone is unchanged.
 {{- $_ := set $injector "webhook" (include "fabric.webhookName" .) }}
 {{- $_ := set $injector "tlsSecret" .Values.injector.tlsSecretName }}
 {{- end }}
+{{- /* Where the Node writes model bodies, so verify can read them back with the
+     operator's own credentials (spec 058 §5.6 step 5): location only. */ -}}
+{{- $store := dict "backend" "" }}
+{{- if dig "content" "enabled" false $collector }}
+{{- $s3 := dig "content" "s3" dict $collector }}
+{{- $store = dict "backend" (dig "content" "backend" "" $collector | toString) }}
+{{- if eq $store.backend "s3" }}
+{{- $_ := set $store "bucket" ($s3.bucket | default "" | toString) }}
+{{- $_ := set $store "prefix" ($s3.prefix | default "" | toString) }}
+{{- $_ := set $store "region" ($s3.region | default "" | toString) }}
+{{- $_ := set $store "endpoint" ($s3.endpoint | default "" | toString) }}
+{{- $_ := set $store "pathStyle" ($s3.usePathStyle | default false) }}
+{{- end }}
+{{- end }}
 {{- $secrets := list }}
 {{- if $plan.render }}
 {{- $secrets = include "fabric.secretsReleaseNames" . | fromYamlArray }}
@@ -49,6 +63,7 @@ the profile files alone is unchanged.
           "service" (include "fabric.collectorFullname" .)
           "healthPort" 13133
           "content" (dig "content" "enabled" false $collector)
+          "contentStore" $store
           "networkPolicy" (dig "networkPolicy" "enabled" false $collector)
           "denyDefault" .Values.networkPolicy.denyDefault)
       "caSecret" .Values.secretsJob.caSecretName

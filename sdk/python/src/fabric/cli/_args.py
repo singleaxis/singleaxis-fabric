@@ -48,7 +48,8 @@ def add_verify_arguments(parser: argparse.ArgumentParser) -> None:
         type=_seconds,
         default=DEFAULT_WAIT_S,
         metavar="SECONDS",
-        help="how long to wait for records to reach the destination (default 30)",
+        help="how long to wait for records to reach the destination (default 30; with "
+        "--kubernetes and --spans, 180: for a run of the pods your rollout restarted)",
     )
     # Accepted so the answer is FC-011 naming the manual route, not an argparse error.
     parser.add_argument("--production", action="store_true", help=argparse.SUPPRESS)
