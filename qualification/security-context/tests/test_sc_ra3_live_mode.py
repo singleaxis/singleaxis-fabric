@@ -19,6 +19,7 @@ from sc_ra3._ar1 import node_dist
 from sc_ra3.harness import SESSIONS, Harness, Options
 
 KEY = "sc-ra3-stand-in-key-not-a-secret"
+WRONG = KEY.upper()  # what the stand-in refuses
 
 pytestmark = pytest.mark.skipif(node_dist() is None, reason="no built Fabric Node dist")
 
@@ -59,7 +60,7 @@ def test_live_mode_with_a_wrong_key_fails_loudly(
         out=tmp_path,
         mode="live",
         base_url=stand_in.base_url,
-        model_key="sc-ra3-wrong-key",
+        model_key=WRONG,
         sessions=("approved",),
         log=lambda _: None,
     )
