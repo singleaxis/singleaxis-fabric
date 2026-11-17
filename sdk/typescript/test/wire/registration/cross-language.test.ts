@@ -6,6 +6,7 @@
 // sequence after SIGKILL, including positions allocated by attached worker isolates; a
 // forced epoch collision across the two languages redraws. Every process here is real
 // and every kill is SIGKILL, so nothing depends on cleanup running.
+import { createHash } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
@@ -16,6 +17,7 @@ import {
   EPOCHS_DIR,
   ORPHAN_SUFFIX,
   decode,
+  encode,
   epochName,
   orphanBeat,
   register,
@@ -99,6 +101,143 @@ async function pyHolder(dir: string, source: string, count: number, epoch?: bigi
 function readReg(dir: string, epoch: bigint, suffix = ".reg") {
   return decode(readFileSync(join(dir, EPOCHS_DIR, epochName(epoch, suffix))));
 }
+
+/** Python's `encode` and `decode` over the cases on stdin (exact integers as strings). */
+const PY_CODEC = `
+import json, sys
+from fabric.wire import _registration as reg
+cases = json.loads(sys.stdin.read())
+encoded = []
+for c in cases["encode"]:
+    try:
+        data = reg.encode(int(c["epoch"]), c["source"], pid=c["pid"],
+                          registered_at_unix_nano=int(c["at"]))
+        encoded.append(data.hex())
+    except ValueError:
+        encoded.append(None)
+decoded = []
+for blob in cases["decode"]:
+    f = reg.decode(bytes.fromhex(blob))
+    decoded.append(None if f is None else [str(f["epoch"]), f["pid"],
+                   str(f["registered_at_unix_nano"]), f["source_id"],
+                   str(f["next_sequence"]), f["final"]])
+print(json.dumps({"encoded": encoded, "decoded": decoded}))
+`;
+
+function seeded(seed: bigint): (limit: bigint) => bigint {
+  let state = seed;
+  return (limit) => {
+    state = (state * 6364136223846793005n + 1442695040888963407n) & ((1n << 64n) - 1n);
+    return (state >> 1n) % limit;
+  };
+}
+
+describe("the file, Python against TypeScript", () => {
+  it("encodes and decodes byte-identically beyond the ASCII vectors", () => {
+    const random = seeded(0x055_75n);
+    // ASCII, 2-, 3- and 4-byte characters, a byte-order mark, lone surrogates
+    // (surrogatepass on the way in) and a noncharacter.
+    const pieces = ["s", "-", "a", "7", "é", "中", "😀", "﻿", "\ud800", "\udfff", "￾"];
+    const encodeCases: { epoch: string; source: string; pid: number; at: string }[] = [];
+    for (let n = 0; n < 400; n++) {
+      let source = "";
+      const length = Number(random(70n));
+      for (let i = 0; i < length; i++) source += pieces[Number(random(BigInt(pieces.length)))];
+      const edge = [1n, (1n << 63n) - 1n, 0n, 1n << 63n][n % 16];
+      encodeCases.push({
+        epoch: String(edge ?? 1n + random((1n << 63n) - 1n)),
+        source,
+        pid: Number(random(1n << 32n)),
+        at: String(random(1n << 64n)),
+      });
+    }
+    const valid: Buffer[] = [];
+    const tsEncoded = encodeCases.map((c) => {
+      try {
+        const data = encode(BigInt(c.epoch), c.source, c.pid, BigInt(c.at));
+        valid.push(data);
+        return data.toString("hex");
+      } catch (error) {
+        expect(error).toBeInstanceOf(RangeError);
+        return null;
+      }
+    });
+    expect(valid.length).toBeGreaterThan(200);
+    expect(tsEncoded.filter((h) => h === null).length).toBeGreaterThan(20);
+
+    // Decode: valid files, then files whose header is re-digested after a change, so the
+    // UTF-8, length and version checks are what decides.
+    const reseal = (data: Buffer): Buffer => {
+      createHash("sha256").update(data.subarray(0, 256)).digest().copy(data, 4064);
+      return data;
+    };
+    const utf8 = [
+      [0xff],
+      [0x80],
+      [0xc0, 0x80],
+      [0xc2],
+      [0xe2, 0x82],
+      [0xed, 0xa0, 0x80],
+      [0xed, 0xbf, 0xbf],
+      [0xf4, 0x90, 0x80, 0x80],
+      [0xf8, 0x88, 0x80, 0x80, 0x80],
+      [0xef, 0xbb, 0xbf],
+      [0xef, 0xbf, 0xbe],
+      [0xf0, 0x9f, 0x98, 0x80],
+      [0x00],
+    ];
+    const blobs: Buffer[] = [];
+    valid.slice(0, 60).forEach((base, n) => {
+      blobs.push(base);
+      const tail = Buffer.from(base);
+      tail.writeBigUInt64LE(random(1n << 63n), 256);
+      tail[264] = Number(random(256n));
+      blobs.push(tail);
+      // Odd cases put the bytes first: a leading byte-order mark must survive decoding.
+      const raw = utf8[n % utf8.length]!;
+      const bytes = n % 2 === 1 ? [...raw, 0x73, 0x2d] : [0x73, 0x2d, ...raw];
+      const text = Buffer.from(base);
+      text.fill(0, 32, 256);
+      text.writeUInt16LE(bytes.length, 32);
+      Buffer.from(bytes).copy(text, 34);
+      blobs.push(reseal(text));
+      const long = Buffer.from(base);
+      long.writeUInt16LE(160 + (n % 2), 32);
+      blobs.push(reseal(long));
+      const version = Buffer.from(base);
+      version.writeUInt32LE(n % 3, 8);
+      blobs.push(reseal(version));
+      const flipped = Buffer.from(base);
+      flipped[Number(random(256n))]! ^= 1;
+      blobs.push(flipped);
+      blobs.push(base.subarray(0, Number(random(4096n))));
+    });
+
+    const python = runPython(
+      PY_CODEC,
+      [],
+      JSON.stringify({ encode: encodeCases, decode: blobs.map((b) => b.toString("hex")) }),
+    );
+    expect(python.encoded).toEqual(tsEncoded);
+    const tsDecoded = blobs.map((blob) => {
+      const f = decode(blob);
+      return f === null
+        ? null
+        : [
+            String(f.epoch),
+            f.pid,
+            String(f.registeredAtUnixNano),
+            f.sourceId,
+            String(f.nextSequence),
+            f.final,
+          ];
+    });
+    expect(python.decoded).toEqual(tsDecoded);
+    // Both outcomes occur, so the comparison is not trivially all-null or all-valid.
+    expect(tsDecoded.filter((d) => d === null).length).toBeGreaterThan(200);
+    expect(tsDecoded.filter((d) => d !== null).length).toBeGreaterThan(20);
+  }, 60_000);
+});
 
 describe("a Python drainer and a TypeScript writer", () => {
   it("reads a live TypeScript registration as live, and a killed one as an orphan", async () => {

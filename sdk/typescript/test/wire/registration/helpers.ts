@@ -98,12 +98,17 @@ function pythonEnv(): typeof process.env {
   return { ...process.env, PYTHONPATH: join(REPO, "sdk", "python", "src") };
 }
 
-/** Runs a Python script to completion; its stdout is one JSON value (exact integers). */
-export function runPython(script: string, args: readonly string[]): any {
+/**
+ * Runs a Python script to completion, with `input` on its stdin; its stdout is one JSON
+ * value (exact integers).
+ */
+export function runPython(script: string, args: readonly string[], input?: string): any {
   const result = spawnSync(pythonWithFabric(), ["-c", script, ...args], {
     encoding: "utf8",
     env: pythonEnv(),
     timeout: 60_000,
+    maxBuffer: 64 * 1024 * 1024,
+    ...(input === undefined ? {} : { input }),
   });
   if (result.status !== 0) {
     throw new Error(`python exited ${result.status ?? result.signal}: ${result.stderr}`);
