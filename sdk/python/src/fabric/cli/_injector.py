@@ -23,6 +23,11 @@ patch adds, never replaces:
 - for ``python``: the standard-library autoload shim (a ConfigMap) at
   ``/var/run/fabric/autoload``, ``PYTHONPATH`` pointing at it and
   ``FABRIC_WIRE_AUTOLOAD=1``. The SDK itself must be in the image (OQ-6);
+- ``FABRIC_WIRE_ENDPOINTS`` for a model host the container names in a standard base-URL
+  variable of its own ``env`` (``OPENAI_BASE_URL`` and the like, spec 058 §8.3) when the
+  built-in endpoint table does not cover that host, as ``fabric run`` does;
+- with the chart's host sensor on (§10.5): the pod label the sensor selects on, and
+  ``FABRIC_HOST_LABEL`` from the pod's node name, so host records join the agent's;
 - the annotation ``fabric.singleaxis.ai/injected: <version>``, or
   ``fabric.singleaxis.ai/inject-skipped: <reason>`` when it changed nothing.
 
@@ -70,6 +75,8 @@ VOLUME_SECRETS = "fabric-secrets"
 VOLUME_AUTOLOAD = "fabric-autoload"
 VOLUME_SPOOL = "fabric-spool"
 SPOOL_MAX_BYTES = "FABRIC_WIRE_SPOOL_MAX_BYTES"
+ENDPOINTS = "FABRIC_WIRE_ENDPOINTS"
+HOST_LABEL = "FABRIC_HOST_LABEL"
 MAX_BODY_BYTES = 8 * 1024 * 1024
 _LOG = logging.getLogger("fabric.injector")
 _NOT_NAME = re.compile(r"[^A-Za-z0-9._-]")
@@ -86,6 +93,10 @@ class Config:
     spool_claim: str = "fabric-spool"
     #: The SDK spool bound for an ``emptyDir`` spool, in bytes (0: not set here).
     spool_max_bytes: int = 0
+    #: §10.5, with the chart's host sensor: labels added to an injected pod (the sensor's
+    #: pod selector), and whether ``FABRIC_HOST_LABEL`` is set from the pod's node name.
+    pod_labels: Mapping[str, str] = field(default_factory=dict)
+    host_label_from_node: bool = False
     namespaces: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
     @classmethod
@@ -94,7 +105,11 @@ class Config:
             str(name): {str(k): str(v) for k, v in (entry.get("env") or {}).items()}
             for name, entry in (data.get("namespaces") or {}).items()
         }
+        sensor = data.get("hostSensor")
+        sensor = sensor if isinstance(sensor, Mapping) else {}
         return cls(
+            pod_labels={str(k): str(v) for k, v in (sensor.get("podLabels") or {}).items()},
+            host_label_from_node=bool(sensor.get("hostLabelFromNode")),
             version=str(data.get("version") or "unknown"),
             secret=str(data.get("secret") or "fabric-agent"),
             shim_config_map=str(data.get("shimConfigMap") or "fabric-autoload"),
@@ -119,6 +134,55 @@ def _annotate(pod: Mapping[str, Any], values: Mapping[str, str]) -> list[dict[st
         for key, value in values.items()
         if key not in annotations
     ]
+
+
+def _label(pod: Mapping[str, Any], values: Mapping[str, str]) -> list[dict[str, Any]]:
+    """Add labels the pod does not carry; a label it has is never changed."""
+    if not values:
+        return []
+    labels = (pod.get("metadata") or {}).get("labels")
+    if not isinstance(labels, dict):
+        return [{"op": "add", "path": "/metadata/labels", "value": dict(values)}]
+    return [
+        {"op": "add", "path": f"/metadata/labels/{_escape(key)}", "value": value}
+        for key, value in values.items()
+        if key not in labels
+    ]
+
+
+def _derived_endpoints(container: Mapping[str, Any], configured: str | None) -> str | None:
+    """§8.3 for a pod: the ``FABRIC_WIRE_ENDPOINTS`` value that adds a matcher for each
+    standard base-URL variable in the container's own ``env`` (a literal ``value`` only)
+    whose host neither the built-in table nor ``configured`` (the chart's value) covers.
+    ``None`` when there is nothing to add. The compilation is ``fabric run``'s own
+    (``_providers``); if it cannot be loaded or fails, nothing is added."""
+    try:
+        from . import _providers  # noqa: PLC0415 - only for a pod that names a base URL
+
+        values = {
+            str(entry.get("name")): str(entry.get("value"))
+            for entry in container.get("env") or []
+            if isinstance(entry, dict)
+            and entry.get("name") in _providers.BASE_URL_VARIABLES
+            and isinstance(entry.get("value"), str)
+        }
+        if not values:
+            return None
+        existing = json.loads(configured) if configured else []
+        if not isinstance(existing, list):
+            return None
+        hosts = {str(h) for e in existing if isinstance(e, dict) for h in e.get("hosts") or []}
+        names = {str(e.get("endpoint_id")) for e in existing if isinstance(e, dict)}
+        added = [
+            _providers.matcher_json(d.matcher)
+            for d in _providers.from_environment(values, list(_providers.builtin()))
+            if not (d.matcher.hosts & hosts) and d.matcher.endpoint_id not in names
+        ]
+        if not added:
+            return None
+        return json.dumps([*existing, *added], separators=(",", ":"))
+    except Exception:  # never fail a pod admission (I3): the pod keeps the chart's value
+        return None
 
 
 def _append(path: str, current: Any, items: Sequence[Any]) -> list[dict[str, Any]]:
@@ -205,7 +269,7 @@ def plan_patch(request: Mapping[str, Any], config: Config) -> tuple[list[dict[st
         return _annotate(pod, {SKIPPED: str(skip)}), f"skipped: {skip}"
 
 
-def _patch(
+def _patch(  # noqa: PLR0912 - one step per thing the patch may add
     pod: Mapping[str, Any],
     request: Mapping[str, Any],
     config: Config,
@@ -235,11 +299,21 @@ def _patch(
     notes: list[str] = []
     for index, container in enumerate(containers):
         own = {e.get("name") for e in container.get("env") or [] if isinstance(e, dict)}
+        values = dict(env)
+        if ENDPOINTS not in own:
+            derived = _derived_endpoints(container, env.get(ENDPOINTS))
+            if derived is not None:
+                values[ENDPOINTS] = derived
         added: list[dict[str, Any]] = [
             {"name": name, "value": value}
-            for name, value in env.items()
+            for name, value in values.items()
             if name not in own and _twin(name) not in own
         ]
+        if config.host_label_from_node and HOST_LABEL not in own and HOST_LABEL not in values:
+            # The node's name, as the sensor on that node names its host (§10.5).
+            added.append(
+                {"name": HOST_LABEL, "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName"}}}
+            )
         if mode == "python":
             if "PYTHONPATH" in own:
                 # Never changed (§10.4): this container keeps its own and gets no autoload.
@@ -254,7 +328,7 @@ def _patch(
     marks = {INJECTED: config.version}
     if notes:
         marks[NOTE] = "; ".join(notes)
-    return ops + _annotate(pod, marks)
+    return ops + _label(pod, config.pod_labels) + _annotate(pod, marks)
 
 
 def _spool_bound(

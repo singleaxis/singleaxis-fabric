@@ -26,13 +26,15 @@ same() {
   diff -u "${a}" "${b}" >"${tmp}/diff" || { cat "${tmp}/diff" >&2; fail "${what}"; }
 }
 # without_secrets_job FILE: the render without the secrets Job's hook objects
-# (a production preset adds them on purpose: tests/test-secrets-and-injector.sh),
-# written to FILE.recorder; prints how many objects were set aside.
+# and the install-info ConfigMap (a production preset adds them on purpose:
+# tests/test-secrets-and-injector.sh, tests/test-host-sensor.sh), written to
+# FILE.recorder; prints how many objects were set aside.
 without_secrets_job() {
   python3 - "$1" <<'PY'
 import sys
 docs = open(sys.argv[1], encoding="utf-8").read().rstrip("\n").split("\n---\n")
-kept = [d for d in docs if "app.kubernetes.io/component: secrets-job" not in d]
+added = ("app.kubernetes.io/component: secrets-job", "app.kubernetes.io/component: install-info")
+kept = [d for d in docs if not any(mark in d for mark in added)]
 open(sys.argv[1] + ".recorder", "w", encoding="utf-8").write("\n---\n".join(kept) + "\n")
 print(len(docs) - len(kept))
 PY
@@ -57,8 +59,8 @@ same "preset=local differs from -f profiles/shadow-dev.yaml" "${tmp}/profile-loc
 
 render --set preset=production "${production[@]}" >"${tmp}/preset-production.yaml"
 render --values "${chart}/profiles/shadow-production.yaml" "${production[@]}" >"${tmp}/profile-production.yaml"
-[[ "$(without_secrets_job "${tmp}/preset-production.yaml")" == 5 ]] \
-  || fail "preset=production no longer adds the secrets Job (ServiceAccount, Role, RoleBinding, NetworkPolicy, Job)"
+[[ "$(without_secrets_job "${tmp}/preset-production.yaml")" == 6 ]] \
+  || fail "preset=production no longer adds the secrets Job (ServiceAccount, Role, RoleBinding, NetworkPolicy, Job) and the install-info ConfigMap"
 [[ "$(without_secrets_job "${tmp}/profile-production.yaml")" == 0 ]] \
   || fail "-f profiles/shadow-production.yaml alone renders the secrets Job: a manual install changed (I8)"
 same "preset=production differs from -f profiles/shadow-production.yaml" \

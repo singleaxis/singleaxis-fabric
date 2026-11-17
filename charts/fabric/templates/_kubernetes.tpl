@@ -48,9 +48,15 @@ anything to generate: agent namespaces, the injector, or a production preset.
 {{- $agents := include "fabric.agentNamespaces" . | fromYamlArray -}}
 {{- $production := include "fabric.nodeIsProduction" . | eq "true" -}}
 {{- $presetProduction := and .Values.preset (ne .Values.preset "local") -}}
-{{- $render := and .Values.secretsJob.enabled .Values.otelCollector.enabled (or $agents .Values.injector.enabled $presetProduction) -}}
+{{- $render := and .Values.secretsJob.enabled .Values.otelCollector.enabled (or $agents .Values.injector.enabled $presetProduction .Values.hostSensor.enabled) -}}
+{{- $hostNodes := list -}}
+{{- if .Values.hostSensor.enabled -}}
+{{- $hostNodes = include "fabric.hostSensorNodes" . | fromYamlArray -}}
+{{- end -}}
 {{- dict
       "render" $render
+      "hostSensor" .Values.hostSensor.enabled
+      "hostNodes" $hostNodes
       "production" $production
       "content" (and $production (dig "content" "enabled" false $collector))
       "nodeTls" (dig "receiver" "tls" "serverCertificateSecret" "name" "" $collector)
@@ -71,6 +77,10 @@ anything to generate: agent namespaces, the injector, or a production preset.
 {{- range $plan.agents }}{{ $names = append $names .nodeSecret }}{{ end -}}
 {{- end -}}
 {{- if .Values.injector.enabled }}{{ $names = append $names .Values.injector.tlsSecretName }}{{ end -}}
+{{- if $plan.hostSensor -}}
+{{- $names = concat $names (list .Values.hostSensor.idKeySecretName .Values.hostSensor.tlsSecretName) -}}
+{{- range $plan.hostNodes }}{{ $names = append $names .secret }}{{ end -}}
+{{- end -}}
 {{- $names | uniq | toYaml -}}
 {{- end -}}
 
@@ -106,6 +116,14 @@ anything to generate: agent namespaces, the injector, or a production preset.
 {{- end }}
 {{- range $plan.agents }}
 - --agent-namespace={{ .name }}={{ .source }}
+{{- end }}
+{{- if $plan.hostSensor }}
+- --host-sensor
+- --secret-name=id-key={{ .Values.hostSensor.idKeySecretName }}
+- --secret-name=host-tls={{ .Values.hostSensor.tlsSecretName }}
+{{- range $plan.hostNodes }}
+- --host-node={{ .name }}
+{{- end }}
 {{- end }}
 {{- end -}}
 
@@ -198,6 +216,21 @@ group on a production Node.
 {{- end -}}
 {{- $_ := set $namespaces $agent.name (dict "env" $env) -}}
 {{- end -}}
+{{- $hostSensor := dict -}}
+{{- if .Values.hostSensor.enabled -}}
+{{- /* The pod label the sensor selects on (one key=value term), and the host
+     label an agent names its node by. */ -}}
+{{- $terms := splitList "," (.Values.hostSensor.agentPodSelector | toString) -}}
+{{- $labels := dict -}}
+{{- range $term := $terms -}}
+{{- $pair := splitList "=" $term -}}
+{{- if ne (len $pair) 2 -}}
+{{- fail "hostSensor.agentPodSelector takes key=value terms separated by commas (kubectl -l syntax, equality only), e.g. fabric.singleaxis.ai/agent=true" -}}
+{{- end -}}
+{{- $_ := set $labels (index $pair 0 | trim) (index $pair 1 | trim) -}}
+{{- end -}}
+{{- $hostSensor = dict "podLabels" $labels "hostLabelFromNode" true -}}
+{{- end -}}
 {{- $spoolMaxBytes := 0 -}}
 {{- if not (hasKey (.Values.injector.env | default dict) "FABRIC_WIRE_SPOOL_MAX_BYTES") -}}
 {{- $spoolMaxBytes = include "fabric.injectorSpoolMaxBytes" . | int64 -}}
@@ -209,6 +242,7 @@ group on a production Node.
       "spoolSizeLimit" .Values.injector.spool.sizeLimit
       "spoolMaxBytes" $spoolMaxBytes
       "spoolClaim" "fabric-spool"
+      "hostSensor" $hostSensor
       "namespaces" $namespaces
   | toJson -}}
 {{- end -}}

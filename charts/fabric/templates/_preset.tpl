@@ -128,6 +128,15 @@ An entry is a namespace name or {name, tenantId, source}.
 {{- end -}}
 {{- $preset = mergeOverwrite $preset $content -}}
 {{- end -}}
+{{- /* §10.5: this preset installs the chart's own sensor DaemonSet, unless the
+     operator brought host.ebpf groups for a DaemonSet they deploy themselves. */ -}}
+{{- if and (eq (toString .Values.preset) "production-host-sensor") (not (include "fabric.hasOwnHostGroups" .)) -}}
+{{- $more := .Files.Get "presets/host-sensor.yaml" | fromYaml -}}
+{{- if or (not $more) (hasKey $more "Error") -}}
+{{- fail "preset \"production-host-sensor\" needs presets/host-sensor.yaml, which this chart package does not hold. Use an unmodified chart package" -}}
+{{- end -}}
+{{- $preset = mergeOverwrite $preset $more -}}
+{{- end -}}
 {{- $defaults := .Files.Get "presets/defaults.yaml" | fromYaml -}}
 {{- include "fabric.presetMerge" (dict "dst" .Values "src" $preset "def" $defaults) -}}
 {{- /* A preset knows the tenant: fill it into the groups it brought. */ -}}
@@ -175,5 +184,6 @@ An entry is a namespace name or {name, tenantId, source}.
 {{- end -}}
 {{- $_ := set $receiver "sourceBindings" $groups -}}
 {{- end -}}
+{{- include "fabric.hostSensorGroups" . -}}
 {{- end -}}
 {{- end -}}

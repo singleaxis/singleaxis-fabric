@@ -67,6 +67,8 @@ def render() -> str:
     picked: dict[str, Any] = {}
     for name in PROFILES:
         merge(picked, pick(load(CHART / "profiles" / name), defaults))
+    # What `preset: production-host-sensor` adds to its profile files (10.5).
+    merge(picked, pick(load(CHART / "presets" / "host-sensor.yaml"), defaults))
     return HEADER + yaml.safe_dump(picked, sort_keys=True, default_flow_style=False)
 
 

@@ -167,3 +167,80 @@ injector:
     requests:
       cpu: 50m
       memory: 96Mi
+
+# Host sensor DaemonSet (spec 058 section 10.5). Off by default; the
+# `production-host-sensor` preset turns it on (unless you give your own
+# host.ebpf ingress groups, which keeps the hand-deployed DaemonSet of
+# deploy/kubernetes/). It runs the eBPF host emitter on every selected Linux
+# node, in production mode: process and network evidence of the agent pods
+# that does not rely on the agent. It needs a production Node (the
+# `production-host-sensor` preset).
+#
+# This is the only workload of the chart that asks for more than the
+# restricted posture: it runs as root with hostPID and the capabilities BPF,
+# PERFMON, SYS_RESOURCE and DAC_READ_SEARCH (never `privileged`), and mounts
+# /sys/kernel/btf, /sys/fs/cgroup, /sys/kernel/tracing and /sys/kernel/debug
+# read-only plus its state directory. Its BPF programs are tracepoints: they
+# observe and never block, change or delay a process.
+#
+# Nothing is copied onto a node by hand. The secrets Job generates, for each
+# node, its ingest token and state key (Secret fabric-host-<hash of the node
+# name>), and for all nodes the shared id key and the client certificate.
+# Each node is its own source with its own ingress group and port on the
+# Node. Each sensor pod mounts only its own node's files, but every node's
+# kubelet receives the Secrets of all listed nodes: where a node must never
+# hold another node's token, deploy deploy/kubernetes/host-emitter-daemonset.yaml
+# with per-node directories instead.
+#
+# Which pods it records: those carrying the label in `agentPodSelector`. The
+# injector adds that label and FABRIC_HOST_LABEL to the pods it injects, so an
+# injected pod needs nothing else. The sensor and the agents must share one id
+# key for their records to join: with the sensor on, new agent namespaces get
+# the release's id key (Secret `idKeySecretName`) instead of one of their own.
+hostSensor:
+  enabled: false
+  image:
+    repository: ghcr.io/singleaxis/fabric-host-emitter
+    # Empty tag: global.fabric.version. A digest wins over the tag.
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  # The nodes that run the sensor, by name. Empty: read from the cluster at
+  # install (Linux nodes matching nodeSelector, oldest first; serverless and
+  # virtual nodes are left out). A render that cannot read the cluster (helm
+  # template, a client-side dry run, GitOps) must list them. A node's position
+  # fixes its ingress port (basePort + position): add nodes at the end. After
+  # adding a node to the cluster, run `helm upgrade` so it gets its group.
+  nodes: []
+  # Node number i (from 0) sends to basePort + i on the Node. Keep the range
+  # clear of agentIngress.basePort.
+  basePort: 4417
+  # kubectl -l syntax, equality terms only.
+  agentPodSelector: "fabric.singleaxis.ai/agent=true"
+  idKeySecretName: fabric-id-key
+  tlsSecretName: fabric-host-emitter-tls
+  # The sensor's encrypted epoch state on each node. The directory is created
+  # when missing and the emitter keeps its own 0700 directory inside it; use a
+  # path on encrypted storage in production.
+  stateHostPath: /var/lib/fabric-host-emitter
+  # Event classes. fileAccess is high volume: turn it on only with a selector
+  # that matches few pods.
+  events:
+    exec: true
+    connect: true
+    fileAccess: false
+  # Executable, argv and path digests: omitted | permitted (spec 053 6.2.5).
+  digests: omitted
+  # Extra EMIT_* variables, e.g. {EMIT_SYSCALL_RESULTS: "true"}.
+  env: {}
+  nodeSelector: {}
+  tolerations: []
+  priorityClassName: ""
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi

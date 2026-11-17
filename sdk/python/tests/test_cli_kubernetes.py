@@ -797,3 +797,121 @@ def test_render_says_the_files_hold_values_in_clear_and_shows_expiry(
     assert re.search(
         r"created Secret fabric-system/fabric-ca \(.*; valid until \d{4}-\d\d-\d\d\)", text
     )
+
+
+# ---------------------------------------------------------------- the host sensor (§10.5)
+
+
+def _sensor_plan(**kwargs: Any) -> _kube.Plan:
+    return _plan(production=True, host_sensor=True, host_nodes=("node-a", "node-b"), **kwargs)
+
+
+def test_host_sensor_secrets_are_generated_per_node_with_the_emitters_source_id() -> None:
+    """The id key the sensors and agents share, the sensors' client certificate, and for
+    each node its token, state key and the source id `fabric-host-emitter print-source-id`
+    prints for `<node>/ebpf` under that key (deploy/kubernetes/host-bindings.py's rule)."""
+    store = MemoryStore()
+    generator = _kube.Generator(_sensor_plan(), store)
+    generator.run()
+    assert not generator.findings
+    id_key = store.secrets[("fabric-system", "fabric-id-key")]["id_key"]
+    assert re.fullmatch(rb"[0-9a-f]{64}", id_key)
+    tls = store.secrets[("fabric-system", "fabric-host-emitter-tls")]
+    assert sorted(tls) == ["ca.crt", "tls.crt", "tls.key"]
+    leaf = x509.load_pem_x509_certificate(tls["tls.crt"])
+    usage = leaf.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+    assert list(usage) == [ExtendedKeyUsageOID.CLIENT_AUTH]
+    tokens = set()
+    for node in ("node-a", "node-b"):
+        secret = store.secrets[("fabric-system", _kube.host_secret_name(node))]
+        assert sorted(secret) == ["source-id", "state-key", "token"]
+        assert secret["source-id"].decode() == label_pseudonym("s-", f"{node}/ebpf", id_key)
+        assert len(base64.b64decode(secret["state-key"])) == 32
+        assert re.fullmatch(rb"[0-9a-f]{64}", secret["token"])
+        tokens.add(secret["token"])
+    assert len(tokens) == 2, "each node has its own token"
+
+
+def test_host_secret_names_match_the_chart() -> None:
+    # The same rule as charts/fabric/templates/_hostsensor.tpl (tests/test-host-sensor.sh).
+    assert _kube.host_secret_name("node-a") == "fabric-host-66570ff05a20"
+    assert len(_kube.host_secret_name("n" * 253)) == len("fabric-host-") + 12
+
+
+def test_agents_share_the_release_id_key_with_the_sensor() -> None:
+    """Host and agent records join only when both sides derive pseudonyms from one key."""
+    store = MemoryStore()
+    _kube.Generator(_sensor_plan(), store).run()
+    shared = store.secrets[("fabric-system", "fabric-id-key")]["id_key"]
+    agent = store.secrets[("agents", "fabric-agent")]
+    assert agent["id.key"] == shared
+    ingress = store.secrets[("fabric-system", "fabric-ingress-agents")]
+    assert ingress["source-id"].decode() == label_pseudonym("s-", "support-bot", shared)
+
+
+def test_an_agent_secret_with_its_own_id_key_is_reported_not_changed() -> None:
+    store = MemoryStore()
+    _kube.Generator(_plan(production=True), store).run()  # before the sensor was turned on
+    before = dict(store.secrets[("agents", "fabric-agent")])
+    generator = _kube.Generator(_sensor_plan(), store)
+    generator.run()
+    assert store.secrets[("agents", "fabric-agent")] == before
+    assert [(f.id, f.detail) for f in generator.findings] == [
+        ("FC-115", "agents/fabric-agent (agent namespace agents)")
+    ]
+
+
+def test_a_node_secret_made_under_another_id_key_is_an_error() -> None:
+    store = MemoryStore()
+    _kube.Generator(_sensor_plan(), store).run()
+    del store.secrets[("fabric-system", "fabric-id-key")]  # the id key was replaced
+    del store.secrets[("agents", "fabric-agent")]
+    del store.secrets[("fabric-system", "fabric-ingress-agents")]
+    generator = _kube.Generator(_sensor_plan(), store)
+    generator.run()
+    assert {f.id for f in generator.findings} == {"FC-114"}
+    assert len(generator.findings) == 2 and "node-a" in str(generator.findings[0].detail)
+
+
+def test_a_second_run_keeps_every_host_sensor_secret() -> None:
+    store = MemoryStore()
+    _kube.Generator(_sensor_plan(), store).run()
+    before = {key: dict(value) for key, value in store.secrets.items()}
+    generator = _kube.Generator(_sensor_plan(), store)
+    generator.run()
+    assert store.secrets == before and not generator.findings
+    assert {o.action for o in generator.outcomes} == {"kept"}
+
+
+@pytest.mark.parametrize(
+    ("plan", "finding"),
+    [
+        ({"host_sensor": True, "host_nodes": ("node-a",)}, "FC-113"),  # not production
+        ({"production": True, "host_nodes": ("node-a",)}, "FC-106"),  # --host-node alone
+        ({"production": True, "host_sensor": True, "host_nodes": ("Node_A",)}, "FC-109"),
+        ({"production": True, "host_sensor": True, "host_nodes": ("a", "a")}, "FC-109"),
+    ],
+)
+def test_host_sensor_options_are_checked(plan: dict[str, Any], finding: str) -> None:
+    with pytest.raises(CliError) as caught:
+        _kube.Generator(_plan(**plan), MemoryStore())
+    assert [f.id for f in caught.value.findings] == [finding]
+
+
+def test_host_sensor_render_prints_names_never_values(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "render"
+    report = _json(
+        ["init", "--kubernetes", "--render", str(out), "--profile", "production", "--host-sensor",
+         "--host-node", "node-a", "--agent-namespace", "agents"],
+        capsys,
+    )  # fmt: skip
+    assert report["exit_code"] == 0, report
+    assert report["data"]["kubernetes"]["host_sensor"] is True
+    assert report["data"]["kubernetes"]["host_nodes"] == ["node-a"]
+    rendered = _rendered(out)
+    node = rendered[("fabric-system", _kube.host_secret_name("node-a"))]
+    text = json.dumps(report)
+    for value in (node["token"], rendered[("fabric-system", "fabric-id-key")]["id_key"]):
+        assert value.decode() not in text

@@ -130,6 +130,13 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                       help="also the pod injector's serving certificate")  # fmt: skip
     kube.add_argument("--content", action="store_true",
                       help="with --profile production: also the Node's content key")  # fmt: skip
+    kube.add_argument("--host-sensor", action="store_true",
+                      help="with --profile production: also the Secrets of the chart's host "
+                      "sensor DaemonSet (the shared id key, its client certificate and one "
+                      "Secret per --host-node)")  # fmt: skip
+    kube.add_argument("--host-node", action="append", metavar="NODE",
+                      help="a node that runs the host sensor (repeatable), as "
+                      "`kubectl get nodes` names it")  # fmt: skip
     kube.add_argument("--cluster-domain", metavar="DOMAIN", help="default cluster.local")
     # Set by the chart's hook Jobs, which know the rendered names.
     kube.add_argument("--in-cluster", action="store_true", help=argparse.SUPPRESS)
@@ -144,7 +151,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 _KUBERNETES_ONLY = ("namespace", "agent_namespace", "render", "release", "injector", "content",
                     "cluster_domain", "in_cluster", "node_service", "injector_service",
-                    "secret_name", "webhook")  # fmt: skip
+                    "secret_name", "webhook", "host_sensor", "host_node")  # fmt: skip
 
 
 def _refuse_unbuilt(options: argparse.Namespace) -> None:
@@ -737,6 +744,8 @@ def run_kubernetes(
             "where": store.where,
             "production": plan.production,
             "agent_namespaces": [a.name for a in plan.agents],
+            "host_sensor": plan.host_sensor,
+            "host_nodes": list(plan.host_nodes),
         },
         "secrets": [outcome.to_json() for outcome in generator.outcomes],
     }

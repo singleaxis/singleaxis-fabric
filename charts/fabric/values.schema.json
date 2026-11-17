@@ -110,6 +110,52 @@
         }
       }
     },
+    "hostSensor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "description": "Spec 058 10.5: the chart-managed host sensor DaemonSet (eBPF host emitter, production mode).",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {"$ref": "#/definitions/image"},
+        "imagePullSecrets": {"type": "array", "items": {"type": "object"}},
+        "nodes": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {"type": "string", "maxLength": 253, "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"}
+        },
+        "basePort": {"type": "integer", "minimum": 1024, "maximum": 65000},
+        "agentPodSelector": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 1024,
+          "pattern": "^[A-Za-z0-9./_-]+=[A-Za-z0-9._-]*(,[A-Za-z0-9./_-]+=[A-Za-z0-9._-]*)*$"
+        },
+        "idKeySecretName": {"$ref": "#/definitions/objectName"},
+        "tlsSecretName": {"$ref": "#/definitions/objectName"},
+        "stateHostPath": {"type": "string", "pattern": "^/[A-Za-z0-9._/-]{1,254}$"},
+        "events": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "exec": {"type": "boolean"},
+            "connect": {"type": "boolean"},
+            "fileAccess": {"type": "boolean"}
+          }
+        },
+        "digests": {"enum": ["omitted", "permitted"]},
+        "env": {
+          "type": "object",
+          "propertyNames": {"pattern": "^EMIT_[A-Z0-9_]{1,120}$"},
+          "additionalProperties": {"type": "string", "maxLength": 4096}
+        },
+        "nodeSelector": {"$ref": "#/definitions/stringMap"},
+        "tolerations": {"type": "array", "items": {"type": "object"}},
+        "priorityClassName": {"type": "string", "maxLength": 253},
+        "resources": {"$ref": "#/definitions/resources"}
+      }
+    },
     "injector": {
       "type": "object",
       "additionalProperties": false,

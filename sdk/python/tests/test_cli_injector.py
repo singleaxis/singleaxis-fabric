@@ -30,7 +30,7 @@ from typing import Any
 
 import pytest
 
-from fabric.cli import _injector, _secrets
+from fabric.cli import _injector, _providers, _secrets
 from fabric.wire._config import WireConfig
 
 REPO = Path(__file__).resolve().parents[3]
@@ -620,3 +620,117 @@ def test_shim_is_standard_library_python_without_newer_syntax() -> None:
     }
     assert imported <= set(sys.stdlib_module_names), imported
     assert not any(isinstance(node, ast.ImportFrom) for node in ast.walk(tree))
+
+
+# ---------------------------------------------------------------- spec 058 §10.5 and §8.3
+
+MODEL_URL = "http://model.fabric-model.svc:8080/v1"
+SENSOR = dataclasses.replace(
+    CONFIG, pod_labels={"fabric.singleaxis.ai/agent": "true"}, host_label_from_node=True
+)
+
+
+def test_with_the_host_sensor_an_injected_pod_gets_its_label_and_its_node_name() -> None:
+    after, outcome = _inject(_pod(), SENSOR)
+    assert outcome == "injected"
+    assert after["metadata"]["labels"] == {"fabric.singleaxis.ai/agent": "true"}
+    env = {e["name"]: e for e in after["spec"]["containers"][0]["env"]}
+    assert env["FABRIC_HOST_LABEL"] == {
+        "name": "FABRIC_HOST_LABEL",
+        "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName"}},
+    }
+
+
+def test_the_sensor_label_and_host_label_never_replace_the_pods_own() -> None:
+    pod = _pod(containers=[{"name": "agent", "image": "a:1",
+                            "env": [{"name": "FABRIC_HOST_LABEL", "value": "mine"}]}])  # fmt: skip
+    pod["metadata"]["labels"] = {"fabric.singleaxis.ai/agent": "false", "app": "x"}
+    after, _ = _inject(pod, SENSOR)
+    assert after["metadata"]["labels"] == {"fabric.singleaxis.ai/agent": "false", "app": "x"}
+    hosts = [e for e in after["spec"]["containers"][0]["env"] if e["name"] == "FABRIC_HOST_LABEL"]
+    assert hosts == [{"name": "FABRIC_HOST_LABEL", "value": "mine"}]
+
+
+def test_without_the_host_sensor_no_label_and_no_host_label_are_added() -> None:
+    after, _ = _inject(_pod())
+    assert "labels" not in after["metadata"]
+    assert "FABRIC_HOST_LABEL" not in {e["name"] for e in after["spec"]["containers"][0]["env"]}
+
+
+def test_config_reads_the_host_sensor_section() -> None:
+    config = _injector.Config.from_json(
+        {"hostSensor": {"podLabels": {"a/b": "c"}, "hostLabelFromNode": True}}
+    )
+    assert dict(config.pod_labels) == {"a/b": "c"} and config.host_label_from_node is True
+    assert _injector.Config.from_json({"hostSensor": "junk"}).host_label_from_node is False
+
+
+def _endpoints(after: dict[str, Any]) -> list[dict[str, Any]] | None:
+    for entry in after["spec"]["containers"][0]["env"]:
+        if entry["name"] == "FABRIC_WIRE_ENDPOINTS":
+            parsed: list[dict[str, Any]] = json.loads(entry["value"])
+            return parsed
+    return None
+
+
+def test_a_base_url_in_the_pod_spec_becomes_an_endpoint_as_fabric_run_makes_it() -> None:
+    """§8.3 for a pod: a model host named by a standard base-URL variable of the
+    container's own env, in no built-in row, is matched without a hand-written matcher."""
+    pod = _pod(containers=[{"name": "agent", "image": "a:1", "env": [
+        {"name": "OPENAI_BASE_URL", "value": MODEL_URL}]}])  # fmt: skip
+    after, _ = _inject(pod)
+    found = _endpoints(after)
+    assert found is not None and len(found) == 1
+    assert found[0]["hosts"] == ["model.fabric-model.svc"] and found[0]["ports"] == [8080]
+    assert found[0]["dialect"] == "openai" and found[0]["path_prefix"] == "/v1"
+
+
+def test_a_derived_endpoint_is_added_to_the_charts_own_never_in_its_place() -> None:
+    own = json.dumps([{"endpoint_id": "mine", "dialect": "openai", "hosts": ["llm.internal"],
+                       "ports": [443], "schemes": ["https"]}])  # fmt: skip
+    config = dataclasses.replace(
+        CONFIG, namespaces={"agents": {**ENV, "FABRIC_WIRE_ENDPOINTS": own}}
+    )
+    pod = _pod(containers=[{"name": "agent", "image": "a:1", "env": [
+        {"name": "ANTHROPIC_BASE_URL", "value": "https://claude.example.net"}]}])  # fmt: skip
+    found = _endpoints(_inject(pod, config)[0])
+    assert found is not None and found[0]["endpoint_id"] == "mine"
+    assert found[1]["hosts"] == ["claude.example.net"] and found[1]["dialect"] == "anthropic"
+    # A host the chart's value already covers adds nothing.
+    same = _pod(containers=[{"name": "agent", "image": "a:1", "env": [
+        {"name": "OPENAI_BASE_URL", "value": "https://llm.internal/v1"}]}])  # fmt: skip
+    assert _endpoints(_inject(same, config)[0]) == json.loads(own)
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        [{"name": "OPENAI_BASE_URL", "value": "https://api.openai.com/v1"}],  # a built-in row
+        [{"name": "OPENAI_BASE_URL", "valueFrom": {"secretKeyRef": {"name": "s", "key": "k"}}}],
+        [{"name": "OPENAI_BASE_URL", "value": "not a url"}],
+        [{"name": "OPENAI_API_KEY", "value": "sk-not-read"}],
+    ],
+)
+def test_nothing_is_derived_from_a_covered_unreadable_or_absent_base_url(
+    env: list[dict[str, Any]],
+) -> None:
+    after, outcome = _inject(_pod(containers=[{"name": "agent", "image": "a:1", "env": env}]))
+    assert outcome == "injected" and _endpoints(after) is None
+
+
+def test_the_pods_own_endpoints_are_never_replaced_by_a_derived_one() -> None:
+    pod = _pod(containers=[{"name": "agent", "image": "a:1", "env": [
+        {"name": "FABRIC_WIRE_ENDPOINTS", "value": "[]"},
+        {"name": "OPENAI_BASE_URL", "value": MODEL_URL}]}])  # fmt: skip
+    assert _endpoints(_inject(pod)[0]) == []
+
+
+def test_a_failing_derivation_never_fails_the_admission(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("derivation failed")
+
+    monkeypatch.setattr(_providers, "from_environment", boom)
+    pod = _pod(containers=[{"name": "agent", "image": "a:1", "env": [
+        {"name": "OPENAI_BASE_URL", "value": MODEL_URL}]}])  # fmt: skip
+    after, outcome = _inject(pod)
+    assert outcome == "injected" and _endpoints(after) is None

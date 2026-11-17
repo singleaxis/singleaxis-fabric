@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from .._sequence import encode_opaque_id, source_label
+from .._sequence import encode_opaque_id, label_pseudonym, source_label
 from . import _secrets
 from ._report import EXIT_PREREQUISITE, EXIT_USAGE, CliError, Finding
 
@@ -54,7 +54,15 @@ SECRET_ROLES: dict[str, str] = {
     "content-key": "fabric-node-content-key",
     "injector-tls": "fabric-injector-tls",
     "agent": "fabric-agent",
+    "id-key": "fabric-id-key",
+    "host-tls": "fabric-host-emitter-tls",
 }
+#: Keys of the id key Secret, of the sensor's client certificate Secret, and of each
+#: node's Secret (the chart's hostSensor DaemonSet mounts them, spec 058 §10.5).
+ID_KEY_KEY = "id_key"
+HOST_TLS_KEYS = ("tls.crt", "tls.key", "ca.crt")
+HOST_NODE_KEYS = ("token", "state-key", "source-id")
+HOST_SENSOR_CN = "fabric-host-emitter"
 #: Keys of the agent Secret. The injector mounts it at /var/run/fabric/secrets.
 AGENT_KEYS_ALL = ("ca.crt", "id.key", "spool.key")
 AGENT_KEYS_PRODUCTION = ("headers", "tls.crt", "tls.key")
@@ -63,6 +71,7 @@ _NAMESPACE_RE = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?")
 _OBJECT_RE = re.compile(r"[a-z0-9]([-a-z0-9.]*[a-z0-9])?")
 _SOURCE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 _DOMAIN_RE = re.compile(r"[a-z0-9]([-a-z0-9.]*[a-z0-9])?")
+_NODE_RE = re.compile(r"[a-z0-9]([-a-z0-9.]*[a-z0-9])?")
 _TIMEOUT_S = 15.0
 
 
@@ -92,6 +101,19 @@ def ingress_secret_name(namespace: str) -> str:
     return f"fabric-ingress-{namespace}"
 
 
+def host_secret_name(node: str) -> str:
+    """The release-namespace Secret of one node's host sensor: its token, state key and
+    source id. Equal to the chart's ``fabric.hostSensorNodes`` rule (a test keeps them
+    equal): ``fabric-host-<first 12 hex of sha256(node name)>``."""
+    return "fabric-host-" + hashlib.sha256(node.encode("utf-8")).hexdigest()[:12]
+
+
+def sensor_source_id(node: str, id_key: bytes) -> str:
+    """The source id of a node's eBPF sensor: what ``fabric-host-emitter print-source-id``
+    prints for ``EMIT_SOURCE_LABEL=<node>/ebpf`` under the id key (the file's bytes)."""
+    return label_pseudonym("s-", f"{node}/ebpf", id_key)
+
+
 @dataclass(frozen=True)
 class AgentNamespace:
     """A namespace whose agents send to the Node, and their clear source label."""
@@ -119,6 +141,9 @@ class Plan:
     content: bool = False
     injector: bool = False
     agents: tuple[AgentNamespace, ...] = ()
+    #: §10.5: the chart's host sensor DaemonSet, and the nodes it runs on.
+    host_sensor: bool = False
+    host_nodes: tuple[str, ...] = ()
     cluster_domain: str = "cluster.local"
     node_service: str = ""
     injector_service: str = ""
@@ -144,7 +169,7 @@ class Plan:
             f"{service}.{ns}.svc.{self.cluster_domain}",
         ]
 
-    def validate(self) -> Plan:
+    def validate(self) -> Plan:  # noqa: PLR0912 - one check per field
         check_namespace(self.namespace, "release namespace")
         check_namespace(self.release, "release name")
         for role, value in self.names.items():
@@ -168,6 +193,17 @@ class Plan:
             if agent.name == self.namespace:
                 raise _invalid(f"agent namespace {agent.name!r} is the release namespace")
             seen.add(agent.name)
+        if self.host_nodes and not self.host_sensor:
+            raise CliError([Finding("FC-106", "--host-node needs --host-sensor")], EXIT_USAGE)
+        if self.host_sensor and not self.production:
+            raise CliError([Finding("FC-113")], EXIT_USAGE)
+        nodes: set[str] = set()
+        for node in self.host_nodes:
+            if len(node) > 253 or not _NODE_RE.fullmatch(node):  # noqa: PLR2004 - DNS subdomain
+                raise _invalid(f"node name {node!r}")
+            if node in nodes:
+                raise _invalid(f"node {node!r} is listed twice")
+            nodes.add(node)
         return self
 
 
@@ -650,11 +686,54 @@ class Generator:
                 "kubernetes.io/tls",
                 "tls.crt",
             )
+        shared_id_key = self._host_sensor(ca_cert) if plan.host_sensor else None
         for agent in plan.agents:
-            self._agent(agent, ca_cert)
+            self._agent(agent, ca_cert, shared_id_key)
         return self.outcomes
 
-    def _agent(self, agent: AgentNamespace, ca_cert: bytes) -> None:
+    def _host_sensor(self, ca_cert: bytes) -> bytes | None:
+        """§10.5: the id key the sensors and the agents share, the sensors' client
+        certificate, and one Secret per node (its ingest token, its state key and its
+        source id). Returns the shared id key, None when its Secret is unusable."""
+        plan = self.plan
+        key_secret = self._ensure(
+            plan.namespace, plan.name("id-key"), (ID_KEY_KEY,),
+            lambda: {ID_KEY_KEY: _secrets._new_id_key()},
+        )  # fmt: skip
+        id_key = key_secret.get(ID_KEY_KEY)
+
+        def tls() -> dict[str, bytes]:
+            cert, key = self._leaf((), common_name=HOST_SENSOR_CN, client=True)
+            return {"tls.crt": cert, "tls.key": key, "ca.crt": ca_cert}
+
+        self._ensure(plan.namespace, plan.name("host-tls"), HOST_TLS_KEYS, tls,
+                     fingerprint_key="tls.crt")  # fmt: skip
+        if not id_key:
+            return None  # FC-104 names the Secret; no source id can be derived without it
+        for node in plan.host_nodes:
+            node_secret = {
+                "token": secrets.token_hex(32).encode("ascii"),
+                "state-key": base64.b64encode(secrets.token_bytes(32)),
+                "source-id": sensor_source_id(node, id_key).encode("ascii"),
+            }
+            kept = self._ensure(
+                plan.namespace,
+                host_secret_name(node),
+                HOST_NODE_KEYS,
+                lambda made=node_secret: made,
+            )
+            expected = node_secret["source-id"]
+            if kept.get("source-id") not in (None, expected):
+                # The id key was replaced after this node's Secret was made: the Node would
+                # bind the old source id and refuse the sensor's records.
+                self.findings.append(
+                    Finding("FC-114", f"{plan.namespace}/{host_secret_name(node)} (node {node})")
+                )
+        return id_key
+
+    def _agent(
+        self, agent: AgentNamespace, ca_cert: bytes, shared_id_key: bytes | None = None
+    ) -> None:
         plan = self.plan
         ingress_name = ingress_secret_name(agent.name)
         ingress = self.store.get(plan.namespace, ingress_name) if plan.production else None
@@ -672,7 +751,9 @@ class Generator:
         def make() -> dict[str, bytes]:
             data = {
                 "ca.crt": ca_cert,
-                "id.key": _secrets._new_id_key(),
+                # With the host sensor, the release's id key: host and agent records
+                # join only when both sides derive their pseudonyms from one key (§10.5).
+                "id.key": shared_id_key or _secrets._new_id_key(),
                 "spool.key": base64.b64encode(secrets.token_bytes(32)),
             }
             if plan.production:
@@ -694,6 +775,12 @@ class Generator:
             make,
             fingerprint_key="tls.crt" if plan.production else None,
         )
+        if shared_id_key and data.get("id.key") not in (None, shared_id_key):
+            self.findings.append(
+                Finding(
+                    "FC-115", f"{agent.name}/{plan.name('agent')} (agent namespace {agent.name})"
+                )
+            )
         if not plan.production or ingress is not None:
             if ingress is not None:
                 self.outcomes.append(
@@ -764,6 +851,8 @@ def from_options(options: Any, environ: Mapping[str, str]) -> tuple[Plan, Store]
         content=bool(options.content),
         injector=bool(options.injector),
         agents=tuple(AgentNamespace.parse(text) for text in options.agent_namespace or ()),
+        host_sensor=bool(getattr(options, "host_sensor", False)),
+        host_nodes=tuple(str(n).strip() for n in getattr(options, "host_node", None) or ()),
         cluster_domain=(options.cluster_domain or "cluster.local").strip(),
         node_service=(options.node_service or "").strip(),
         injector_service=(options.injector_service or "").strip(),
@@ -790,7 +879,9 @@ __all__ = [
     "RenderStore",
     "Store",
     "from_options",
+    "host_secret_name",
     "ingress_secret_name",
     "manifest",
+    "sensor_source_id",
     "source_id",
 ]
