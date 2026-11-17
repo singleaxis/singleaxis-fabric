@@ -15,6 +15,21 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: epoch registration (spec 055, unit
+  055-t5).** Still no Node.js capture, and nothing new is exported from the
+  package. A Node process that installs capture will register its epoch on
+  the spool exactly as a Python process does: the same 4,096-byte
+  `.epochs/<epoch>.reg` file, byte for byte, locked for the life of the
+  process, with a shared-memory copy of the next sequence number that every
+  allocation updates without a system call. A Python drainer sees a live
+  Node process as live and a killed one (even after `SIGKILL`) as an orphan
+  with its last allocated position, and a Node drainer does the same for
+  Python processes. An epoch another process already holds is redrawn, at
+  most 8 times. Registration happens only at install, never inside a
+  transport hook, and no failure stops capture: each outcome is a named
+  status. When the spool's filesystem does not enforce file locks (for
+  example a Docker Desktop bind mount), it warns once and says to move
+  `FABRIC_WIRE_SPOOL_DIR` to a local disk or a named volume.
 - **Node.js capture groundwork: the shared-memory runtime and the Fabric
   worker (spec 055, unit 055-t4).** Still no Node.js capture; nothing here is
   exported from the package yet. This is the in-process machinery the future
