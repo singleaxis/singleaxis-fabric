@@ -213,7 +213,10 @@ export class ExchangeTable {
     i32[word + X_SIDE + SIDE_STATE] = 1; // a request with no body is an exact empty body
     i64[index * SLOT_I64 + X_START_NS] = options.startNs ?? now();
     this.writeIds(index, options.parent);
-    if (ownership?.withheld === true) i32[word + X_FLAGS] = FLAG_WITHHELD;
+    // A call that starts after its explicit scope ended is adopted at once, and keeps
+    // the scope's withheld flag (it survives scope exit).
+    if (ownership !== undefined && !provisional) i32[word + X_FLAGS] = FLAG_ADOPTED;
+    if (ownership?.withheld === true) i32[word + X_FLAGS] = i32[word + X_FLAGS]! | FLAG_WITHHELD;
     if (!provisional && !this.position(index, runSlot)) {
       this.recycle(index);
       return NO_EXCHANGE;
