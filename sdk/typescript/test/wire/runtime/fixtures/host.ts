@@ -24,8 +24,9 @@ async function main(): Promise<void> {
   table.admit(handle, REQUEST, Buffer.from([1, 2, 3]));
   table.finish(handle, "complete");
   while (Atomics.load(words, 0) === 0) await new Promise((resolve) => setTimeout(resolve, 5));
-  // The control: an ordinary Worker inherits NODE_OPTIONS and runs the preload.
-  const control = new Worker("process.exit(0)", { eval: true });
+  // The control: an ordinary Worker inherits NODE_OPTIONS and runs the preload. It runs
+  // a file, because an `--import` preload does not run in an `eval: true` Worker.
+  const control = new Worker(process.argv[3]!);
   const controlThreadId = control.threadId;
   await new Promise((resolve) => control.once("exit", resolve));
   const fabricThread = fabric.worker;

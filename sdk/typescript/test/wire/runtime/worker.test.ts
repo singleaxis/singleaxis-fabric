@@ -173,43 +173,51 @@ describe("arena growth in the Fabric worker", () => {
 });
 
 describe("with NODE_OPTIONS set to a customer preload", () => {
-  it("never runs the preload in the Fabric worker, and does not keep the process alive", () => {
-    const log = join(bundles.dir, "preload.log");
-    const preload = join(bundles.dir, "preload.cjs");
-    writeFileSync(
-      preload,
-      `globalThis.__f055Preload = 1;\n` +
-        `require("node:fs").appendFileSync(${JSON.stringify(log)}, ` +
-        `String(require("node:worker_threads").threadId) + "\\n");\n`,
-    );
-    const child = spawnSync(
-      process.execPath,
-      [bundles.file("host"), bundles.file("fabric-entry")],
-      {
-        encoding: "utf8",
-        env: { ...process.env, NODE_OPTIONS: `--require ${preload}`, FABRIC_WIRE_AUTOLOAD: "1" },
-        timeout: 90_000,
-      },
-    );
-    // The host never stops the worker: a clean exit proves the worker is unref'd.
-    expect([child.status, child.signal, child.stderr]).toEqual([0, null, ""]);
-    const result = JSON.parse(child.stdout) as Record<string, number | boolean>;
-    expect(result).toMatchObject({
-      preloadedHere: 1,
-      processed: 1,
-      execArgv: 0,
-      envKeys: 0,
-      argv: 2,
-      marked: 1,
-      preloadedInFabricWorker: 0,
-      fabricAlive: true,
-    });
-    const ran = readFileSync(log, "utf8").trim().split("\n").map(Number);
-    // The trip-wire works: the preload ran in the main thread and in an ordinary
-    // Worker (the control), and in no other thread.
-    expect(ran).toEqual([0, result.controlThreadId]);
-    expect(ran).not.toContain(result.fabricThreadId);
-  }, 120_000);
+  // `--import` is the form the wire preload itself uses (§9.4); `--require` is kept for
+  // launchers that only pass `-r`.
+  it.each(["--require", "--import"])(
+    "never runs a %s preload in the Fabric worker, and does not keep the process alive",
+    (flag) => {
+      const log = join(bundles.dir, `preload${flag}.log`);
+      const preload = join(bundles.dir, "preload.cjs");
+      writeFileSync(
+        preload,
+        `globalThis.__f055Preload = 1;\n` +
+          `require("node:fs").appendFileSync(${JSON.stringify(log)}, ` +
+          `String(require("node:worker_threads").threadId) + "\\n");\n`,
+      );
+      const control = join(bundles.dir, "control.cjs");
+      writeFileSync(control, "process.exit(0);\n");
+      const child = spawnSync(
+        process.execPath,
+        [bundles.file("host"), bundles.file("fabric-entry"), control],
+        {
+          encoding: "utf8",
+          env: { ...process.env, NODE_OPTIONS: `${flag}=${preload}`, FABRIC_WIRE_AUTOLOAD: "1" },
+          timeout: 90_000,
+        },
+      );
+      // The host never stops the worker: a clean exit proves the worker is unref'd.
+      expect([child.status, child.signal, child.stderr]).toEqual([0, null, ""]);
+      const result = JSON.parse(child.stdout) as Record<string, number | boolean>;
+      expect(result).toMatchObject({
+        preloadedHere: 1,
+        processed: 1,
+        execArgv: 0,
+        envKeys: 0,
+        argv: 2,
+        marked: 1,
+        preloadedInFabricWorker: 0,
+        fabricAlive: true,
+      });
+      const ran = readFileSync(log, "utf8").trim().split("\n").map(Number);
+      // The trip-wire works: the preload ran in the main thread and in an ordinary
+      // Worker (the control), and in no other thread.
+      expect(ran).toEqual([0, result.controlThreadId]);
+      expect(ran).not.toContain(result.fabricThreadId);
+    },
+    120_000,
+  );
 });
 
 describe("a crashed Fabric worker", () => {
