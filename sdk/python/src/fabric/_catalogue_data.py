@@ -820,5 +820,92 @@ CATALOGUE: dict[str, Any] = {
             "text": "no problem found",
             "fix": "nothing to do",
         },
+        {
+            "id": "FC-100",
+            "name": "snapshot_nothing_listed",
+            "severity": "error",
+            "text": "no watched file of class permission_config is listed, so there is "
+            "nothing to snapshot",
+            "fix": "list the agent's permission files under security_context.watched_paths "
+            "with class permission_config in the capture policy that capture.privacy "
+            "names in fabric.yaml, or pass --watched-paths FILE",
+        },
+        {
+            "id": "FC-101",
+            "name": "snapshot_list_invalid",
+            "severity": "error",
+            "text": "the watched paths list could not be read",
+            "fix": "the detail names the file or the entry and the rule it breaks; give a "
+            "JSON list of objects with path, match, label and class, or a deployment "
+            "policy in JSON",
+        },
+        {
+            "id": "FC-102",
+            "name": "snapshot_no_id_key",
+            "severity": "error",
+            "text": "the snapshot needs the project's id key to write each file's keyed id, "
+            "and no key is configured",
+            "fix": "run `fabric init`, which generates the key, or set secrets.id_key_file "
+            "in fabric.yaml to the key the host sensor uses, so the snapshot and the "
+            "watched opens carry the same id",
+        },
+        {
+            "id": "FC-103",
+            "name": "snapshot_file_unreadable",
+            "severity": "error",
+            "text": "a watched permission file could not be read, so it was not snapshotted",
+            "fix": "the detail names the entry's label and the error; run `fabric snapshot` "
+            "as a user that can read the file, or correct the path in watched_paths",
+        },
+        {
+            "id": "FC-104",
+            "name": "snapshot_not_recorded",
+            "severity": "error",
+            "text": "the snapshot could not be recorded with this project's configuration",
+            "fix": "the detail holds the SDK's reason and fix; `fabric doctor` checks the "
+            "same configuration",
+        },
+        {
+            "id": "FC-105",
+            "name": "snapshot_not_delivered",
+            "severity": "error",
+            "text": "the snapshot was recorded, but the Fabric Node did not take the "
+            "records in time",
+            "fix": "check that the Node runs (`fabric up`) and answers (`fabric doctor`), "
+            "then run `fabric snapshot` again",
+        },
+        {
+            "id": "FC-106",
+            "name": "snapshot_recorded",
+            "severity": "info",
+            "text": "every listed permission file was read and recorded as a declared grant "
+            "snapshot",
+            "fix": "nothing to do",
+        },
+        {
+            "id": "FC-107",
+            "name": "snapshot_contents_not_kept",
+            "severity": "info",
+            "text": "the files' contents were not kept, because the capture policy does not "
+            "retain the run.permissions role; the keyed ids were recorded",
+            "fix": "nothing to do if the ids are enough; to keep the contents, name the "
+            "run.permissions role in the capture policy",
+        },
+        {
+            "id": "FC-108",
+            "name": "snapshot_contents_over_limit",
+            "severity": "warning",
+            "text": "a permission file is larger than a snapshot keeps, so its digest and "
+            "size were recorded without its contents",
+            "fix": "nothing to do if the digest is enough; to keep the contents, split the "
+            "file or list a smaller one",
+        },
+        {
+            "id": "FC-109",
+            "name": "snapshot_file_changed",
+            "severity": "info",
+            "text": "a permission file differs from its last snapshot",
+            "fix": "nothing to do; the reader states the change as F2 (grant_changed)",
+        },
     ],
 }
