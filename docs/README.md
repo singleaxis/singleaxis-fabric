@@ -27,6 +27,7 @@ in git.
 | [Agent action reconstruction](action-reconstruction.md) | The subprocess hook, a host sensor, effects linked to tool calls and host events, `python -m fabric.reconstruct actions`, the production profile, what is not covered yet (v0.10.0, v0.11.0) |
 | [Explicit APIs](explicit-apis.md) | `decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters (Python and TypeScript) |
 | [Qualified-run mode](qualified-run-mode.md) | Opt-in receipt- and witness-backed verification |
+| [Security context over OTLP](security-context-otlp.md) | The `fabric.grant.*`, `fabric.control.*`, `fabric.hook.*`, `fabric.extension.*` and `fabric.mcp.*` attribute contract for emitters, GenAI source keys, and customer mapping profiles on the Node (on main) |
 | [Host sensors](host-sensors.md) | auditd receiver and eBPF host emitter, local and production mode |
 | [Limitations and roadmap](limitations-and-roadmap.md) | What is not captured, known defects, the roadmap |
 

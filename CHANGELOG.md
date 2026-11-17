@@ -15,6 +15,47 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **`fabric snapshot`: what the agent's permission files said (spec 057
+  P3b).** A host sensor already records that the agent opened a watched
+  permission file, never what it said. The operator can now run `fabric
+  snapshot` outside the agent: it reads the `watched_paths` entries of class
+  `permission_config` once and records each as a declared grant snapshot.
+  Telemetry carries keyed ids only (never the path or a file name); the
+  contents are kept only when your capture policy retains `run.permissions`,
+  so nothing of the file is kept under the default production profile. The
+  offline reader shows each watched open with the snapshot taken last before
+  it and the time between the two, and states a changed file as F2. The
+  agent process never opens the file for Fabric. New messages `FC-100` to
+  `FC-110` name each failure and its fix. See `docs/host-sensors.md`.
+
+- **Security context from other systems' OpenTelemetry (spec 057 P3a).** A
+  gateway, policy service, approval system or agent runtime that already
+  emits OpenTelemetry can report grants, control decisions, hook outcomes and
+  extensions to the Fabric Node. Writing the published `fabric.grant.*`,
+  `fabric.control.*`, `fabric.hook.*`, `fabric.extension.*` and `fabric.mcp.*`
+  attributes on a span, or on a log record with
+  `event_class=security_context`, needs nothing else: the Node keeps each
+  key only with a valid value, refuses a forged
+  `fabric.control.enforced_by_fabric` or `fabric.control.authentication`,
+  and drops everything else. The contract is in
+  `docs/security-context-otlp.md`.
+- **Mapping profiles on the Node (spec 057 P3a, off by default).** An
+  emitter that uses its own attribute names can keep them: you write a
+  mapping profile (`fabric.otlp-mapping-profile/v1`) and the Node's new
+  `fabricmap` processor, directly before `fabricguard`, rewrites matching
+  spans and log records to the neutral keys. Every attribute the profile
+  does not map is dropped, and the ids it names become keyed pseudonyms
+  that join the agents' own records. Helm: `fabric.mapping.enabled`,
+  `fabric.mapping.profileConfigMap`, `fabric.mapping.idKeySecret`. Fabric
+  ships no profile. A profile error stops the Node at startup with the
+  place and the fix; a source value a mapping cannot use is reported once
+  as a warning and counted per request in a debug line; `fabric-gate` refuses `fabricmap` anywhere but
+  directly before `fabricguard`.
+- **OpenTelemetry GenAI keys as sources (spec 057 OD-12).** With
+  `fabric.mapping.genaiSourceKeys: "1.42.0"`, `gen_ai.tool.call.id` and
+  `gen_ai.operation.name` on a neutral control or hook record fill its gated
+  tool call (as a `p-` pseudonym) and gated kind; Fabric never writes them as
+  its own keys.
 - **MCP servers as security context (spec 057 P1, second part).** For an MCP
   server reached over Streamable HTTP, the request and response bodies the
   non-model HTTP hook already records are now read as MCP by

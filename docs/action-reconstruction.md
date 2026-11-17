@@ -335,8 +335,26 @@ run r-3f2a…  decisions: complete  actions: complete  effects: complete  corrob
   field and reads exactly as before.
 - **Not yet.** Side effects that required approval (F7) are read from
   records-input `side_effect` records, which the records API does not emit
-  yet. The `path_ref` join (a watched rule file to its operator snapshot)
-  arrives with the work packages that record those opens and snapshots.
+  yet.
+- **Watched rule files (`path_ref`).** An open of a watched
+  `permission_config` file that a host sensor saw in the run is a `file`
+  line with your label and the keyed `pth-` id. When the input also holds
+  an operator snapshot of that file (`fabric snapshot`,
+  [host sensors](host-sensors.md)), the line names the snapshot taken last
+  before the open, or the first after it when none was, and the time
+  between the two:
+
+  ```text
+  file   permission_config  agent-acl  pth-9c4e…  opened  (observed, host.ebpf)  snapshot grt-5d21… 6 h before open  (reported, operator_snapshot)   path_ref · certain
+  ```
+
+  `certain` is about identity only: both carry the same keyed id. The
+  snapshot is the file at snapshot time, not at the open. Repeated opens
+  shown with the same snapshot are one line with a count. A snapshot that
+  differs from the previous one of its file is F2 (`grant_changed`), in its
+  own run and in the run whose open it is shown with; a run shown with a
+  snapshot does not state F1 (`no_declared_grant`). An open with no
+  snapshot in the input says so and changes nothing else.
 
 ### What the reader derives from the model wire (`--derive`)
 

@@ -761,3 +761,47 @@ and restrict their destinations like every other peer.
 {{- fail "networkPolicy.hostSensorEgress.apiServer.to requires apiServer.ports (the API server's Service port and its endpoints' port, e.g. 443 and 6443)" -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Mapping of emitter telemetry (spec 057 §4.5, fabric.mapping). Off by default.
+Every check runs at render time and names the value to change, so an install
+cannot start a Node whose fabricmap processor or fabric-gate would refuse the
+configuration.
+*/}}
+{{- define "otel-collector.mappingEnabled" -}}
+{{- if and .Values.fabric.mapping .Values.fabric.mapping.enabled -}}true{{- end -}}
+{{- end -}}
+
+{{- define "otel-collector.validateMapping" -}}
+{{- if include "otel-collector.mappingEnabled" . -}}
+{{- $m := .Values.fabric.mapping -}}
+{{- $profile := dig "profileConfigMap" "name" "" $m | toString -}}
+{{- $profileKey := dig "profileConfigMap" "key" "profile.json" $m | toString -}}
+{{- $idKey := dig "idKeySecret" "name" "" $m | toString -}}
+{{- $idKeyKey := dig "idKeySecret" "key" "key" $m | toString -}}
+{{- $genai := dig "genaiSourceKeys" "" $m | toString -}}
+{{- if include "otel-collector.groupMode" . -}}
+{{- fail "fabric.mapping.enabled=true is not available with receiver.sourceBindings (ingress groups): run the mapping profile on a Node without sourceBindings, or set fabric.mapping.enabled=false" -}}
+{{- end -}}
+{{- if and (not $profile) (not $genai) -}}
+{{- fail "fabric.mapping.enabled=true needs something to do: set fabric.mapping.profileConfigMap.name to the ConfigMap holding your mapping profile, or fabric.mapping.genaiSourceKeys=1.42.0, or set fabric.mapping.enabled=false" -}}
+{{- end -}}
+{{- $name := "^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$" -}}
+{{- $key := "^[-._a-zA-Z0-9]{1,253}$" -}}
+{{- if and $profile (not (regexMatch $name $profile)) -}}
+{{- fail "fabric.mapping.profileConfigMap.name must be the name of an existing ConfigMap (lowercase letters, digits, '-' and '.')" -}}
+{{- end -}}
+{{- if and $profile (not (regexMatch $key $profileKey)) -}}
+{{- fail "fabric.mapping.profileConfigMap.key must be the ConfigMap key holding the profile JSON (letters, digits, '-', '_' and '.')" -}}
+{{- end -}}
+{{- if and $idKey (not (regexMatch $name $idKey)) -}}
+{{- fail "fabric.mapping.idKeySecret.name must be the name of an existing Secret (lowercase letters, digits, '-' and '.')" -}}
+{{- end -}}
+{{- if and $idKey (not (regexMatch $key $idKeyKey)) -}}
+{{- fail "fabric.mapping.idKeySecret.key must be the Secret key holding the id key (letters, digits, '-', '_' and '.')" -}}
+{{- end -}}
+{{- if and $genai (not $idKey) -}}
+{{- fail "fabric.mapping.genaiSourceKeys needs fabric.mapping.idKeySecret.name: gen_ai.tool.call.id is recorded only as a keyed pseudonym, made with the agents' FABRIC_WIRE_ID_KEY" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

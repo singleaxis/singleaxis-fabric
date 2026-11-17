@@ -4436,6 +4436,24 @@
       }
     },
     {
+      "key": "fabric.grant.path_ref",
+      "change": "new",
+      "field": "G04",
+      "validator": "ID: `pth-` + 32 hex (the `pth-` v2 pseudonym of the watched_paths entry an operator snapshot read, under the id key; the same id as `fabric.sensor.watch_id` of an open of that entry; only with source boundary `operator_snapshot`; never the path)",
+      "phase": "P3 (spec 057)",
+      "note": "Spec 057 section 4.10.2, WP7-17: the document's source.path_ref, the section 6.1 path_ref join key of an operator snapshot.",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^pth-[0-9a-f]{32}$",
+        "examples": [
+          "pth-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
       "key": "fabric.grant.permission_mode",
       "change": "new",
       "field": "G05",

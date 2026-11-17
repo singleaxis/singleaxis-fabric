@@ -128,6 +128,19 @@ spec:
               mountPath: /etc/fabric/content-key
               readOnly: true
             {{- end }}
+            {{- if include "otel-collector.mappingEnabled" . }}
+            {{- if .Values.fabric.mapping.profileConfigMap.name }}
+            # Spec 057 §4.5: the customer's mapping profile (the image has none).
+            - name: mapping-profile
+              mountPath: /etc/fabric/mapping
+              readOnly: true
+            {{- end }}
+            {{- if .Values.fabric.mapping.idKeySecret.name }}
+            - name: mapping-id-key
+              mountPath: /etc/fabric/mapping-id-key
+              readOnly: true
+            {{- end }}
+            {{- end }}
             {{- if .Values.exporter.sendingQueue.persistence.enabled }}
             - name: queue-storage
               mountPath: {{ .Values.exporter.sendingQueue.persistence.directory }}
@@ -250,6 +263,29 @@ spec:
                   items:
                     - key: {{ .Values.content.encryption.keySecret.key | quote }}
                       path: key
+        {{- end }}
+        {{- if include "otel-collector.mappingEnabled" . }}
+        {{- if .Values.fabric.mapping.profileConfigMap.name }}
+        - name: mapping-profile
+          configMap:
+            name: {{ .Values.fabric.mapping.profileConfigMap.name | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.fabric.mapping.profileConfigMap.key | quote }}
+                path: profile.json
+        {{- end }}
+        {{- if .Values.fabric.mapping.idKeySecret.name }}
+        # The agents' id key, a file of mode 0440 (never env or values).
+        - name: mapping-id-key
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: {{ .Values.fabric.mapping.idKeySecret.name | quote }}
+                  items:
+                    - key: {{ .Values.fabric.mapping.idKeySecret.key | quote }}
+                      path: key
+        {{- end }}
         {{- end }}
         {{- if and .Values.exporter.sendingQueue.persistence.enabled .Values.exporter.sendingQueue.persistence.existingClaim }}
         - name: queue-storage

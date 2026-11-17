@@ -1237,3 +1237,27 @@ def test_056_host_events_in_no_run() -> None:
     unknown = copy.deepcopy(report)
     unknown["unattributed_host_events"]["events"][0]["reason"] = "outside_run"
     _assert_error(unknown, "capture.schema")
+
+
+def test_mapping_profile_cannot_map_resolves_in_clear() -> None:
+    """Spec 057 §4.5: ``fabric.control.resolves`` is a control id although its name has no
+    id suffix, so a profile names its pseudonym type like every other identifier."""
+    profile = _json("fixtures/valid/otlp-mapping-profile-example.json")
+    mapping = {"source": "gateway.request", "target": "fabric.control.resolves"}
+    profile["rules"][0]["map"].append(mapping)
+    _assert_error(profile, "capture.mapping_profile.identity")
+    mapping["pseudonymise"] = "control"
+    validate_document(profile, _schemas())
+
+
+def test_node_example_mapping_profiles_pass_the_contract() -> None:
+    """Spec 057 WP7-15: the example profiles the Node's mapping processor is tested with
+    (fixtures only, never shipped) are valid under the published schema and rules."""
+    testdata = (
+        REPO_ROOT
+        / "components/otel-collector-fabric/processor/fabricmapprocessor/testdata/profiles"
+    )
+    profiles = sorted(testdata.glob("*.json"))
+    assert len(profiles) == 2, profiles
+    for path in profiles:
+        validate_document(json.loads(path.read_text(encoding="utf-8")), _schemas())
