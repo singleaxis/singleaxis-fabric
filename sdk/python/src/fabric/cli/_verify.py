@@ -447,9 +447,12 @@ def run(
     """``fabric verify``."""
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
-    for name in ("production", "kubernetes"):
-        if getattr(options, name):
-            raise CliError([Finding("FC-011", f"--{name}")])
+    if options.production:
+        raise CliError([Finding("FC-011", "--production")])
+    if options.kubernetes:
+        from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
+
+        return _kubecmd.run_verify(options, environ)
     located = _config.discover(options.config, environ, cwd)
     project = _project.load(located, {}, environ)
     if options.project and options.project != project.name:

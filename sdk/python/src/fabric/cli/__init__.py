@@ -10,7 +10,8 @@ and no phone-home: no command opens a network connection the operator did not as
 Commands (the I1 allowlist; additions need a spec change): ``plan``, ``init``, ``up``,
 ``down``, ``run``, ``verify``, ``doctor``, ``show``, ``version``, ``help``. This release
 builds ``init``, ``up``, ``down``, ``run``, ``verify``, ``doctor`` and ``show`` for the local
-profile, ``version`` and ``help``; ``plan`` says so and points at the manual route.
+profile, their ``--kubernetes`` forms (``init``, ``up``, ``down``, ``verify``, ``doctor`` and
+``plan``), ``version`` and ``help``; ``plan`` without ``--kubernetes`` says it is not built.
 
 Exit codes: 0 success; 1 a check did not pass; 2 usage or configuration error; 3 a
 prerequisite is missing. ``fabric run`` exits with the agent's exit code."""
@@ -45,7 +46,7 @@ BUILT: frozenset[str] = frozenset({
 _SUMMARIES = {
     "plan": "predict what Fabric would record for this project",
     "init": "write fabric.yaml, generated secrets and the compiled environment",
-    "up": "start the local Fabric Node and destination",
+    "up": "start the local Fabric Node and destination, or install the Helm release",
     "down": "stop what `fabric up` started",
     "run": "run an agent command with capture on",
     "verify": "check that a recorded run reached the destination intact",
@@ -100,6 +101,8 @@ def build_parser() -> _Parser:
             _args.add_doctor_arguments(sub)
         elif name == "show":
             _args.add_show_arguments(sub)
+        elif name == "plan":
+            _args.add_kubernetes_arguments(sub, "plan")
         parser.commands[name] = sub
     return parser
 
@@ -189,9 +192,14 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0911 - one retur
         "doctor": _reader_command("doctor"), "show": _reader_command("show"),
     }  # fmt: skip
     try:
-        if command not in BUILT:
+        if command == "plan" and options.kubernetes:
+            from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
+
+            report, lines = _kubecmd.run_plan(options)
+        elif command not in BUILT:
             raise CliError([Finding("FC-010", f"fabric {command}")])
-        report, lines = handlers[command](options)
+        else:
+            report, lines = handlers[command](options)
     except CliError as exc:
         report = Report(command, findings=exc.findings, exit_code=exc.exit_code)
         lines = []

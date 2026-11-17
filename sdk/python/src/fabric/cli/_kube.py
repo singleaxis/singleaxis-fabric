@@ -642,8 +642,13 @@ class Generator:
         if node_tls:
 
             def node() -> dict[str, bytes]:
+                # A Node that takes no token also names localhost: `fabric verify
+                # --kubernetes` sends its canary through a port-forward (§10.6). A
+                # production Node binds every source, so no canary reaches it that way.
+                names = plan.service_names(plan.node_host)
                 cert, key = self._leaf(
-                    plan.service_names(plan.node_host), common_name=plan.node_host
+                    names if plan.production else [*names, "localhost"],
+                    common_name=plan.node_host,
                 )
                 return {"tls.crt": cert, "tls.key": key, "ca.crt": ca_cert}
 
@@ -716,12 +721,11 @@ class Generator:
                 "state-key": base64.b64encode(secrets.token_bytes(32)),
                 "source-id": sensor_source_id(node, id_key).encode("ascii"),
             }
-            kept = self._ensure(
-                plan.namespace,
-                host_secret_name(node),
-                HOST_NODE_KEYS,
-                lambda made=node_secret: made,
-            )
+
+            def make(made: dict[str, bytes] = node_secret) -> dict[str, bytes]:
+                return made
+
+            kept = self._ensure(plan.namespace, host_secret_name(node), HOST_NODE_KEYS, make)
             expected = node_secret["source-id"]
             if kept.get("source-id") not in (None, expected):
                 # The id key was replaced after this node's Secret was made: the Node would

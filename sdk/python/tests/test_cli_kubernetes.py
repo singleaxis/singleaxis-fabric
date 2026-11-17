@@ -130,9 +130,22 @@ def test_node_certificate_names_the_service_and_chains_to_the_ca() -> None:
         "f-otel-collector.fabric-system",
         "f-otel-collector.fabric-system.svc",
         "f-otel-collector.fabric-system.svc.corp.local",
+        # A local Node takes no token, so `fabric verify --kubernetes` sends its canary
+        # through a port-forward to localhost (spec 058 §10.6).
+        "localhost",
     ]
     usage = node.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
     assert list(usage) == [ExtendedKeyUsageOID.SERVER_AUTH]
+
+
+def test_production_node_certificate_does_not_name_localhost() -> None:
+    store = MemoryStore()
+    _kube.Generator(_plan(production=True), store).run()
+    node = x509.load_pem_x509_certificate(
+        store.secrets[("fabric-system", "fabric-node-receiver-tls")]["tls.crt"]
+    )
+    names = node.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    assert "localhost" not in names.get_values_for_type(x509.DNSName)
 
 
 def test_production_namespace_token_and_source_id_agree_with_the_sdk() -> None:

@@ -32,7 +32,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from . import _config, _images, _init, _project, _secrets, _sensor, _templates
+from . import _args, _config, _images, _init, _project, _secrets, _sensor, _templates
 from ._docker import Docker, interactive_echo
 from ._report import EXIT_FINDINGS, CliError, Finding, Report
 
@@ -73,20 +73,20 @@ def add_up_arguments(parser: argparse.ArgumentParser) -> None:
         help="how long to wait for the Node to answer (default 60)",
     )
     # Accepted so the answer is FC-011 with the manual route, not an argparse error.
-    parser.add_argument("--kubernetes", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--render", metavar="DIR", help=argparse.SUPPRESS)
     parser.add_argument("--verify-images", action="store_true", help=argparse.SUPPRESS)
+    _args.add_kubernetes_arguments(parser, "up")
 
 
 def add_down_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--purge", action="store_true",
                         help="also delete the project's volumes and .fabric/state "
                              "(never the secrets directory or recorded data)")  # fmt: skip
-    parser.add_argument("--kubernetes", action="store_true", help=argparse.SUPPRESS)
+    _args.add_kubernetes_arguments(parser, "down")
 
 
 def _refuse_unbuilt(options: argparse.Namespace, project: _project.Project | None) -> None:
-    for name in ("kubernetes", "render", "verify_images"):
+    # --render belongs to --kubernetes (§5.4); the Docker shapes have nothing to render.
+    for name in ("render", "verify_images"):
         if getattr(options, name, None):
             raise CliError([Finding("FC-011", "--" + name.replace("_", "-"))])
     if project is None:
@@ -406,6 +406,10 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
     """``fabric up``."""
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
+    if options.kubernetes:
+        from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
+
+        return _kubecmd.run_up(options, environ, cwd)
     _refuse_unbuilt(options, None)
     project, located, findings, lines, secrets_now = _load_or_init(options, environ, cwd)
     report = Report("up", findings=findings, config=located.to_json())
@@ -552,7 +556,9 @@ def run_down(options: argparse.Namespace, environ: Mapping[str, str] | None = No
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
     if options.kubernetes:
-        raise CliError([Finding("FC-011", "--kubernetes")])
+        from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
+
+        return _kubecmd.run_down(options, environ)
     located = _config.discover(options.config, environ, cwd)
     project = _project.load(located, {}, environ)
     _refuse_other_project(options, project)

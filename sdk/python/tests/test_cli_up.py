@@ -455,7 +455,7 @@ def test_compose_failure_and_an_unhealthy_node_carry_dockers_own_last_lines(proj
     assert "--wait" in finding.entry["fix"]
 
 
-@pytest.mark.parametrize("flag", ["--kubernetes", "--verify-images"])
+@pytest.mark.parametrize("flag", ["--verify-images"])
 def test_up_options_not_built_yet_say_so(flag: str, project: Path) -> None:
     with pytest.raises(CliError) as caught:
         _up_once(FakeDocker(), flag)
@@ -750,9 +750,6 @@ def test_down_without_a_project_or_with_a_failing_compose_says_why(project: Path
     with pytest.raises(CliError) as caught:
         _down(docker)
     assert (caught.value.exit_code, caught.value.findings[0].id) == (1, "FC-021")
-    with pytest.raises(CliError) as caught:
-        _down(FakeDocker(), "--kubernetes")
-    assert caught.value.findings[0].id == "FC-011"
 
 
 @pytest.mark.skipif(os.name != "posix", reason="symlinks")
