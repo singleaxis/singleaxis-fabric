@@ -241,7 +241,7 @@ async function consume(
         runtime.countUnprocessed();
       }
       jobs.commit();
-      grow(pools);
+      growPools(pools);
     }
     if (handlers.loss !== undefined) {
       for (let loss = runtime.peekLoss(); loss !== undefined; loss = runtime.peekLoss()) {
@@ -253,7 +253,7 @@ async function consume(
         runtime.commitLoss();
       }
     }
-    grow(pools);
+    growPools(pools);
     if (runtime.stopRequested) return;
     const waited = waitAsync(jobs.wakeWords, jobs.wakeIndex, seen, WORKER_TICK_MS);
     if (!waited.async) continue;
@@ -269,14 +269,17 @@ async function consume(
   }
 }
 
-/** Only the Fabric worker grows arenas, ahead of each pool's low-water mark. */
-function grow(pools: readonly SlotPool[]): void {
+/**
+ * Only the Fabric worker grows arenas, ahead of each pool's low-water mark. A pool that
+ * cannot grow (out of memory for this step) stays as it is, and hooks see it full; the
+ * other pools still grow.
+ */
+export function growPools(pools: readonly SlotPool[]): void {
   for (const pool of pools) {
     try {
       while (pool.growIfLow() > 0);
     } catch {
-      // Out of memory for this step: the pool stays as it is and hooks see it full.
-      break;
+      // This pool stays as it is until the next tick; go on to the next pool.
     }
   }
 }

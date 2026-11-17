@@ -12,11 +12,13 @@ import { Worker } from "node:worker_threads";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { SlotPool, createPool } from "../../../src/wire/arena.js";
 import { JOB_EXCHANGE, JOB_RELEASING, REQUEST } from "../../../src/wire/exchange.js";
 import { STATE_FAILED, STATE_RUNNING } from "../../../src/wire/runtime.js";
 import {
   FABRIC_WORKER_MARKER,
   FabricWorker,
+  growPools,
   isFabricWorkerThread,
   runFabricWorker,
 } from "../../../src/wire/worker.js";
@@ -151,6 +153,22 @@ describe("starting the Fabric worker", () => {
     ]);
     expect(fabric.worker).toBeUndefined();
     expect(table.begin()).toBe(-1);
+  });
+});
+
+describe("arena growth in the Fabric worker", () => {
+  it("a pool that cannot grow does not stop the others from growing", () => {
+    const pool = (): SlotPool =>
+      new SlotPool(
+        createPool({ slotBytes: 64, maxSlots: 64, initialSlots: 2, lowWater: 2, growStep: 4 }),
+      );
+    const [failing, slabs, vectors] = [pool(), pool(), pool()];
+    for (const each of [failing, slabs, vectors]) each.take();
+    failing.growIfLow = () => {
+      throw new RangeError("Array buffer allocation failed");
+    };
+    expect(() => growPools([failing, slabs, vectors])).not.toThrow();
+    expect([failing.committed, slabs.committed, vectors.committed]).toEqual([2, 6, 6]);
   });
 });
 
