@@ -15,12 +15,19 @@ import {
   VECTOR_BYTES,
   createPool,
 } from "../../../src/wire/arena.js";
-import { META_BYTES, NO_EXCHANGE, REQUEST, RESPONSE } from "../../../src/wire/exchange.js";
+import {
+  ExchangeTable,
+  META_BYTES,
+  NO_EXCHANGE,
+  REQUEST,
+  RESPONSE,
+} from "../../../src/wire/exchange.js";
 import { Ring, createRing } from "../../../src/wire/queue.js";
 import {
   EXCHANGE_SLOT_BYTES,
   JOB_RECORD_BYTES,
   MAX_EXCHANGE_SLOTS,
+  WireRuntime,
   createRuntimeShared,
   metadataBytesAtMaximum,
 } from "../../../src/wire/runtime.js";
@@ -334,6 +341,35 @@ describe("the configured sizes", () => {
 });
 
 describe("arena growth", () => {
+  it("a hook that leaves the chunk-vector pool low wakes the Fabric worker to grow it", () => {
+    const base = createRuntimeShared({ maxInflightBytes: 64 * SLAB_BYTES });
+    const shared = {
+      ...base,
+      payload: {
+        slabs: base.payload.slabs,
+        vectors: createPool({
+          slotBytes: 64,
+          maxSlots: 64,
+          initialSlots: 4,
+          lowWater: 2,
+          growStep: 4,
+        }),
+      },
+    };
+    const table = new ExchangeTable(new WireRuntime(shared, "installer"));
+    const wakes = (): number =>
+      Atomics.load(table.runtime.jobs.wakeWords, table.runtime.jobs.wakeIndex);
+    expect(table.arena.slabs.low).toBe(false); // the payload arena is fully committed
+    const before = wakes();
+    // Each exchange takes one vector slot; the third leaves fewer than two free.
+    const handles = [0, 1, 2].map(() => table.begin());
+    for (const handle of handles.slice(0, 2)) table.admit(handle, REQUEST, filled(10, 1));
+    expect(wakes()).toBe(before);
+    table.admit(handles[2]!, REQUEST, filled(10, 1));
+    expect(table.arena.vectors.low).toBe(true);
+    expect(wakes()).toBeGreaterThan(before);
+  });
+
   it("a growth step cut short and run again never frees a slot twice", () => {
     const pool = new SlotPool(
       createPool({ slotBytes: 64, maxSlots: 64, initialSlots: 4, lowWater: 8, growStep: 16 }),

@@ -294,7 +294,8 @@ export class ExchangeTable {
     }
     const result = this.arena.append({ i32, at }, data);
     if (result === APPEND_OK) {
-      if (this.arena.slabs.low) this.runtime.jobs.wake();
+      // Hooks never grow an arena: they wake the Fabric worker to grow it ahead of use.
+      if (this.arena.slabs.low || this.arena.vectors.low) this.runtime.jobs.wake();
       return true;
     }
     if (result === APPEND_NO_SLAB) return this.truncate(at, 2);
