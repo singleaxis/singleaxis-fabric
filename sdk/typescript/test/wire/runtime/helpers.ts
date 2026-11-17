@@ -75,10 +75,14 @@ export interface Drained {
 }
 
 /** What the Fabric worker would read: every queued job (with its bytes) and loss. */
-export function drain(table: ExchangeTable): Drained {
+export function drain(table: ExchangeTable, maxJobs = Infinity): Drained {
   const { runtime, arena } = table;
   const out: Drained = { jobs: [], losses: [] };
-  for (let record = runtime.jobs.peek(); record !== undefined; record = runtime.jobs.peek()) {
+  for (
+    let record = runtime.jobs.peek();
+    record !== undefined && out.jobs.length < maxJobs;
+    record = runtime.jobs.peek()
+  ) {
     const job = table.job(record.byteOffset);
     out.jobs.push({
       ...job,
@@ -119,14 +123,27 @@ export async function produce(
   file: string,
   shared: RuntimeShared | undefined,
   count: number,
-  each: { mode: "allocate" | "exchange"; count: number; runSlot?: (id: number) => number },
+  each: {
+    mode: "allocate" | "exchange";
+    count: number;
+    runSlot?: (id: number) => number;
+    /** Producer 0 starts recorder shutdown before its exchange of this number. */
+    closeAfter?: number;
+  },
   whileRunning: () => void = () => undefined,
 ): Promise<ProducerResult[]> {
   const start = new SharedArrayBuffer(8);
   const results: Promise<ProducerResult>[] = [];
   for (let id = 0; id < count; id++) {
     const worker = new Worker(file, {
-      workerData: { shared, start, id, ...each, runSlot: each.runSlot?.(id) ?? -1 },
+      workerData: {
+        shared,
+        start,
+        id,
+        ...each,
+        runSlot: each.runSlot?.(id) ?? -1,
+        closeAfter: id === 0 ? each.closeAfter : undefined,
+      },
     });
     results.push(
       new Promise((resolve, reject) => {

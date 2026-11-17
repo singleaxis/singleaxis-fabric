@@ -9,7 +9,12 @@ import { clearInterval, setInterval } from "node:timers";
 import { parentPort, workerData } from "node:worker_threads";
 
 import { ExchangeTable, NO_EXCHANGE, REQUEST } from "../../../../src/wire/exchange.js";
-import { type RuntimeShared, WireRuntime, inheritedRuntime } from "../../../../src/wire/runtime.js";
+import {
+  type RuntimeShared,
+  STATE_CLOSING,
+  WireRuntime,
+  inheritedRuntime,
+} from "../../../../src/wire/runtime.js";
 import { patternBody } from "./pattern.js";
 
 interface ProducerData {
@@ -19,6 +24,8 @@ interface ProducerData {
   readonly id: number;
   readonly count: number;
   readonly runSlot: number;
+  /** Before its exchange of this number, this producer starts recorder shutdown. */
+  readonly closeAfter?: number;
 }
 
 const data = workerData as ProducerData;
@@ -41,6 +48,7 @@ function run(): void {
       if (allocation.lost) lost++;
       continue;
     }
+    if (n === data.closeAfter) runtime.setState(STATE_CLOSING);
     const handle = table.begin();
     if (handle === NO_EXCHANGE) {
       refused++;

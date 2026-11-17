@@ -249,30 +249,28 @@ describe("finish-once across threads", () => {
     const runtime = table.runtime;
     const settled = new Map<bigint, string>();
     let duplicates = 0;
-    const settle = (): void => {
-      const { jobs, losses } = drain(table);
+    const settle = (maxJobs?: number): void => {
+      const { jobs, losses } = drain(table, maxJobs);
       for (const item of [...jobs, ...losses]) {
         if (settled.has(item.sequence)) duplicates++;
         settled.set(item.sequence, "reason" in item ? item.reason : "record");
       }
     };
-    let closing = false;
+    // Shutdown lands from a producer thread part-way through its run, while exchanges
+    // are open in the other seven, so the race does not depend on how this thread is
+    // scheduled. This thread sweeps and consumes, a bounded batch at a time.
     const results = await produce(
       bundles.file("producer"),
       shared,
       8,
-      { mode: "exchange", count: 3000 },
+      { mode: "exchange", count: 3000, closeAfter: 200 },
       () => {
-        // Shutdown lands while exchanges are open in other threads, then sweeps.
-        if (!closing && runtime.stats().nextSequence >= 500n) {
-          closing = true;
-          runtime.setState(STATE_CLOSING);
-        }
-        if (closing) table.shutdown();
-        settle();
+        if (runtime.state === STATE_CLOSING) table.shutdown();
+        settle(512);
         for (const pool of [table.arena.slabs, table.arena.vectors, table.pool]) pool.growIfLow();
       },
     );
+    expect(runtime.state).toBe(STATE_CLOSING);
     table.shutdown();
     settle();
 
