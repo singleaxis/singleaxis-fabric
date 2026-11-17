@@ -89,15 +89,19 @@ __all__ = [
     "CLASSIFY_POINTS",
     "FACT_CODES",
     "FACT_TEXT",
+    "REPORTED_POINT",
     "SECURITY_POINTS",
     "WATCHED_CLASS",
     "ControlIndex",
     "SecurityResult",
     "SnapshotIndex",
     "analyse",
+    "analyse_outside",
     "extract",
     "fact_rows",
     "present",
+    "reported_item",
+    "reported_targets",
     "resolve_refs",
     "view_events",
     "with_no_effect_rows",
@@ -195,7 +199,7 @@ def _position(record: Any) -> dict[str, Any]:
 
 
 def _control(record: Any, attrs: Mapping[str, Any]) -> dict[str, Any]:
-    item = _position(record)
+    item = _position(record) if record is not None else {}
     item["attrs"] = dict(attrs)
     for name in ("kind", "phase", "decision", "stage", "derivation", "mode", "gated_kind",
                  "gated_tool_call_id", "gated_step_id", "action_id", "id", "resolves",
@@ -221,7 +225,7 @@ def _control(record: Any, attrs: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _hook(record: Any, attrs: Mapping[str, Any]) -> dict[str, Any]:
-    item = _position(record)
+    item = _position(record) if record is not None else {}
     for name in ("name", "phase", "outcome", "basis", "event_name", "gated_tool_call_id",
                  "extension_id", "reason_code", "program_label"):  # fmt: skip
         value = _str(attrs, _H + name)
@@ -239,6 +243,38 @@ def _hook(record: Any, attrs: Mapping[str, Any]) -> dict[str, Any]:
     if item.get("basis") not in _HOOK_BASES:
         item["basis"] = "reported_unknown"
     return item
+
+
+#: The capture point of a reported OTLP record that names none (a neutral-key emitter).
+REPORTED_POINT: Final = "otlp"
+
+
+def reported_item(obs: Any) -> dict[str, Any]:
+    """The control or hook item of one record reported over OTLP (``ReportedObs``, spec 057
+    §4.5, rev 3.14): the fields of :func:`_control` or :func:`_hook`, provenance
+    ``reported``, and in place of a position its ``otlp:`` id and its span's start time. It
+    has no source, epoch or sequence (``source_id`` ``otlp``, epoch and sequence 0), so no
+    rule joins it by position or sequence window."""
+    attrs = obs.span.attributes
+    item = _control(None, attrs) if obs.kind == "control" else _hook(None, attrs)
+    item.update(attempt_uid=obs.event_id, event_id=obs.event_id, source_id=REPORTED_POINT,
+                source_epoch=0, sequence=0, start_ns=obs.span.start_ns, reported=True,
+                capture_point=_str(attrs, "fabric.capture.point") or REPORTED_POINT)  # fmt: skip
+    if obs.kind == "control":
+        item["derivation"] = "reported"  # §3 rule 3: what arrives over OTLP is reported
+    return item
+
+
+def reported_targets(item: Mapping[str, Any]) -> tuple[str | None, str | None, str | None]:
+    """What a reported item names, for placing it in a run (rev 3.14): the provider
+    tool-call id (D40, E04), the control id a resolution or revocation answers (D05), and
+    the gated step (D06)."""
+    call = item.get("gated_tool_call_id")
+    answers = item.get("resolves") if item.get("phase") in _TARGET_PHASES else None
+    step = item.get("gated_step_id")
+    return (call if isinstance(call, str) else None,
+            answers if isinstance(answers, str) else None,
+            step if isinstance(step, str) else None)  # fmt: skip
 
 
 _PTH = re.compile(r"pth-[0-9a-f]{32}")
@@ -362,18 +398,24 @@ class ControlIndex:
     revoked: set[str] = field(default_factory=set)
 
     @classmethod
-    def build(cls, records: Iterable[Any]) -> ControlIndex:
+    def build(cls, records: Iterable[Any], reported: Iterable[Any] = ()) -> ControlIndex:
+        """``records`` are verified records-input records; ``reported`` the control
+        records reported over OTLP (``ReportedObs``, rev 3.14), which answer and are
+        answered like any other: their run is ``None``."""
         index = cls()
         latest: dict[str, Any] = {}
         for record in records:
             if record.span.attributes.get("fabric.step.kind") == "control":
                 latest[record.attempt_uid] = record
+        entries = [(uid, record.span.attributes, record.run_id)
+                   for uid, record in sorted(latest.items())]  # fmt: skip
+        entries += sorted(((obs.event_id, obs.span.attributes, None) for obs in reported
+                           if obs.kind == "control"), key=lambda entry: entry[0])  # fmt: skip
         by_id: dict[str, list[tuple[str, str, str | None]]] = defaultdict(list)
-        for uid, record in sorted(latest.items()):
-            attrs = record.span.attributes
+        for uid, attrs, run_id in entries:
             control_id, phase = _str(attrs, _C + "id"), _str(attrs, _C + "phase")
             if control_id is not None and phase is not None:
-                by_id[control_id].append((phase, uid, record.run_id))
+                by_id[control_id].append((phase, uid, run_id))
             target = _str(attrs, _C + "resolves")
             if target is not None and phase == "resolution":
                 index.resolved.add(target)
@@ -593,8 +635,10 @@ def _link_control(  # noqa: PLR0912, PLR0915 - one branch per join rule and its 
                         item[key] = request[key]
         return
     # Rule 3 applies to observations and requests only (rev 3.4 note 4): a resolution or
-    # revocation gates what its request gates, never a call by position.
-    if gated_kind in (None, "tool_call") and wire and item.get("phase") not in _TARGET_PHASES:
+    # revocation gates what its request gates, never a call by position. A record reported
+    # over OTLP has no position in the run (rev 3.14).
+    if (gated_kind in (None, "tool_call") and wire and item.get("phase") not in _TARGET_PHASES
+            and not item.get("reported")):  # fmt: skip
         pending = _pending_calls(item, calls)
         if len(pending) == 1:
             item["link"] = _gates(pending[0].id, "pending_single", "inferred", "certain",
@@ -820,14 +864,18 @@ def link_watched_opens(
 
 def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
     inp: Mapping[str, Any], attribution: Any, sec: Mapping[str, Any], index: ControlIndex,
-    snapshots: SnapshotIndex | None = None,
+    snapshots: SnapshotIndex | None = None, *, wire: bool | None = None,
+    in_run: bool = True,
 ) -> SecurityResult:  # fmt: skip
     """Joins, facts F1-F14, the ``controls`` chain and ``security_context`` of one run.
     ``inp`` is the 056 normalized input, ``attribution`` its 056 result and ``sec`` the
-    run's :func:`extract` (plus ``active_points``, ``sequence_gaps``)."""
+    run's :func:`extract` (plus ``active_points``, ``sequence_gaps``). ``wire`` overrides
+    whether captured tool calls are there to check a D40 id against (default: the run has
+    a captured exchange); :func:`analyse_outside` sets it, and ``in_run`` False (no F1:
+    records in no run have no run to declare a grant for), for records in no run."""
     calls = list(attribution.calls)
     call_ids = {c.id for c in calls}
-    wire = bool(inp.get("exchanges"))
+    wire = bool(inp.get("exchanges")) if wire is None else wire
     attempts = set(sec.get("attempts", ()))
     controls = [dict(c) for c in sec.get("controls", ())]
     hooks = [dict(h) for h in sec.get("hooks", ())]
@@ -867,7 +915,7 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
     declared = [g for g in grants if g["basis"] == "declared"]
     # An operator snapshot shown with one of the run's watched opens is the customer's
     # declared permission configuration for the run (§4.10.2), recorded outside it.
-    if observed and not declared and not linked:
+    if observed and not declared and not linked and in_run:
         facts["no_declared_grant"] = []
     # A listed grant changes per MCP session (``scope``): two servers' listings are two
     # grants, not a change of one.
@@ -1058,8 +1106,8 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
 
     projection_links: dict[str, list[dict[str, Any]]] = {}
     for item in [*controls, *hooks]:
-        if item.get("derived"):
-            continue  # a derived row is no record: it has no step to carry a link
+        if item.get("derived") or item.get("reported"):
+            continue  # a derived or OTLP-reported row has no step to carry a link
         links: list[dict[str, Any]] = []
         link = item.get("link")
         # 052 already projects D06 ``gates`` and D05 ``resolves`` links on control steps.
@@ -1081,6 +1129,33 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         deny_with_effect=deny_with_effect, observed=observed, call_grants=call_grants,
         mcp_calls=mcp_calls, watched_opens=watched,
     )  # fmt: skip
+
+
+@dataclass(frozen=True)
+class _NoCalls:
+    """The 056 result of an input part with no run: no call, window or reason."""
+
+    calls: tuple[Any, ...] = ()
+    decisions: Mapping[str, Any] = field(default_factory=dict)
+    windows: Mapping[str, Sequence[str]] = field(default_factory=dict)
+    trace: Mapping[str, Any] = field(default_factory=lambda: {"tool_calls": {}})
+
+
+def analyse_outside(
+    controls: Sequence[Mapping[str, Any]], hooks: Sequence[Mapping[str, Any]],
+    index: ControlIndex,
+) -> SecurityResult:  # fmt: skip
+    """Spec 057 rev 3.14: the records reported over OTLP that join no run of the input (no
+    run captured the call they name, recorded the request they answer or holds the step
+    they gate). They are joined against nothing: a named call, request or step is F3
+    ``control_unmatched``, and their ``controls`` chain is ``partial`` with that reason; a
+    record that names nothing is shown, unjoined. Never F1: there is no run."""
+    sec: dict[str, Any] = {
+        "controls": [dict(c) for c in controls], "hooks": [dict(h) for h in hooks],
+        "grants": [], "extensions": [], "side_effects": [], "attempts": [],
+        "active_points": [], "sequence_gaps": [],
+    }  # fmt: skip
+    return analyse({}, _NoCalls(), sec, index, wire=True, in_run=False)
 
 
 def _epoch_of(item: Mapping[str, Any]) -> tuple[str, int]:
@@ -1269,6 +1344,8 @@ def view_events(  # noqa: PLR0912, PLR0915 - one branch per row kind and optiona
                 row[key] = True
         if "resolves_row" in item:
             row["resolves_attempt"] = item["resolves_row"]
+        if item.get("reported"):
+            row["reported_via"] = item["capture_point"]
         note = invariant_text(item)
         if note is not None:
             row["invariant"] = note
@@ -1303,6 +1380,8 @@ def view_events(  # noqa: PLR0912, PLR0915 - one branch per row kind and optiona
             row["link"] = link
         if item.get("unmatched"):
             row["unmatched"] = True
+        if item.get("reported"):
+            row["reported_via"] = item["capture_point"]
         if item["attempt_uid"] in security.deny_with_effect:
             row["deny_with_effect"] = security.deny_with_effect[item["attempt_uid"]]
         out.append((item["start_ns"], 1, item["sequence"], row))

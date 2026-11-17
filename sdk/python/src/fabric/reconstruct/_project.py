@@ -908,8 +908,13 @@ def build_projection(
         if root is not None:
             roots[root[0]].append((run["run_id"], root[1]))
     _same_as_by_trace(roots)
-    _controls.pair_controls(steps, wrap=wrapper)  # spec 052 §4.9 rules 3, 4 (all runs)
     verifier = collector.verifier
+    reported = [
+        obs.span.attributes
+        for obs in getattr(verifier, "reported", {}).values()
+        if obs.kind == "control"
+    ]  # spec 057 rev 3.14: they answer requests too
+    _controls.pair_controls(steps, wrap=wrapper, reported=reported)  # 052 §4.9 rules 3, 4
     document: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "projection_revision": PROJECTION_REVISION,

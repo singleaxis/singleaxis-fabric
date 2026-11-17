@@ -208,6 +208,17 @@
           }
         }
       }
+    },
+    "reported_outside_runs": {
+      "description": "Spec 057 §4.5 and revision 3.14: the control and hook records another system reported over OTLP (a mapping profile's output, or an emitter writing the neutral keys) that no run of the input showed. A reported record is shown in every run that holds what it names: the tool call of its gated_tool_call_id (a call the run captured on the wire), the request its resolves answers, or the step of its gated_step_id. The rest are listed here once, joined against nothing: one that names a call, request or step is F3 control_unmatched, and the controls chain is partial with that reason. Present when such records exist and every run was reconstructed (absent with --run). count is exact. It bounds no run verdict and never states F1.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "controls", "security_context"],
+      "properties": {
+        "count": {"type": "integer", "minimum": 1},
+        "controls": {"$ref": "#/$defs/controlsChainVerdict"},
+        "security_context": {"$ref": "#/$defs/securityContext"}
+      }
     }
   },
   "$defs": {

@@ -48,7 +48,12 @@ from fabric import _classify
 from fabric._model_names import parse_model_allowlist
 from fabric._sequence import label_pseudonym, pseudonym_v2
 from fabric.deployment_policy import DeploymentPolicy
-from fabric.reconstruct._attribute import ActionReader, ActionRun, action_rows
+from fabric.reconstruct._attribute import (
+    ActionReader,
+    ActionRun,
+    action_rows,
+    reported_outside_rows,
+)
 from fabric.reconstruct._derive import DERIVE_CHOICES, Derivation
 from fabric.reconstruct._explain import explain_no_runs
 from fabric.reconstruct._graph import RunGraph
@@ -1114,6 +1119,11 @@ def actions_main(argv: Sequence[str]) -> int:
     views = [_view(run, document) for run in reader.runs]
     # Spec 056 §4.3: host events no run lists or counts, every one (the report keeps 64).
     outside = reader.unattributed_host_events() if "unattributed_host_events" in document else None
+    # Spec 057 rev 3.14: records reported over OTLP that no run showed.
+    reported = None
+    if "reported_outside_runs" in document:
+        security = reader.reported_outside_runs()
+        reported = reported_outside_rows(security) if security is not None else None
     if args.json:
         out: dict[str, Any] = {"schema": "fabric.reconstruct.actions/v0", "runs": views}
         if outside is not None:
@@ -1121,12 +1131,16 @@ def actions_main(argv: Sequence[str]) -> int:
                 **unattributed_host_json(outside),
                 "events": outside,
             }
+        if reported is not None:
+            out["reported_outside_runs"] = reported
         for chunk in _report_chunks(out):
             sys.stdout.write(chunk)
     else:
         sys.stdout.write("\n".join(format_actions(view) for view in views))
         if outside:
             sys.stdout.write(("\n" if views else "") + format_unattributed_host(outside))
+        if reported is not None:
+            sys.stdout.write(("\n" if views or outside else "") + format_reported_outside(reported))
     _note_capture_policy(args, reader)
     if not document["runs"]:
         _explain_no_runs(args.spans, args.runs)
@@ -1501,7 +1515,8 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - o
             parts.append(_ms(row["latency_ms"]))
         if row.get("mode") not in (None, "unknown"):
             parts.append(f"mode {row['mode']}")
-        parts.append(f"({row['derivation']})")
+        parts.append(f"({row['derivation']}, {row['reported_via']})" if "reported_via" in row
+                     else f"({row['derivation']})")  # fmt: skip
         if "status" in row:
             parts.append(f"http {row['status']}")
         if row.get("body_not_retained"):
@@ -1538,7 +1553,8 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - o
             parts.append(f"exit {row['exit_code']}")
         if "latency_ms" in row:
             parts.append(_ms(row["latency_ms"]))
-        parts.append(f"({row['basis']})")
+        parts.append(f"({row['basis']}, {row['reported_via']})" if "reported_via" in row
+                     else f"({row['basis']})")  # fmt: skip
     for effect in row.get("deny_with_effect", ()):  # F6: co-occurrence, with how each is known
         where = f"#{effect['n']}" if "n" in effect else f"attempt {effect['attempt_uid'][:8]}…"
         parts.append(f"effect {where} {effect['method']} · {effect['confidence']}"
@@ -1585,6 +1601,20 @@ def format_unattributed_host(events: Sequence[Mapping[str, Any]]) -> str:
         if n
     )
     return f"session\n  {_unattributed_host_text(summary)}\n  ({legend})\n"
+
+
+def format_reported_outside(view: Mapping[str, Any]) -> str:
+    """The view's section for the records reported over OTLP that no run showed (spec 057
+    rev 3.14): their controls chain, one row each and the facts. A row names what it
+    gates; "(no matching call)" or "request · unresolved" means no run of the input holds
+    it."""
+    lines = [f"reported over OTLP, in no run  controls: {_chain_text(view['chains']['controls'])}"]
+    for row in view["rows"]:
+        lines.append(f"{row['n']:>3}    {_security_text(row)}".rstrip())
+    if view.get("facts"):
+        lines.append("  facts:")
+        lines += [f"    {_fact_text(fact)}" for fact in view["facts"]]
+    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":

@@ -165,9 +165,25 @@ def run_annotation_fields(
     return out
 
 
-def pair_controls(steps: Sequence[dict[str, Any]], *, wrap: Wrapper) -> None:
+def _reported_step(attrs: Mapping[str, Any]) -> dict[str, Any]:
+    """A control record reported over OTLP (spec 057 rev 3.14) in the shape :func:`_state`
+    and :func:`_value` read: it is no step of the projection, but it answers one."""
+    fields = {field_key: {"status": "captured", "value": attrs[key]}
+              for key, field_key in CONTROL_KEYS.items()
+              if isinstance(attrs.get(key), str)}  # fmt: skip
+    point = attrs.get("fabric.capture.point")
+    return {"capture_point": point if isinstance(point, str) else "otlp",
+            "layers": {LAYER: fields}}  # fmt: skip
+
+
+def pair_controls(
+    steps: Sequence[dict[str, Any]], *, wrap: Wrapper,
+    reported: Iterable[Mapping[str, Any]] = (),
+) -> None:  # fmt: skip
     """Rules 3 and 4 over every control step of the input (all runs): ``resolves`` links
-    and D36 on request steps, in place."""
+    and D36 on request steps, in place. ``reported`` are the attributes of the control
+    records reported over OTLP (spec 057 rev 3.14): they are no steps and carry no link,
+    but a resolution or revocation among them answers a request step like any other."""
     controls = [s for s in steps if s.get("step_kind") == "control"]
     by_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for step in controls:
@@ -190,6 +206,14 @@ def pair_controls(steps: Sequence[dict[str, Any]], *, wrap: Wrapper) -> None:
         _resolves_link(step, target, candidates)
         if phase == "resolution":
             resolutions[target].append(step)
+        elif phase == "revocation":
+            revoked.add(target)
+    for attrs in reported:
+        target, phase = attrs.get("fabric.control.resolves"), attrs.get("fabric.control.phase")
+        if not isinstance(target, str):
+            continue
+        if phase == "resolution":
+            resolutions[target].append(_reported_step(attrs))
         elif phase == "revocation":
             revoked.add(target)
     for step in controls:
