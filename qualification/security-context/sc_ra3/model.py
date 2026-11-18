@@ -13,8 +13,10 @@ from __future__ import annotations
 import json
 import threading
 from collections.abc import Mapping, Sequence
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from typing import Any
+
+from .approval_service import LoopbackHTTPServer
 
 MODEL = "sc-ra3-fixture-model"
 
@@ -79,7 +81,7 @@ class FixtureModel:
         self.unauthorised = 0
         self.requests = 0
         self.exhausted = 0
-        self._server: ThreadingHTTPServer | None = None
+        self._server: LoopbackHTTPServer | None = None
 
     @property
     def port(self) -> int:
@@ -141,8 +143,7 @@ class FixtureModel:
                 self.end_headers()
                 self.wfile.write(data)
 
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self._server.daemon_threads = True
+        self._server = LoopbackHTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(
             target=self._server.serve_forever, name="sc-ra3-model", daemon=True
         ).start()

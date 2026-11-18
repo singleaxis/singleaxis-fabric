@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import signal
+import socketserver
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -40,6 +41,22 @@ LIMIT = 100.0
 DECIDE_AFTER_S = 0.1
 POLICY = "refund-limits"
 RELEASE = "2026.11.1"
+
+
+class LoopbackHTTPServer(ThreadingHTTPServer):
+    """A threading HTTP server on loopback that never looks its own name up.
+
+    ``HTTPServer.server_bind`` calls ``socket.getfqdn``, a reverse DNS lookup that can
+    block for minutes on hosts with slow or no DNS (macOS CI runners do). Nothing here
+    needs the name, so the bind keeps the address as given.
+    """
+
+    daemon_threads = True
+
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name, self.server_port = str(host), int(port)
 
 
 class Service:
@@ -155,8 +172,7 @@ def serve(service: Service, port_file: Path) -> None:
             self.end_headers()
             self.wfile.write(data)
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
+    server = LoopbackHTTPServer(("127.0.0.1", 0), Handler)
 
     def stop(signum: int, frame: FrameType | None) -> None:
         threading.Thread(target=server.shutdown, daemon=True).start()

@@ -84,9 +84,9 @@ jobs:
         env:
           MYPYPATH: ../action-record # the AR-1 sink and Node the harness reuses
         run: |
-          ruff check sc_ra3 run_sc_ra3.py tests/test_sc_ra3_checks.py tests/test_sc_ra3_live_mode.py
-          ruff format --check sc_ra3 run_sc_ra3.py tests/test_sc_ra3_checks.py tests/test_sc_ra3_live_mode.py
-          mypy --strict --config-file ../../sdk/python/pyproject.toml sc_ra3 run_sc_ra3.py tests/test_sc_ra3_checks.py tests/test_sc_ra3_live_mode.py
+          ruff check sc_ra3 run_sc_ra3.py tests/test_sc_ra3_checks.py tests/test_sc_ra3_live_mode.py tests/test_sc_ra3_servers.py
+          ruff format --check sc_ra3 run_sc_ra3.py tests/test_sc_ra3_checks.py tests/test_sc_ra3_live_mode.py tests/test_sc_ra3_servers.py
+          mypy --strict --config-file ../../sdk/python/pyproject.toml sc_ra3 run_sc_ra3.py tests/test_sc_ra3_checks.py tests/test_sc_ra3_live_mode.py tests/test_sc_ra3_servers.py
       - name: Harness tests (a real run, each check's negative edits, the live plumbing)
         # --basetemp keeps each run's logs (the Node, the approval service) for the upload.
         run: |
