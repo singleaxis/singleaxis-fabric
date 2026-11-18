@@ -20,24 +20,24 @@ on:
   push:
     branches: [main]
     paths:
-      - "sdk/python/src/fabric/reconstruct/**"
-      - "sdk/python/src/fabric/records/**"
+      # The agent's zero-code capture (autoload, wire, exec hook), the id pseudonyms and
+      # the locked dependencies all live under sdk/python, not only the reader.
+      - "sdk/python/**"
       - "contracts/capture/**"
       - "components/otel-collector-fabric/**"
       - "qualification/security-context/**"
-      - "qualification/action-record/ar1/sink.py"
-      - "qualification/action-record/ar1/node.py"
+      - "qualification/action-record/ar1/**"
       - ".github/workflows/security-context-otlp.yml"
   pull_request:
     branches: [main]
     paths:
-      - "sdk/python/src/fabric/reconstruct/**"
-      - "sdk/python/src/fabric/records/**"
+      # The agent's zero-code capture (autoload, wire, exec hook), the id pseudonyms and
+      # the locked dependencies all live under sdk/python, not only the reader.
+      - "sdk/python/**"
       - "contracts/capture/**"
       - "components/otel-collector-fabric/**"
       - "qualification/security-context/**"
-      - "qualification/action-record/ar1/sink.py"
-      - "qualification/action-record/ar1/node.py"
+      - "qualification/action-record/ar1/**"
       - ".github/workflows/security-context-otlp.yml"
   workflow_dispatch:
 
