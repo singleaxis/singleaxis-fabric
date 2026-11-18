@@ -221,19 +221,23 @@ export function fixtures(port) {
 // ---------------------------------------------------------------------------- provider
 
 /**
- * A loopback provider: `POST /v1/chat/completions` answers 1 KiB of JSON (after `delay`
- * ms with `?delay=<ms>`); with `?sse=<n>` it streams n 1 KiB SSE events, each written
- * after the previous one drained, or `gap` ms apart with `&gap=<ms>` (a model's pace),
+ * A loopback provider: `POST /v1/chat/completions` answers 1 KiB of JSON (after
+ * PACED_DELAY_MS with `?paced`); with `?sse=<n>` it streams n 1 KiB SSE events, each
+ * written after the previous one drained, or PACED_GAP_MS apart with `&paced` (a model's
+ * pace),
  * or with `&lockstep=1` only after the client called `step()` for the previous one (so
  * each event is published as its own 1 KiB chunk; undici coalesces fast writes).
  */
-const LIMITS = { sse: 100_000, delay: 1000, gap: 1000, lockstep: 1 };
+const LIMITS = { sse: 100_000, lockstep: 1 };
+/** A model's pace: the JSON answer's latency and the gap between SSE events. */
+const PACED_DELAY_MS = 10;
+const PACED_GAP_MS = 5;
 
 export async function localProvider() {
     const json = Buffer.from(JSON.stringify({ id: "r", content: "y".repeat(KIB - 24) }));
     const event = Buffer.from(`data: ${"z".repeat(KIB - 8)}\n\n`);
-    // Loopback-only harness parameters, bounded: no request can hold a timer longer than
-    // a second or stream more than 100,000 events.
+    // Loopback-only harness parameters, bounded (at most 100,000 events); timer lengths
+    // are fixed constants, never taken from a request.
     const param = (url, name) => {
         const found = new RegExp(`[?&]${name}=(\\d{1,6})(?:&|$)`).exec(url);
         return found === null ? undefined : Math.min(Number(found[1]), LIMITS[name] ?? 0);
@@ -249,14 +253,13 @@ export async function localProvider() {
                     res.writeHead(200, { "content-type": "application/json" });
                     res.end(json);
                 };
-                const delay = param(url, "delay");
-                if (delay === undefined) answer();
-                else setTimeout(answer, delay);
+                if (/[?&]paced(?:&|$)/.test(url)) setTimeout(answer, PACED_DELAY_MS);
+                else answer();
                 return;
             }
             res.writeHead(200, { "content-type": "text/event-stream" });
             let left = events;
-            const gap = param(url, "gap");
+            const paced = /[?&]paced(?:&|$)/.test(url);
             if (param(url, "lockstep") === 1) {
                 step = () => {
                     if (left-- > 0) res.write(event);
@@ -268,14 +271,14 @@ export async function localProvider() {
                 step();
                 return;
             }
-            if (gap !== undefined) {
+            if (paced) {
                 const timer = setInterval(() => {
                     if (left-- > 0) res.write(event);
                     else {
                         clearInterval(timer);
                         res.end();
                     }
-                }, gap);
+                }, PACED_GAP_MS);
                 res.on("close", () => clearInterval(timer));
                 return;
             }
