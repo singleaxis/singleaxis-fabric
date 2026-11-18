@@ -183,7 +183,7 @@ sources only** on a record that already carries `fabric.control.*` or
 
 | Source key | Becomes | Note |
 |---|---|---|
-| `gen_ai.tool.call.id` | `fabric.control.gated_tool_call_id` or `fabric.hook.gated_tool_call_id` | pseudonymised as `p-` + 32 hex with the id key; kept as is when it already has that form |
+| `gen_ai.tool.call.id` | the tool-call id `fabric.control.gated_tool_call_id` or `fabric.hook.gated_tool_call_id` | pseudonymised as `p-` + 32 hex with the id key; kept as is when it already has that form |
 | `gen_ai.operation.name` | `fabric.control.gated_kind` | `execute_tool` → `tool_call`; `chat`, `text_completion`, `generate_content` → `model_call`; other values state nothing |
 
 The record's own `fabric.*` value always wins, and the source key is
@@ -290,9 +290,9 @@ the call in progress. It is shown in every run that holds what it names:
 
 | The record carries | Shown in the run that has | Link |
 |---|---|---|
-| `fabric.control.gated_tool_call_id` or `fabric.hook.gated_tool_call_id` | that tool call, captured from the model wire | `provider_id`, certain |
-| `fabric.control.resolves` (phase `resolution` or `revocation`) | a control record with that `fabric.control.id`, for example the agent's `record_control(..., control_id=ticket)` | `ref_join`, certain; the decision then applies to the tool call the request names |
-| `fabric.control.gated_step_id` | that step | `reported_ref`, certain |
+| the tool-call id `fabric.control.gated_tool_call_id` or `fabric.hook.gated_tool_call_id` | that tool call, captured from the model wire | `provider_id`, certain |
+| the request id `fabric.control.resolves` (phase `resolution` or `revocation`) | a control record with that `fabric.control.id`, for example the agent's `record_control(..., control_id=ticket)` | `ref_join`, certain; the decision then applies to the tool call the request names |
+| the step id `fabric.control.gated_step_id` | that step | `reported_ref`, certain |
 
 The join is by id only, never by trace: the service's trace is its own, and a
 run id never travels between services (spec 052 B6). This is how a decision
