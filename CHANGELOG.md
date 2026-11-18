@@ -38,6 +38,50 @@ it never makes, applies, waits for or returns one.
 - **A worked production example** with host sensors and content delivery to
   an S3-compatible store behind a private CA:
   `charts/fabric/examples/production-host-sensor-content.yaml`.
+- **Host sensors from the chart.** `preset=production-host-sensor` installs
+  the eBPF host sensor as a DaemonSet on every node that can run it: the
+  release's image and tenant, one ingress group per node, and every per-node
+  token, key and source id generated in the cluster. Nothing is copied onto
+  a node, and the hand-edited DaemonSet template is no longer needed.
+- **The host sensor says what it cannot see.** Its health line counts the
+  agent pods it selected, scoped and could not scope, with the reason:
+  `cgroup_not_found`, `unsupported_runtime` (the pod runs under a gVisor or
+  Kata RuntimeClass, whose system calls never reach the node's kernel),
+  `node_not_supported` (the kernel cannot load the sensor) or `pod_limit`. A
+  WARN line names each reason with its fix instead of staying silent.
+- **`fabric` on Kubernetes.** `fabric up --kubernetes` installs the release
+  with one `helm upgrade --install` and a preset (`--render DIR` writes the
+  values and Secret manifests for your own pipeline instead); `fabric down
+  --kubernetes` removes it and keeps the generated Secrets unless you add
+  `--purge`. `fabric verify --kubernetes` checks the release, its Secrets,
+  the Node, the injector and the pods it served, what the host sensor sees
+  on each node, RuntimeClasses and NetworkPolicies, then reads your agent's
+  run back from your destination's export with `--spans`. `fabric doctor
+  --kubernetes` runs the same checks and says why a pod runs without capture
+  (an injector outage among them). `fabric plan --kubernetes` reads the
+  cluster without changing it and says which nodes can run the host sensor.
+  All of them read the cluster; none restarts or changes your workloads.
+- **Get started on Kubernetes.** `docs/get-started/kubernetes.md`: install
+  the CLI, one `fabric up --kubernetes`, one namespace label, one pod
+  annotation, then `fabric verify --kubernetes`. CI runs the page as written
+  on a fresh kind cluster and fails it over 10 minutes.
+- **Your capture policy for injected agents.** `injector.capturePolicy`
+  takes your `fabric.deployment-policy/v1` document. The chart puts it in
+  each agent namespace with that namespace's tenant, and the injector mounts
+  it read-only for the agents. In production an agent keeps model bodies
+  only under a policy; without one, `fabric verify --kubernetes` says why it
+  cannot check the agent's decisions.
+- **With the host sensor, injected agents record the commands they run.**
+  The chart sets `FABRIC_WIRE_EXEC=1` for injected pods when
+  `hostSensor.enabled`. An agent's commands are what ties the sensor's
+  kernel events to the agent's process. Set `injector.env.FABRIC_WIRE_EXEC:
+  "0"` to turn it off; a variable the pod sets itself always wins.
+- `fabric verify --kubernetes` no longer misses a corroborated run of an
+  agent that runs in a loop. The newest run is always younger than the
+  sensor's last heartbeat, so a run judged on an earlier look stays a
+  candidate until its evidence arrives.
+- New diagnostics `FC-120` to `FC-155` for the Kubernetes commands, each
+  with its fix.
 - New diagnostics `FC-100` to `FC-112` say what went wrong with Kubernetes
   Secrets (no kubectl, missing namespace, no permission, API unreachable, an
   incomplete, orphaned or unusable Secret, a certificate that expires soon
