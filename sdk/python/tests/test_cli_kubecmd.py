@@ -994,11 +994,6 @@ def test_plan_with_the_sensor_installed_records_the_agents_commands() -> None:
     assert not [r for r in rows if r.startswith("host evidence on node")]
 
 
-def test_plan_without_kubernetes_is_still_not_built(capsys: pytest.CaptureFixture[str]) -> None:
-    assert cli.main(["plan", "--json"]) == 2
-    assert json.loads(capsys.readouterr().out)["findings"][0]["id"] == "FC-010"
-
-
 # ---------------------------------------------------------------- up / down --kubernetes
 
 
@@ -1210,10 +1205,10 @@ def test_the_commands_row_names_the_fix_only_where_the_exec_hook_is_off() -> Non
     chains = {"decisions": "complete"}
     rows = {r.question: r for r in _kubecmd._coverage(_kubeview.Install(_install()), run,
                                                       chains, 2)}  # fmt: skip
-    row = rows["commands the agent ran"]
+    row = rows["commands the agent runs"]
     assert row.state == "not observed" and "FABRIC_WIRE_EXEC" in row.note
     assert rows["host evidence (kernel sensor)"].state == "recorded"
     off = _kubeview.Install(_install(hostSensor={"enabled": False}))
     row = {r.question: r for r in _kubecmd._coverage(off, run, chains, 2)}[
-        "commands the agent ran"]  # fmt: skip
+        "commands the agent runs"]  # fmt: skip
     assert row.state == "fix" and "injector.env.FABRIC_WIRE_EXEC=1" in row.note

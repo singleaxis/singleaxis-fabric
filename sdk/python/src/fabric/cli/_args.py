@@ -69,6 +69,20 @@ def add_show_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_plan_arguments(parser: argparse.ArgumentParser) -> None:
+    """``fabric plan`` (spec 058 §5.2)."""
+    add_kubernetes_arguments(parser, "plan")
+    parser.add_argument("--mcp-config", action="append", default=[], metavar="PATH",
+                        help="an MCP client configuration (a JSON object with mcpServers); "
+                        "repeatable")  # fmt: skip
+    parser.add_argument(
+        "agent_command",
+        nargs=argparse.REMAINDER,
+        metavar="-- CMD [ARGS...]",
+        help="the agent command (default: the project directory's language)",
+    )
+
+
 def add_doctor_arguments(parser: argparse.ArgumentParser) -> None:
     add_kubernetes_arguments(parser, "doctor")
 

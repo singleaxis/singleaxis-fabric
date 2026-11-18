@@ -733,7 +733,7 @@ def _read_run(
             Finding("FC-069", f"{run['run_id']}: {exchanges} exchange(s), decisions: complete")
         )
     else:
-        reasons = "; ".join(_read.words(r) for r in _read.run_reasons(run))
+        reasons = "; ".join(_read.explain_run(run))
         view.findings.append(
             Finding("FC-068", (f"{run['run_id']}: {run['verdict']}"
                                + (f" ({state})" if state not in EXIT_RUN_STATES else "")
@@ -859,7 +859,7 @@ def _coverage(install: _kubeview.Install, run: Mapping[str, Any],
         # The chart turns the exec hook on with the sensor (injector.env can turn it off).
         rows.append(
             row(
-                "commands the agent ran",
+                "commands the agent runs",
                 "not observed",
                 "none in this run; the host sensor's events are joined to an agent's "
                 "process through the commands it runs (FABRIC_WIRE_EXEC)",
@@ -868,13 +868,13 @@ def _coverage(install: _kubeview.Install, run: Mapping[str, Any],
     elif effects.get("verdict") in (None, "not_observed"):
         rows.append(
             row(
-                "commands the agent ran",
+                "commands the agent runs",
                 "fix",
                 "--set injector.env.FABRIC_WIRE_EXEC=1 (helm upgrade), then your rollout",
             )
         )
     else:
-        rows.append(row("commands the agent ran", _read._state(effects.get("verdict")),
+        rows.append(row("commands the agent runs", _read._state(effects.get("verdict")),
                         "exec hook"))  # fmt: skip
     corroboration = (run.get("chains") or {}).get("corroboration") or {}
     if not install.sensor.get("enabled"):
@@ -886,7 +886,8 @@ def _coverage(install: _kubeview.Install, run: Mapping[str, Any],
             )
         )
     else:
-        reasons = "; ".join(_read.words(str(r)) for r in corroboration.get("reasons") or []
+        reasons = "; ".join(_read.words(str(r), "corroboration")
+                            for r in corroboration.get("reasons") or []
                             if corroboration.get("verdict") != "complete")  # fmt: skip
         rows.append(row("host evidence (kernel sensor)",
                         _read._state(corroboration.get("verdict")),

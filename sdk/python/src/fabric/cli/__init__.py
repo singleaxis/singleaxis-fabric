@@ -9,9 +9,8 @@ and no phone-home: no command opens a network connection the operator did not as
 
 Commands (the I1 allowlist; additions need a spec change): ``plan``, ``init``, ``up``,
 ``down``, ``run``, ``verify``, ``doctor``, ``show``, ``version``, ``help``. This release
-builds ``init``, ``up``, ``down``, ``run``, ``verify``, ``doctor`` and ``show`` for the local
-profile, their ``--kubernetes`` forms (``init``, ``up``, ``down``, ``verify``, ``doctor`` and
-``plan``), ``version`` and ``help``; ``plan`` without ``--kubernetes`` says it is not built.
+builds every one of them for the local profile, and the ``--kubernetes`` forms of
+``plan``, ``init``, ``up``, ``down``, ``verify`` and ``doctor``.
 
 Exit codes: 0 success; 1 a check did not pass; 2 usage or configuration error; 3 a
 prerequisite is missing. ``fabric run`` exits with the agent's exit code."""
@@ -41,7 +40,7 @@ COMMANDS: tuple[str, ...] = (
 )  # fmt: skip
 #: The commands this release builds; the rest of COMMANDS report FC-010.
 BUILT: frozenset[str] = frozenset({
-    "init", "up", "down", "run", "verify", "doctor", "show", "version", "help",
+    "plan", "init", "up", "down", "run", "verify", "doctor", "show", "version", "help",
 })  # fmt: skip
 _SUMMARIES = {
     "plan": "predict what Fabric would record for this project",
@@ -102,7 +101,7 @@ def build_parser() -> _Parser:
         elif name == "show":
             _args.add_show_arguments(sub)
         elif name == "plan":
-            _args.add_kubernetes_arguments(sub, "plan")
+            _args.add_plan_arguments(sub)
         parser.commands[name] = sub
     return parser
 
@@ -189,7 +188,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0911 - one retur
     handlers: dict[str, Callable[[argparse.Namespace], tuple[Report, list[str]]]] = {
         "version": _version, "init": _init.run, "up": _up.run_up, "down": _up.run_down,
         "run": lambda o: _run.print_env(o, o.agent_command), "verify": _reader_command("verify"),
-        "doctor": _reader_command("doctor"), "show": _reader_command("show"),
+        "doctor": _reader_command("doctor"), "show": _reader_command("show"), "plan": _plan_command,
     }  # fmt: skip
     try:
         if command == "plan" and options.kubernetes:
@@ -204,6 +203,13 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0911 - one retur
         report = Report(command, findings=exc.findings, exit_code=exc.exit_code)
         lines = []
     return emit(report, lines, as_json=options.json, quiet=options.quiet)
+
+
+def _plan_command(options: argparse.Namespace) -> tuple[Report, list[str]]:
+    """``fabric plan``: loaded only when it runs (its registry data stays out of ``run``)."""
+    from . import _plan  # noqa: PLC0415 - loaded only for this command
+
+    return _plan.run(options)
 
 
 def _strip_dashes(command: Sequence[str]) -> list[str]:
