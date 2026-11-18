@@ -374,7 +374,16 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
       }
       stats.matched++;
       const t0 = performance.now();
-      const scope = scopeOf?.();
+      let scope: CaptureScope | undefined;
+      try {
+        scope = scopeOf?.();
+      } catch {
+        // Without the caller's scope nobody can tell whether an explicit producer owns
+        // this call, so it is not captured; counted, never the agent's problem.
+        stats.faults++;
+        stats.notCaptured++;
+        return;
+      }
       let parent: ParentContext | undefined;
       try {
         parent = parentOf();
@@ -411,10 +420,17 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
         requestId: "",
         done: false,
       };
-      requestHeaders(entry, request as { contentType?: unknown; headers?: unknown });
+      // Followed before anything else can fail: an exchange that has a slot always
+      // finishes, so its position never stays an unsettled gap.
       followed.set(request, entry);
       open.add(entry);
       collected.register(request, entry, entry);
+      try {
+        requestHeaders(entry, request as { contentType?: unknown; headers?: unknown });
+      } catch {
+        // Unreadable metadata is left at Python's defaults; the bytes are still captured.
+        stats.faults++;
+      }
     } catch {
       stats.faults++;
     }
@@ -459,8 +475,13 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
       entry.flags |= FLAG_HEADERS;
       entry.status = status > 0xffff ? 0 : status;
       entry.headersNs = elapsed(entry);
-      responseHeaders(entry, (response as { headers?: unknown }).headers);
       table.responseStarted(entry.handle);
+      try {
+        responseHeaders(entry, (response as { headers?: unknown }).headers);
+      } catch {
+        // Unreadable metadata is left at Python's defaults; the response is still kept.
+        stats.faults++;
+      }
     } catch {
       stats.faults++;
     }
@@ -583,10 +604,14 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
     entry.done = true;
     open.delete(entry);
     collected.unregister(entry);
-    if ((entry.flags & FLAG_REQUEST_SENT) === 0) table.requestIncomplete(entry.handle);
-    const meta = table.meta(entry.handle);
-    if (meta !== undefined) writeMeta(meta, entry, elapsed(entry));
-    table.finish(entry.handle, state);
+    try {
+      if ((entry.flags & FLAG_REQUEST_SENT) === 0) table.requestIncomplete(entry.handle);
+      const meta = table.meta(entry.handle);
+      if (meta !== undefined) writeMeta(meta, entry, elapsed(entry));
+    } finally {
+      // Finish-once is decided here (`done`), so the slot is always handed back.
+      table.finish(entry.handle, state);
+    }
   };
 
   const subscriptions: [string, (message: unknown) => void][] = [

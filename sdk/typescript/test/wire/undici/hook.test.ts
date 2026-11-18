@@ -283,6 +283,54 @@ describe("subscriber faults never reach the application", () => {
     ]);
   });
 
+  it("unreadable header metadata never leaks a slot: the exchange is still kept and finished", () => {
+    const cap = track(capture(server.port, { publishesBodies: true }));
+    const throwingArray = (): unknown[] =>
+      new Proxy(["content-encoding", "gzip"], {
+        get: (target, key) => {
+          if (key === "length") return 2;
+          if (key === "0" || key === "1") throw new Error("canary header get");
+          return Reflect.get(target, key) as unknown;
+        },
+      });
+    const request = { ...fakeRequest(server.port), headers: throwingArray() };
+    publish.create(request);
+    publish.sent(request, Buffer.from("q"));
+    publish.bodySent(request);
+    publish.headers(request, 200, throwingArray());
+    publish.received(request, Buffer.from("a"));
+    publish.trailers(request);
+    expect(cap.hook.open).toBe(0);
+    expect(cap.hook.stats.faults).toBe(2);
+    const [job, ...rest] = cap.jobs();
+    expect(rest).toEqual([]);
+    expect(job!.requestBytes.toString()).toBe("q");
+    expect([job!.response.state, job!.responseBytes.toString()]).toEqual(["exact", "a"]);
+    expect(job!.responseState).toBe("complete");
+    expect(job!.undici).toMatchObject({
+      statusCode: 200,
+      requestContentEncoding: "identity",
+      responseMediaType: "application/octet-stream",
+    });
+  });
+
+  it("a scope that throws is counted as not captured, and nothing is allocated", () => {
+    const cap = track(
+      capture(server.port, {
+        publishesBodies: true,
+        scope: () => {
+          throw new Error("injected scope failure");
+        },
+      }),
+    );
+    const request = fakeRequest(server.port);
+    publish.create(request);
+    publish.trailers(request);
+    expect(cap.hook.stats).toMatchObject({ matched: 1, notCaptured: 1, faults: 1 });
+    expect(cap.runtime.nextSequence).toBe(0n);
+    expect(cap.jobs()).toEqual([]);
+  });
+
   it.skipIf(!PUBLISHES_BODIES)(
     "a runtime that throws everywhere leaves every fetch result unchanged",
     async () => {
