@@ -94,11 +94,13 @@ function virtualMaps(base: NativeAddon): NativeAddon {
   };
 }
 
+// Compiling the native module can outlast vitest's 10 s hook default on a loaded runner,
+// as the cross-language file's beforeAll allows for.
 beforeAll(() => {
   lib = native();
   real = lib.addon;
   addon = virtualMaps(real);
-});
+}, 120_000);
 afterAll(() => lib?.build.cleanup());
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
