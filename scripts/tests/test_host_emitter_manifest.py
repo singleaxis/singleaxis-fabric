@@ -179,7 +179,11 @@ def test_rbac_is_read_only_on_pods() -> None:
     assert len(roles) == 1
     assert roles[0]["rules"] == [
         {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list", "watch"]},
-        {"apiGroups": ["node.k8s.io"], "resources": ["runtimeclasses"], "verbs": ["get"]},
+        {
+            "apiGroups": ["node.k8s.io"],
+            "resources": ["runtimeclasses"],
+            "verbs": ["get"],
+        },
     ]
     (binding,) = [d for d in docs if d["kind"] in ("RoleBinding", "ClusterRoleBinding")]
     assert binding["roleRef"] == {

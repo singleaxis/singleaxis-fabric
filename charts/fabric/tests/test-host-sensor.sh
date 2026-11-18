@@ -48,6 +48,17 @@ reject() {
   fi
   [[ "${output}" == *"${expected}"* ]] || { printf '%s\n' "${output}" >&2; fail "missing: ${expected}"; }
 }
+# reject_re PATTERN ARGS...: as reject, for a schema error Helm words by version
+# (v3.15: "hostSensor.nodes: array items[0,1] must be unique"; later: "at
+# '/hostSensor/nodes': items at 0 and 1 are equal").
+reject_re() {
+  local pattern="$1" output
+  shift
+  if output="$(render "$@" 2>&1)"; then
+    fail "rendered successfully (expected: ${pattern})"
+  fi
+  [[ "${output}" =~ ${pattern} ]] || { printf '%s\n' "${output}" >&2; fail "missing: ${pattern}"; }
+}
 
 production=(
   --set tenant.id=acme-prod
@@ -194,7 +205,7 @@ reject "needs the namespaces of your agents" --set preset=production-host-sensor
   --set 'hostSensor.nodes={node-a}'
 reject "hostSensor.enabled=true needs a production Node" --set preset=local --set hostSensor.enabled=true \
   --set 'hostSensor.nodes={node-a}'
-reject "items at 0 and 1 are equal" --set preset=production-host-sensor "${production[@]}" \
+reject_re 'hostSensor[./]nodes.*(must be unique|are equal)' --set preset=production-host-sensor "${production[@]}" \
   --set 'agentNamespaces={agents}' --set 'hostSensor.nodes={node-a,node-a}'
 reject "hostSensor" --set preset=production-host-sensor "${production[@]}" --set 'agentNamespaces={agents}' \
   --set 'hostSensor.nodes={Not_A_Node}'
