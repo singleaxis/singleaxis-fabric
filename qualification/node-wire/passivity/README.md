@@ -43,7 +43,7 @@ Steps (child script, then what fails the gate):
   unpaced stress case (about 100x an agent's call rate) is reported and not
   gated. The 60 s sustained case is unit 055-t13's.
 - **No forbidden work** (`forbidden.mjs`): trip-wires on synchronous `fs`,
-  `net`/`tls`/`http` sends, `crypto` hashing, `JSON.parse`/`stringify`,
+  `net`/`tls`/`http` sends and global `fetch`, `crypto` hashing, `JSON.parse`/`stringify`,
   `Atomics.wait`, `console` and stdout/stderr writes, armed only while a hook
   callback runs, never fire over every hook path; a canary between the markers
   must trip them.

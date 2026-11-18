@@ -38,6 +38,9 @@ function wire(target, name, label) {
 for (const name of Object.keys(fs)) if (name.endsWith("Sync")) wire(fs, name, `fs.${name}`);
 for (const name of ["write", "connect", "end"])
     wire(net.Socket.prototype, name, `net.Socket.${name}`);
+// Global fetch connects and writes on a later tick, so a hook that called it would trip
+// no socket wire while armed: it gets its own.
+wire(globalThis, "fetch", "fetch");
 wire(net, "connect", "net.connect");
 wire(net, "createConnection", "net.createConnection");
 wire(tls, "connect", "tls.connect");
@@ -145,7 +148,10 @@ const phase1 = [...trips];
 // Phase 2: the self-test. A canary between the markers must trip the JSON wire.
 trips.clear();
 const canary = (message) => {
-    if (message?.request?.path === "/canary") JSON.stringify({ canary: true });
+    if (message?.request?.path !== "/canary") return;
+    JSON.stringify({ canary: true });
+    // A send started from a hook: rejected later (nothing listens), caught.
+    swallow(fetch("http://127.0.0.1:9/", { method: "POST", body: "" }));
 };
 // Re-bracket with the canary inside: begin, canary, end.
 const inner = markers();

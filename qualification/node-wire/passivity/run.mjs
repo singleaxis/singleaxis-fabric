@@ -225,7 +225,10 @@ function forbidden() {
             trips: result.trips,
             self_test_trips: result.self_test_trips,
             exchanges_matched: result.hook.matched,
-            passed: result.trips.length === 0 && result.self_test_trips.includes("JSON.stringify"),
+            passed:
+                result.trips.length === 0 &&
+                result.self_test_trips.includes("JSON.stringify") &&
+                result.self_test_trips.includes("fetch"),
         },
     };
 }
