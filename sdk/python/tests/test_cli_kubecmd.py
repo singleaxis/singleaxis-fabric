@@ -716,6 +716,14 @@ def test_verify_stops_waiting_at_its_bound_and_reports_what_it_read(
         sleep=clock.sleep, clock=clock,
     )  # fmt: skip
     assert clock.now == pytest.approx(12.0)
+    # --wait 30 (the local default) is kept as given too.
+    clock = _Clock()
+    _kubecmd.run_verify(
+        _options("verify", "--kubernetes", "--spans", str(tmp_path), "--wait", "30"), {},
+        cluster=_c(_healthy()), probe=_never_probe, canary=_no_canary,
+        sleep=clock.sleep, clock=clock,
+    )  # fmt: skip
+    assert clock.now == pytest.approx(30.0)
     calls = _reads(monkeypatch, [("FC-073", None)])
     clock = _Clock()
     _kubecmd.run_verify(
@@ -968,6 +976,17 @@ def test_up_runs_one_helm_upgrade_install_of_this_release(tmp_path: Path) -> Non
     assert _ids(report.findings) == ["FC-124"]
     assert any("kubectl label namespace agents fabric.singleaxis.ai/injection=enabled" in line
                for line in lines)  # fmt: skip
+
+
+def test_up_wait_is_helms_timeout_and_an_explicit_value_is_kept(tmp_path: Path) -> None:
+    """Without ``--wait`` Helm waits 300 s; any value given is used as given (``--wait
+    60``, the local default, was once replaced by 300)."""
+    for argv, timeout in (((), "300s"), (("--wait", "60"), "60s"), (("--wait", "45"), "45s")):
+        helm = FakeHelm()
+        _kubecmd.run_up(_options("up", "--kubernetes", *argv), {}, tmp_path,
+                        runner=helm, which=_which)  # fmt: skip
+        command = helm.calls[0]
+        assert command[command.index("--timeout") + 1] == timeout, argv
 
 
 def test_up_takes_the_operators_values_last_and_never_restarts_a_workload(tmp_path: Path) -> None:

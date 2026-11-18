@@ -360,7 +360,7 @@ def run_up(
     report = Report("up", findings=findings)
     tenant = _tenant(options, environ, cwd)
     chart, version = _chart(options, environ, findings)
-    wait_s = options.wait if options.wait != 60.0 else DEFAULT_HELM_WAIT_S  # noqa: PLR2004
+    wait_s = DEFAULT_HELM_WAIT_S if options.wait is None else options.wait
     if options.render:
         return _render(options, environ, tenant, chart, version, wait_s, report, which, cluster)
     helm = _helm(environ, which)
@@ -1001,13 +1001,11 @@ def run_verify(
     checks and the readback are repeated (bounded by ``--wait``) until the run is judged
     complete and, with the sensor, corroborated, with nothing transient left; the last
     attempt is reported. An unreadable export is reported at once."""
-    from ._args import DEFAULT_WAIT_S  # noqa: PLC0415
-
     environ = os.environ if environ is None else environ
     cluster = _cluster(environ, cluster)
     install = _kubeview.find_install(cluster, options.namespace)
     reading = bool(options.spans) and not options.canary_only
-    wait = KUBERNETES_WAIT_S if options.wait == DEFAULT_WAIT_S else float(options.wait)
+    wait = KUBERNETES_WAIT_S if options.wait is None else float(options.wait)
     deadline = clock() + wait
     sensor = bool(install.sensor.get("enabled"))
     judged: list[str] = []  # the runs earlier looks judged, newest first

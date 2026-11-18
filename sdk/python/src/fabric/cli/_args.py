@@ -46,7 +46,7 @@ def add_verify_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--wait",
         type=_seconds,
-        default=DEFAULT_WAIT_S,
+        default=None,  # DEFAULT_WAIT_S, or KUBERNETES_WAIT_S with --kubernetes --spans
         metavar="SECONDS",
         help="how long to wait for records to reach the destination (default 30; with "
         "--kubernetes and --spans, 180: for a run of the pods your rollout restarted)",

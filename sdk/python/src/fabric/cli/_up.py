@@ -68,9 +68,10 @@ def add_up_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--wait",
         type=_seconds,
-        default=DEFAULT_WAIT_S,
+        default=None,  # DEFAULT_WAIT_S, or the Helm wait with --kubernetes
         metavar="SECONDS",
-        help="how long to wait for the Node to answer (default 60)",
+        help="how long to wait for the Node to answer (default 60; with --kubernetes, "
+        "how long Helm waits for the release, default 300)",
     )
     # Accepted so the answer is FC-011 with the manual route, not an argparse error.
     parser.add_argument("--verify-images", action="store_true", help=argparse.SUPPRESS)
@@ -440,7 +441,8 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
     state_path = project.state_dir / "state" / STATE_FILE
     previous = _read_state(state_path)
     cgroup_made = _record_agent_cgroup(state_path, previous, sensor)
-    _start(docker, project, compose_file, layout, options.wait, probe, sleep, findings)
+    wait = DEFAULT_WAIT_S if options.wait is None else options.wait
+    _start(docker, project, compose_file, layout, wait, probe, sleep, findings)
     if sensor.start:
         _confirm_sensor(sensor, docker, project, compose_file, sleep)
         if not sensor.start:
