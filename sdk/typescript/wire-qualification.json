@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.wire-qualification/v1",
-  "comment": "Spec 055 \u00a73.1 and \u00a79.4. Which Node.js builds may run a TypeScript wire capture point. `audits` is the output of scripts/typescript/audit-undici-channels.mjs for one local fetch POST on each exact build (CI re-runs it on Node 22.23.5, 24.0.0, 24.4.0 and 24.22.3 and fails when a row differs). A tuple with claim `audited` only says that build publishes both body-chunk channels: capture stays unsupported until its own passivity report makes it `active` (unit 055-t6) and the gates pass (055-t17, 055-t22). Node 22.x and Node 24.0.0 to 24.3.0 publish neither body channel; 24.4.0 (undici 7.11.0) is the lowest audited Node 24 build that publishes both.",
+  "comment": "Spec 055 \u00a73.1 and \u00a79.4. Which Node.js builds may run a TypeScript wire capture point. `audits` is the output of scripts/typescript/audit-undici-channels.mjs for one local fetch POST on each exact build (CI re-runs it on Node 22.23.5, 24.0.0, 24.4.0 and 24.22.3 and fails when a row differs). A tuple with claim `audited` only says that build publishes both body-chunk channels. A tuple is `active` once its ts-wire-passivity report (qualification/node-wire/results/passivity-<node>-<platform>.json, from the CI job of that exact build) passed every gate; report_sha256 is that file's SHA-256 (unit 055-t6). Capture is claimed only when the gates pass (055-t17, 055-t22). Node 22.x and Node 24.0.0 to 24.3.0 publish neither body channel; 24.4.0 (undici 7.11.0) is the lowest audited Node 24 build that publishes both.",
   "gates": {
     "TS-1U": "not_passed",
     "TS-1D": "not_passed",
@@ -388,7 +388,8 @@
       "undici_origin": "bundled",
       "platform": "linux-arm64-glibc",
       "boundary": "pre_decompression",
-      "claim": "audited"
+      "claim": "active",
+      "report_sha256": "sha256:4b7003701ecfe56b87c9f7532f8027256d8e2401eff0d1231739dea3f45804a0"
     },
     {
       "point": "wire.ts.undici",
@@ -406,7 +407,8 @@
       "undici_origin": "bundled",
       "platform": "linux-x64-glibc",
       "boundary": "pre_decompression",
-      "claim": "audited"
+      "claim": "active",
+      "report_sha256": "sha256:e06a59e8f717944b9e8f0e34b86ff5e6d8769177a179f7633725f472a14f3c05"
     },
     {
       "point": "wire.ts.undici",
@@ -433,7 +435,8 @@
       "undici_origin": "bundled",
       "platform": "linux-arm64-glibc",
       "boundary": "pre_decompression",
-      "claim": "audited"
+      "claim": "active",
+      "report_sha256": "sha256:011d4a36e2735b2e907fd711061310b078d4150f914cacae5b2ff6cd14c5a376"
     },
     {
       "point": "wire.ts.undici",
@@ -451,7 +454,8 @@
       "undici_origin": "bundled",
       "platform": "linux-x64-glibc",
       "boundary": "pre_decompression",
-      "claim": "audited"
+      "claim": "active",
+      "report_sha256": "sha256:a9f07272c534403fe036509f372591024c5099d88b9fb7359a67e40aa5e5feea"
     },
     {
       "point": "wire.ts.undici",

@@ -1,0 +1,1619 @@
+{
+  "schema": "fabric.node-wire-passivity-report/v1",
+  "spec": "055 §9.2 ts-wire-passivity",
+  "quick": false,
+  "tuple": {
+    "point": "wire.ts.undici",
+    "node": "24.22.3",
+    "undici": "7.30.2",
+    "undici_origin": "bundled",
+    "platform": "linux-x64-glibc"
+  },
+  "source": {
+    "git_sha": "254dcc88ec3ddab5e583150cc253de7972517288",
+    "build": "sdk/typescript source bundled by qualification/node-wire/passivity/lib/build.mjs"
+  },
+  "voided_runs": 0,
+  "gates": {
+    "calibration": true,
+    "hook_cost": true,
+    "gate_self_test": true,
+    "event_loop": true,
+    "forbidden_work": true,
+    "behaviour_identity": true,
+    "memory_bound": true
+  },
+  "result": "passed",
+  "calibration": {
+    "reference_ns": 930000,
+    "before_ns": 1583021,
+    "after_ns": 1599874,
+    "scale": 1.702,
+    "void": false
+  },
+  "hook_cost": {
+    "trials": 30,
+    "budgets_ns": {
+      "matched": 50000,
+      "chunk": 2000,
+      "unmatched": 5000
+    },
+    "scale": 1.702,
+    "enabled": {
+      "fixtures.matched": {
+        "added_ns": 15111.3,
+        "budget_ns": 85108.7,
+        "passed": true
+      },
+      "fixtures.chunk": {
+        "added_ns": 708,
+        "budget_ns": 3404.3,
+        "passed": true
+      },
+      "fixtures.unmatched": {
+        "added_ns": 378.2,
+        "budget_ns": 8510.9,
+        "passed": true
+      },
+      "server.matched": {
+        "added_ns": 62850.7,
+        "budget_ns": 85108.7,
+        "passed": true
+      },
+      "server.chunk": {
+        "added_ns": 803,
+        "budget_ns": 3404.3,
+        "passed": true
+      },
+      "server.unmatched": {
+        "added_ns": 5044.3,
+        "budget_ns": 8510.9,
+        "passed": true
+      }
+    },
+    "disabled": {
+      "fixtures.matched": {
+        "added_ns": 440.5,
+        "budget_ns": 85108.7,
+        "passed": true
+      },
+      "fixtures.chunk": {
+        "added_ns": 12.7,
+        "budget_ns": 3404.3,
+        "passed": true
+      },
+      "fixtures.unmatched": {
+        "added_ns": 495.7,
+        "budget_ns": 8510.9,
+        "passed": true
+      },
+      "server.matched": {
+        "added_ns": 6445.5,
+        "budget_ns": 85108.7,
+        "passed": true
+      },
+      "server.chunk": {
+        "added_ns": 7,
+        "budget_ns": 3404.3,
+        "passed": true
+      },
+      "server.unmatched": {
+        "added_ns": 4900.5,
+        "budget_ns": 8510.9,
+        "passed": true
+      }
+    },
+    "void_trials_with_refused_chunks": 0,
+    "mean_server_chunk_bytes": 1024,
+    "raw_medians": {
+      "baseline": [
+        {
+          "fixtures": {
+            "matched": 939.07,
+            "chunk": 165.346,
+            "unmatched": 936.825
+          },
+          "server": {
+            "matched": 1626.999999984946,
+            "unmatched": 1400.5000000452128,
+            "chunk": 127.00000002041634
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1003.88,
+            "chunk": 178.202,
+            "unmatched": 936.73
+          },
+          "server": {
+            "matched": 1506.500000019173,
+            "unmatched": 1440.0000000875934,
+            "chunk": 125.99999996609768
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 904.4,
+            "chunk": 180.828,
+            "unmatched": 893.47
+          },
+          "server": {
+            "matched": 1523.0000000201471,
+            "unmatched": 1350.5000000009204,
+            "chunk": 120.99999997872146
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 896.43,
+            "chunk": 171.92,
+            "unmatched": 889.945
+          },
+          "server": {
+            "matched": 1490.5000000169366,
+            "unmatched": 1454.5000000225627,
+            "chunk": 121.9999999761967
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1159.72,
+            "chunk": 165.25,
+            "unmatched": 916.3
+          },
+          "server": {
+            "matched": 1503.9999999970632,
+            "unmatched": 1391.5000000110922,
+            "chunk": 126.0000000229411
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1227.42,
+            "chunk": 174.648,
+            "unmatched": 879.365
+          },
+          "server": {
+            "matched": 1480.4999999995516,
+            "unmatched": 1455.999999976143,
+            "chunk": 123.00000003051537
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 924.77,
+            "chunk": 168.176,
+            "unmatched": 906.63
+          },
+          "server": {
+            "matched": 1503.9999999828524,
+            "unmatched": 1369.9999999943202,
+            "chunk": 124.00000002799061
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 895.81,
+            "chunk": 159.623,
+            "unmatched": 873.06
+          },
+          "server": {
+            "matched": 1472.000000021012,
+            "unmatched": 1299.4999999875745,
+            "chunk": 125.00000002546585
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 930.81,
+            "chunk": 187.283,
+            "unmatched": 887.11
+          },
+          "server": {
+            "matched": 1369.9999999658985,
+            "unmatched": 1430.5000000121026,
+            "chunk": 123.00000003051537
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 982.97,
+            "chunk": 186.989,
+            "unmatched": 889.44
+          },
+          "server": {
+            "matched": 1673.9999999799693,
+            "unmatched": 1470.0000000118507,
+            "chunk": 128.00000001789158
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 908.89,
+            "chunk": 186.327,
+            "unmatched": 875.23
+          },
+          "server": {
+            "matched": 1514.0000000144482,
+            "unmatched": 1484.49999994682,
+            "chunk": 127.00000002041634
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 955.79,
+            "chunk": 172.468,
+            "unmatched": 886.195
+          },
+          "server": {
+            "matched": 1507.9999999869642,
+            "unmatched": 1354.999999989559,
+            "chunk": 122.00000003304012
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 885.61,
+            "chunk": 175.852,
+            "unmatched": 888.705
+          },
+          "server": {
+            "matched": 1456.5000000033024,
+            "unmatched": 1370.9999999491629,
+            "chunk": 127.00000002041634
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 878.67,
+            "chunk": 180.71,
+            "unmatched": 907.42
+          },
+          "server": {
+            "matched": 1678.4999999970296,
+            "unmatched": 1635.5000000487507,
+            "chunk": 127.99999996104816
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 946.66,
+            "chunk": 203.92,
+            "unmatched": 919.825
+          },
+          "server": {
+            "matched": 1577.9999999807615,
+            "unmatched": 1452.4999999849797,
+            "chunk": 127.00000002041634
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 921.79,
+            "chunk": 183.045,
+            "unmatched": 916.775
+          },
+          "server": {
+            "matched": 1519.500000000562,
+            "unmatched": 1517.4999999771899,
+            "chunk": 127.00000002041634
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 964.18,
+            "chunk": 169.585,
+            "unmatched": 904.23
+          },
+          "server": {
+            "matched": 1545.000000007235,
+            "unmatched": 1380.4999999535994,
+            "chunk": 127.00000002041634
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 889.01,
+            "chunk": 165.785,
+            "unmatched": 869.32
+          },
+          "server": {
+            "matched": 1663.9999999981114,
+            "unmatched": 1393.0000000357268,
+            "chunk": 116.99999998882049
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 920.16,
+            "chunk": 163.311,
+            "unmatched": 894.605
+          },
+          "server": {
+            "matched": 1440.9999999713818,
+            "unmatched": 1380.4999999251777,
+            "chunk": 126.0000000229411
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 870.25,
+            "chunk": 172.487,
+            "unmatched": 883.275
+          },
+          "server": {
+            "matched": 1546.499999989237,
+            "unmatched": 1506.499999919697,
+            "chunk": 128.9999999585234
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 894.19,
+            "chunk": 159.282,
+            "unmatched": 887.07
+          },
+          "server": {
+            "matched": 1583.499999995297,
+            "unmatched": 1608.9999999735483,
+            "chunk": 121.9999999761967
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 971.12,
+            "chunk": 174.106,
+            "unmatched": 862.65
+          },
+          "server": {
+            "matched": 1606.9999999785978,
+            "unmatched": 1523.0000000201471,
+            "chunk": 124.00000002799061
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 935.22,
+            "chunk": 164.282,
+            "unmatched": 890.025
+          },
+          "server": {
+            "matched": 1471.000000009326,
+            "unmatched": 1425.0000000401997,
+            "chunk": 124.00000002799061
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 883.96,
+            "chunk": 220.205,
+            "unmatched": 875.145
+          },
+          "server": {
+            "matched": 1570.999999984224,
+            "unmatched": 1377.0000000477012,
+            "chunk": 123.99999997114719
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 946.24,
+            "chunk": 170.925,
+            "unmatched": 923.31
+          },
+          "server": {
+            "matched": 1465.4999999805796,
+            "unmatched": 1292.9999999613528,
+            "chunk": 123.00000003051537
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 913.4,
+            "chunk": 169.874,
+            "unmatched": 890.95
+          },
+          "server": {
+            "matched": 1441.4999999843303,
+            "unmatched": 1338.5000000454284,
+            "chunk": 122.99999997367195
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 974.36,
+            "chunk": 185.04,
+            "unmatched": 988.95
+          },
+          "server": {
+            "matched": 1385.9999999823458,
+            "unmatched": 1368.4999999696856,
+            "chunk": 126.0000000229411
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 853.5,
+            "chunk": 163.481,
+            "unmatched": 868.09
+          },
+          "server": {
+            "matched": 1435.5000000279006,
+            "unmatched": 1360.9999999744105,
+            "chunk": 123.00000003051537
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 906.4,
+            "chunk": 169.627,
+            "unmatched": 893.185
+          },
+          "server": {
+            "matched": 1578.5000000079208,
+            "unmatched": 1615.0000000436648,
+            "chunk": 124.99999996862243
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 901.83,
+            "chunk": 169.463,
+            "unmatched": 892.45
+          },
+          "server": {
+            "matched": 1547.500000015134,
+            "unmatched": 1323.9999999825613,
+            "chunk": 124.99999996862243
+          }
+        }
+      ],
+      "disabled": [
+        {
+          "fixtures": {
+            "matched": 1345.76,
+            "chunk": 172.826,
+            "unmatched": 1270.83
+          },
+          "server": {
+            "matched": 7929.999999944926,
+            "unmatched": 5961.500000012165,
+            "chunk": 130.00000001284207
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1643.91,
+            "chunk": 184.154,
+            "unmatched": 1276.385
+          },
+          "server": {
+            "matched": 7823.999999999387,
+            "unmatched": 6282.999999967842,
+            "chunk": 129.00000001536682
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1589.31,
+            "chunk": 176.042,
+            "unmatched": 1207.12
+          },
+          "server": {
+            "matched": 7984.499999992067,
+            "unmatched": 6489.500000014914,
+            "chunk": 131.0000000103173
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1431.44,
+            "chunk": 185.416,
+            "unmatched": 1655.185
+          },
+          "server": {
+            "matched": 7916.000000008694,
+            "unmatched": 6330.500000046868,
+            "chunk": 132.00000000779255
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1335.36,
+            "chunk": 172.745,
+            "unmatched": 1370.875
+          },
+          "server": {
+            "matched": 8555.999999970254,
+            "unmatched": 6591.000000014446,
+            "chunk": 128.00000001789158
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1402.64,
+            "chunk": 187.963,
+            "unmatched": 1426.33
+          },
+          "server": {
+            "matched": 7841.999999996574,
+            "unmatched": 6335.999999947717,
+            "chunk": 133.0000000052678
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1348.86,
+            "chunk": 180.414,
+            "unmatched": 1614.55
+          },
+          "server": {
+            "matched": 7998.499999999353,
+            "unmatched": 6574.999999997999,
+            "chunk": 132.00000000779255
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1360.08,
+            "chunk": 218.734,
+            "unmatched": 1409.96
+          },
+          "server": {
+            "matched": 8274.000000014326,
+            "unmatched": 6435.500000037564,
+            "chunk": 131.99999995094913
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1348.51,
+            "chunk": 177.526,
+            "unmatched": 1247.745
+          },
+          "server": {
+            "matched": 7994.000000010715,
+            "unmatched": 6445.500000040738,
+            "chunk": 130.00000001284207
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1373.8,
+            "chunk": 200.156,
+            "unmatched": 1217.35
+          },
+          "server": {
+            "matched": 7869.000000013671,
+            "unmatched": 6269.500000030348,
+            "chunk": 130.9999999818956
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1372.69,
+            "chunk": 206.601,
+            "unmatched": 1434.75
+          },
+          "server": {
+            "matched": 8034.499999993727,
+            "unmatched": 6415.500000059637,
+            "chunk": 136.99999999516876
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1368.94,
+            "chunk": 182.399,
+            "unmatched": 1251.425
+          },
+          "server": {
+            "matched": 7801.499999999351,
+            "unmatched": 5988.000000002103,
+            "chunk": 129.00000001536682
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1330.5,
+            "chunk": 191.794,
+            "unmatched": 1237.41
+          },
+          "server": {
+            "matched": 7887.500000009595,
+            "unmatched": 6470.499999977619,
+            "chunk": 133.0000000052678
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1357.81,
+            "chunk": 182.875,
+            "unmatched": 1319.815
+          },
+          "server": {
+            "matched": 7807.500000012624,
+            "unmatched": 6470.500000006041,
+            "chunk": 134.00000000274304
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1382.77,
+            "chunk": 201.203,
+            "unmatched": 1207.945
+          },
+          "server": {
+            "matched": 8036.000000032573,
+            "unmatched": 6108.50000003893,
+            "chunk": 132.00000000779255
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1434.76,
+            "chunk": 181.844,
+            "unmatched": 1538.865
+          },
+          "server": {
+            "matched": 7631.99999997255,
+            "unmatched": 6015.999999988253,
+            "chunk": 135.00000000021828
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1386.89,
+            "chunk": 197.175,
+            "unmatched": 1351.16
+          },
+          "server": {
+            "matched": 7632.50000001392,
+            "unmatched": 6155.999999890582,
+            "chunk": 134.00000000274304
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1349.53,
+            "chunk": 185.412,
+            "unmatched": 1460.195
+          },
+          "server": {
+            "matched": 8052.499999976703,
+            "unmatched": 6365.999999957239,
+            "chunk": 126.0000000229411
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1352.67,
+            "chunk": 180.811,
+            "unmatched": 1551.025
+          },
+          "server": {
+            "matched": 7943.999999938001,
+            "unmatched": 6379.0000000096825,
+            "chunk": 133.0000000052678
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1417.07,
+            "chunk": 213.908,
+            "unmatched": 1269.52
+          },
+          "server": {
+            "matched": 8035.000000006676,
+            "unmatched": 6427.499999972497,
+            "chunk": 135.99999999769352
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1347.91,
+            "chunk": 181.249,
+            "unmatched": 1211.78
+          },
+          "server": {
+            "matched": 8006.500000007577,
+            "unmatched": 6155.500000062375,
+            "chunk": 132.00000000779255
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1347.46,
+            "chunk": 174.86,
+            "unmatched": 1550.885
+          },
+          "server": {
+            "matched": 7551.000000020736,
+            "unmatched": 6166.999999976497,
+            "chunk": 133.0000000052678
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1375.01,
+            "chunk": 179.89,
+            "unmatched": 1268.005
+          },
+          "server": {
+            "matched": 8290.5000000153,
+            "unmatched": 6439.499999885356,
+            "chunk": 128.00000001789158
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1325.12,
+            "chunk": 227.127,
+            "unmatched": 1553.595
+          },
+          "server": {
+            "matched": 8003.999999971256,
+            "unmatched": 6479.5000000401615,
+            "chunk": 130.00000001284207
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1381.4,
+            "chunk": 179.128,
+            "unmatched": 1524.07
+          },
+          "server": {
+            "matched": 8322.500000019772,
+            "unmatched": 6410.499999930153,
+            "chunk": 138.99999999011925
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1515.06,
+            "chunk": 188.108,
+            "unmatched": 1528.205
+          },
+          "server": {
+            "matched": 7961.4999999790825,
+            "unmatched": 6342.499999959728,
+            "chunk": 135.00000000021828
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1383.24,
+            "chunk": 192.3,
+            "unmatched": 1228.355
+          },
+          "server": {
+            "matched": 8043.000000014899,
+            "unmatched": 6102.000000055341,
+            "chunk": 129.99999995599865
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1419.6,
+            "chunk": 187.453,
+            "unmatched": 1567.4
+          },
+          "server": {
+            "matched": 7799.0000000056625,
+            "unmatched": 6228.499999977544,
+            "chunk": 132.00000000779255
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1354.73,
+            "chunk": 205.267,
+            "unmatched": 1508.18
+          },
+          "server": {
+            "matched": 8315.000000010286,
+            "unmatched": 6256.500000006326,
+            "chunk": 130.00000001284207
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1314.93,
+            "chunk": 176.791,
+            "unmatched": 1622.255
+          },
+          "server": {
+            "matched": 8070.999999986839,
+            "unmatched": 6536.500000009937,
+            "chunk": 128.9999999585234
+          }
+        }
+      ],
+      "enabled": [
+        {
+          "fixtures": {
+            "matched": 16359.66,
+            "chunk": 1054.921,
+            "unmatched": 1264.395
+          },
+          "server": {
+            "matched": 62137.00000000699,
+            "unmatched": 6459.000000035076,
+            "chunk": 967.0000000596701
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16569.71,
+            "chunk": 806.33,
+            "unmatched": 1189.56
+          },
+          "server": {
+            "matched": 62303.00000004263,
+            "unmatched": 6551.500000028909,
+            "chunk": 939.0000000166765
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16036.63,
+            "chunk": 951.861,
+            "unmatched": 1226.185
+          },
+          "server": {
+            "matched": 65907.49999995183,
+            "unmatched": 6681.499999956486,
+            "chunk": 956.9999999712309
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15154.62,
+            "chunk": 867.657,
+            "unmatched": 1657.795
+          },
+          "server": {
+            "matched": 63429.99999998255,
+            "unmatched": 6479.999999982056,
+            "chunk": 939.0000000166765
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 14994.5,
+            "chunk": 858.016,
+            "unmatched": 1287.23
+          },
+          "server": {
+            "matched": 66057.0000000007,
+            "unmatched": 6686.00000003039,
+            "chunk": 950.9999999863794
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16444.09,
+            "chunk": 898.527,
+            "unmatched": 1244.66
+          },
+          "server": {
+            "matched": 64398.50000001002,
+            "unmatched": 6205.500000021402,
+            "chunk": 939.9999999573083
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 14365.77,
+            "chunk": 1050.27,
+            "unmatched": 1392.285
+          },
+          "server": {
+            "matched": 65901.49999996697,
+            "unmatched": 7011.500000061233,
+            "chunk": 934.0000000293003
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15520.34,
+            "chunk": 802.57,
+            "unmatched": 1244.615
+          },
+          "server": {
+            "matched": 62843.99999995571,
+            "unmatched": 6668.50000001773,
+            "chunk": 940.0000000141517
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15554.78,
+            "chunk": 825.242,
+            "unmatched": 1270.315
+          },
+          "server": {
+            "matched": 66107.000000045,
+            "unmatched": 7057.000000031621,
+            "chunk": 950.9999999863794
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15050.43,
+            "chunk": 942.521,
+            "unmatched": 1345.155
+          },
+          "server": {
+            "matched": 63302.00000004993,
+            "unmatched": 6498.999999962507,
+            "chunk": 915.5000000191649
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 17615.96,
+            "chunk": 787.813,
+            "unmatched": 1238.94
+          },
+          "server": {
+            "matched": 64297.49999992396,
+            "unmatched": 6441.500000022415,
+            "chunk": 909.9999999762076
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16452.52,
+            "chunk": 901.605,
+            "unmatched": 1251.075
+          },
+          "server": {
+            "matched": 62307.00000006095,
+            "unmatched": 6342.999999958465,
+            "chunk": 934.0000000293003
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 14913.49,
+            "chunk": 927.96,
+            "unmatched": 1324.075
+          },
+          "server": {
+            "matched": 64966.49999996862,
+            "unmatched": 7050.999999989926,
+            "chunk": 926.9999999332867
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16641.93,
+            "chunk": 918.554,
+            "unmatched": 1253.29
+          },
+          "server": {
+            "matched": 64617.499999968684,
+            "unmatched": 6543.500000105951,
+            "chunk": 918.9999999534848
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15487.11,
+            "chunk": 895.539,
+            "unmatched": 1477.225
+          },
+          "server": {
+            "matched": 66748.00000001825,
+            "unmatched": 6104.499999963764,
+            "chunk": 924.9999999383363
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16707.08,
+            "chunk": 835.899,
+            "unmatched": 1315.44
+          },
+          "server": {
+            "matched": 64788.000000021384,
+            "unmatched": 6655.499999993708,
+            "chunk": 930.0000000393993
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 17129.24,
+            "chunk": 911.272,
+            "unmatched": 1526.67
+          },
+          "server": {
+            "matched": 65160.00000004851,
+            "unmatched": 6974.499999984118,
+            "chunk": 899.00000000398
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16260.32,
+            "chunk": 1053.228,
+            "unmatched": 1264.23
+          },
+          "server": {
+            "matched": 62382.999999982756,
+            "unmatched": 6381.500000031792,
+            "chunk": 935.0000000267755
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15272.36,
+            "chunk": 818.438,
+            "unmatched": 1263.615
+          },
+          "server": {
+            "matched": 64191.50000002106,
+            "unmatched": 6414.000000006581,
+            "chunk": 945.9999999990032
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15353.31,
+            "chunk": 765.398,
+            "unmatched": 1256.525
+          },
+          "server": {
+            "matched": 62107.49999996779,
+            "unmatched": 6419.999999991433,
+            "chunk": 917.9999999560096
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 17454.27,
+            "chunk": 897.127,
+            "unmatched": 1318.99
+          },
+          "server": {
+            "matched": 65246.99999997097,
+            "unmatched": 6257.000000033486,
+            "chunk": 936.0000000242508
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15952.96,
+            "chunk": 1029.867,
+            "unmatched": 1310.14
+          },
+          "server": {
+            "matched": 64126.499999986205,
+            "unmatched": 6755.500000110715,
+            "chunk": 907.9999999812571
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 17761.08,
+            "chunk": 1047.822,
+            "unmatched": 1280.955
+          },
+          "server": {
+            "matched": 66525.00000001283,
+            "unmatched": 6479.999999982056,
+            "chunk": 912.9999999686333
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 17190.1,
+            "chunk": 1039.186,
+            "unmatched": 1266.57
+          },
+          "server": {
+            "matched": 64822.50000001954,
+            "unmatched": 6436.999999976933,
+            "chunk": 917.9999999560096
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15420.72,
+            "chunk": 891.012,
+            "unmatched": 1267.17
+          },
+          "server": {
+            "matched": 64428.499999991116,
+            "unmatched": 6405.49999999962,
+            "chunk": 911.0000000873697
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16003.69,
+            "chunk": 843.683,
+            "unmatched": 1284.495
+          },
+          "server": {
+            "matched": 62077.999999957,
+            "unmatched": 6250.999999963369,
+            "chunk": 926.0000000494983
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16166.79,
+            "chunk": 813.695,
+            "unmatched": 1295.56
+          },
+          "server": {
+            "matched": 65510.50000004466,
+            "unmatched": 6636.500000013257,
+            "chunk": 927.0000000469736
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15888.69,
+            "chunk": 859.296,
+            "unmatched": 1205.135
+          },
+          "server": {
+            "matched": 62553.50000000703,
+            "unmatched": 6386.49999987706,
+            "chunk": 916.0000000747459
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15664.83,
+            "chunk": 768.439,
+            "unmatched": 1482.075
+          },
+          "server": {
+            "matched": 63058.50000001101,
+            "unmatched": 6415.99999997311,
+            "chunk": 927.0000000469736
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16730.04,
+            "chunk": 851.42,
+            "unmatched": 1260.7
+          },
+          "server": {
+            "matched": 62623.000000030515,
+            "unmatched": 6305.500000024722,
+            "chunk": 942.0000000091022
+          }
+        }
+      ],
+      "stall": [
+        {
+          "fixtures": {
+            "matched": 188717.06,
+            "chunk": 7764.728,
+            "unmatched": 18497.615
+          },
+          "server": {
+            "matched": 234111.0000002118,
+            "unmatched": 24017.500000127256,
+            "chunk": 7841.000000098575
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 187423.25,
+            "chunk": 7776.088,
+            "unmatched": 18492.295
+          },
+          "server": {
+            "matched": 237010.00000005477,
+            "unmatched": 24316.999999882682,
+            "chunk": 7847.9999999672145
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 187614.11,
+            "chunk": 7830.358,
+            "unmatched": 18519.04
+          },
+          "server": {
+            "matched": 236938.00000012288,
+            "unmatched": 24359.000000004016,
+            "chunk": 7839.999999987413
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 188389.21,
+            "chunk": 7757.181,
+            "unmatched": 18519.8
+          },
+          "server": {
+            "matched": 237601.00000004057,
+            "unmatched": 24400.499999956082,
+            "chunk": 7875.000000012733
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 188220.93,
+            "chunk": 7786.653,
+            "unmatched": 18519.09
+          },
+          "server": {
+            "matched": 237020.99999991333,
+            "unmatched": 24347.000000261687,
+            "chunk": 7852.000000184489
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 187565.06,
+            "chunk": 7730.122,
+            "unmatched": 18496.465
+          },
+          "server": {
+            "matched": 232778.9999998231,
+            "unmatched": 23907.999999664753,
+            "chunk": 7839.999999987413
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 187883,
+            "chunk": 7751.155,
+            "unmatched": 18510.285
+          },
+          "server": {
+            "matched": 236475.5000000969,
+            "unmatched": 24519.500000110384,
+            "chunk": 7839.000000103624
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 186492.12,
+            "chunk": 7785.558,
+            "unmatched": 18519.655
+          },
+          "server": {
+            "matched": 236368.00000008408,
+            "unmatched": 24255.000000039217,
+            "chunk": 7903.000000169413
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 186868.44,
+            "chunk": 7770.317,
+            "unmatched": 18507.755
+          },
+          "server": {
+            "matched": 233540.50000023108,
+            "unmatched": 23862.00000023564,
+            "chunk": 7835.000000113723
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 187725.79,
+            "chunk": 7730.172,
+            "unmatched": 18521.55
+          },
+          "server": {
+            "matched": 233318.99999993766,
+            "unmatched": 24079.0000002562,
+            "chunk": 7853.000000068278
+          }
+        }
+      ]
+    },
+    "passed": true
+  },
+  "self_test_hook": {
+    "injected_stall_ns": {
+      "matched": 170217.311827957,
+      "chunk": 6808.69247311828,
+      "unmatched": 17021.7311827957
+    },
+    "measured": {
+      "fixtures.matched": {
+        "added_ns": 186726.3,
+        "budget_ns": 85108.7,
+        "passed": false
+      },
+      "fixtures.chunk": {
+        "added_ns": 7591.6,
+        "budget_ns": 3404.3,
+        "passed": false
+      },
+      "fixtures.unmatched": {
+        "added_ns": 17618.9,
+        "budget_ns": 8510.9,
+        "passed": false
+      },
+      "server.matched": {
+        "added_ns": 234933.8,
+        "budget_ns": 85108.7,
+        "passed": false
+      },
+      "server.chunk": {
+        "added_ns": 7720.5,
+        "budget_ns": 3404.3,
+        "passed": false
+      },
+      "server.unmatched": {
+        "added_ns": 22911.5,
+        "budget_ns": 8510.9,
+        "passed": false
+      }
+    },
+    "gate_failed_on_stall": true
+  },
+  "event_loop": {
+    "workload": "paced fan-out: 16 clients, JSON after 10 ms, 40 SSE events 5 ms apart",
+    "rounds": 3,
+    "budgets": {
+      "p99_ms": 2,
+      "max_ms": 25,
+      "utilization_delta": 0.05
+    },
+    "scale": 1.702,
+    "p99_delta_ms": 0.239,
+    "max_delta_ms": 0.049,
+    "utilization_delta": 0.0155,
+    "passed": true,
+    "enabled_drift_max_ms": 4.43,
+    "samples": {
+      "baseline": [
+        {
+          "arm": "baseline",
+          "workload": "paced",
+          "p99_ms": 2.062335,
+          "max_ms": 5.246975,
+          "mean_ms": 1.113532056022409,
+          "drift_max_ms": 4.39085,
+          "utilization": 0.1054585839339506,
+          "requests": 448
+        },
+        {
+          "arm": "baseline",
+          "workload": "paced",
+          "p99_ms": 1.853439,
+          "max_ms": 6.209535,
+          "mean_ms": 1.1138154168435952,
+          "drift_max_ms": 3.1751449999999863,
+          "utilization": 0.1178956725657872,
+          "requests": 448
+        },
+        {
+          "arm": "baseline",
+          "workload": "paced",
+          "p99_ms": 1.932287,
+          "max_ms": 3.745791,
+          "mean_ms": 1.1173907063829787,
+          "drift_max_ms": 2.763235999999992,
+          "utilization": 0.11342558415595354,
+          "requests": 448
+        }
+      ],
+      "enabled": [
+        {
+          "arm": "enabled",
+          "workload": "paced",
+          "p99_ms": 2.191359,
+          "max_ms": 6.684671,
+          "mean_ms": 1.1214877169143667,
+          "drift_max_ms": 4.179543000000024,
+          "utilization": 0.13036836747119818,
+          "requests": 448,
+          "captured": 498,
+          "not_captured": 0
+        },
+        {
+          "arm": "enabled",
+          "workload": "paced",
+          "p99_ms": 2.170879,
+          "max_ms": 4.415487,
+          "mean_ms": 1.1255637759543344,
+          "drift_max_ms": 2.362905000000012,
+          "utilization": 0.1289043739392621,
+          "requests": 448,
+          "captured": 498,
+          "not_captured": 0
+        },
+        {
+          "arm": "enabled",
+          "workload": "paced",
+          "p99_ms": 2.168831,
+          "max_ms": 5.296127,
+          "mean_ms": 1.1187022672292546,
+          "drift_max_ms": 4.4301519999999925,
+          "utilization": 0.12545792165823297,
+          "requests": 448,
+          "captured": 498,
+          "not_captured": 0
+        }
+      ]
+    },
+    "stress_not_gated": {
+      "workload": "unpaced fan-out (about 100x an agent's call rate); reported, not gated",
+      "baseline": {
+        "arm": "baseline",
+        "workload": "stress",
+        "p99_ms": 3.039231,
+        "max_ms": 7.540735,
+        "mean_ms": 1.1177645782414307,
+        "drift_max_ms": 4.905832999999916,
+        "utilization": 0.8673343627723475,
+        "requests": 19522
+      },
+      "enabled": {
+        "arm": "enabled",
+        "workload": "stress",
+        "p99_ms": 4.069375,
+        "max_ms": 7.995391,
+        "mean_ms": 1.225662613812832,
+        "drift_max_ms": 4.914800000000014,
+        "utilization": 0.9992903007022261,
+        "requests": 13302,
+        "captured": 13352,
+        "not_captured": 0
+      },
+      "utilization_delta": 0.132
+    }
+  },
+  "self_test_event_loop": {
+    "injected_stall_ms": 85.1086559139785,
+    "measured": {
+      "p99_delta_ms": 0.278,
+      "max_delta_ms": 82.899,
+      "utilization_delta": 0.2319,
+      "passed": false
+    },
+    "gate_failed_on_stall": true
+  },
+  "forbidden_work": {
+    "trips": [],
+    "self_test_trips": [
+      "JSON.stringify"
+    ],
+    "exchanges_matched": 56,
+    "passed": true
+  },
+  "behaviour_identity": {
+    "rows": [
+      "global fetch (ESM)",
+      "global fetch (CommonJS)"
+    ],
+    "identity.mjs": {
+      "exit_codes": [
+        7,
+        7
+      ],
+      "differs": [],
+      "captured": 11,
+      "passed": true
+    },
+    "identity.cjs": {
+      "exit_codes": [
+        7,
+        7
+      ],
+      "differs": [],
+      "captured": 11,
+      "passed": true
+    },
+    "passed": true
+  },
+  "memory_bound": {
+    "runtime": {
+      "maxInflightBytes": 16777216,
+      "maxRetainBytes": 1048576,
+      "initialPayloadBytes": 1048576,
+      "queueMaxItems": 512,
+      "maxExchanges": 2048
+    },
+    "batches": 10,
+    "baseline_rss_bytes": [
+      105320448,
+      109346816,
+      121405440,
+      121405440,
+      121569280,
+      122363904,
+      131932160,
+      140845056,
+      141500416,
+      142286848
+    ],
+    "enabled": {
+      "excess_rss_bytes": [
+        24260608,
+        30195712,
+        29671424,
+        30498816,
+        55631872,
+        61259776,
+        51691520,
+        42909696,
+        42385408,
+        43040768
+      ],
+      "bound_bytes": 69641440,
+      "excess_growth_bytes": -18219008,
+      "heap_growth_bytes": 54952,
+      "peaks": {
+        "exchanges": 16,
+        "slabs": 32,
+        "vectors": 33,
+        "jobs": 427
+      },
+      "open_after": 0,
+      "hook": {
+        "matched": 10000,
+        "notCaptured": 0,
+        "unmatchedModelShaped": 0,
+        "chunksRetained": 1846600,
+        "chunksNotRetained": 158400,
+        "informational": 0,
+        "collected": 0,
+        "faults": 0
+      },
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0
+      },
+      "passed": true
+    },
+    "saturated": {
+      "excess_rss_bytes": [
+        6123520,
+        10616832,
+        4718592,
+        5505024,
+        5996544,
+        15687680,
+        6381568,
+        -2400256,
+        -3055616,
+        -3842048
+      ],
+      "bound_bytes": 69641440,
+      "excess_growth_bytes": -19529728,
+      "heap_growth_bytes": 136240,
+      "peaks": {
+        "exchanges": 16,
+        "slabs": 32,
+        "vectors": 33,
+        "jobs": 512
+      },
+      "open_after": 0,
+      "hook": {
+        "matched": 10000,
+        "notCaptured": 0,
+        "unmatchedModelShaped": 0,
+        "chunksRetained": 12800,
+        "chunksNotRetained": 1992200,
+        "informational": 0,
+        "collected": 0,
+        "faults": 0
+      },
+      "losses": {
+        "queue_full": 9488,
+        "internal_error": 0,
+        "shutdown": 0
+      },
+      "passed": true
+    },
+    "passed": true
+  }
+}
