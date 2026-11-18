@@ -7,6 +7,7 @@ disagree."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,15 @@ from typing import Any
 from fabric.cli import _config, _coverage, _read, _runstate
 from fabric.cli._report import Finding
 from fabric.cli._rows_data import ROWS
+
+REPO = Path(__file__).resolve().parents[3]
+
+
+def test_packaged_rows_are_the_contract() -> None:
+    """The wheel ships code only (057 B8): ``_rows_data`` must equal the registry the
+    coverage validator checks (regenerate with sdk/python/scripts/sync_contract_data.py)."""
+    contract = REPO / "contracts/coverage/v1/registry/integration-rows-v1.json"
+    assert json.loads(contract.read_text("utf-8")) == ROWS
 
 
 def _resolved(tmp_path: Path, **capture: Any) -> _config.Resolved:
