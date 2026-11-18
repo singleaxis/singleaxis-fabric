@@ -212,16 +212,24 @@ interface Entry {
 const MEDIA_RE = /^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/;
 const ENCODING_RE = /^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$/;
 
+// Python's `str.isspace()` set, which `str.strip()` and `str.split()` use. JavaScript's
+// `\s` and `trim()` differ: they omit U+001C-U+001F and U+0085 and add U+FEFF, so a
+// header value carrying one of those would normalise differently from the Python reader.
+const PY_SPACE =
+  "\\t\\n\\v\\f\\r\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+const PY_STRIP_RE = new RegExp(`^[${PY_SPACE}]+|[${PY_SPACE}]+$`, "g");
+const PY_SPACE_RE = new RegExp(`[${PY_SPACE}]+`, "g");
+
 /** `Content-Type` without parameters, lowercased; octet-stream when invalid (Python). */
 export function mediaTypeOf(value: string): string {
   const semi = value.indexOf(";");
-  const media = (semi < 0 ? value : value.slice(0, semi)).trim().toLowerCase();
+  const media = (semi < 0 ? value : value.slice(0, semi)).replace(PY_STRIP_RE, "").toLowerCase();
   return MEDIA_RE.test(media) ? media : "application/octet-stream";
 }
 
 /** Lowercased, whitespace removed; `identity` when empty, `unknown` when invalid (Python). */
 export function contentEncodingOf(value: string): string {
-  const encoding = value.replace(/\s+/g, "").toLowerCase() || "identity";
+  const encoding = value.replace(PY_SPACE_RE, "").toLowerCase() || "identity";
   return ENCODING_RE.test(encoding) ? encoding : "unknown";
 }
 

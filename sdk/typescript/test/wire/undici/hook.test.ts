@@ -24,6 +24,7 @@ import {
   installUndiciHook,
   mediaTypeOf,
 } from "../../../src/wire/undici.js";
+import { runPython } from "../registration/helpers.js";
 import { drain, isolate } from "../runtime/helpers.js";
 import {
   CHAT,
@@ -554,6 +555,52 @@ describe("metadata rules (Python parity)", () => {
   ])("content encoding %j -> %j", (value, expected) =>
     expect(contentEncodingOf(value)).toBe(expected),
   );
+
+  it("media type and content encoding equal Python's media_type_of / content_encoding_of", () => {
+    const values = [
+      "application/json; charset=utf-8",
+      "  Text/Event-Stream ",
+      "application/json, text/plain",
+      "",
+      " ",
+      "x".repeat(200) + "/json",
+      "a/b",
+      "ab",
+      "application/vnd.api+json;v=1",
+      "text/plain;",
+      "APPLICATION/JSON\t",
+      "multipart/form-data; boundary=x",
+      "GZIP",
+      "gzip, br",
+      " gzip ,\tbr ",
+      "a,b,c,d,e",
+      "a,b,c,d",
+      "gzip;q=1",
+      "x".repeat(33),
+      "x".repeat(32),
+      "-gzip",
+      "identity",
+      "é",
+      "gzip,",
+      "\u00a0gzip",
+      "gzip\u0085",
+      "gz\u001cip",
+      "\u000bapplication/json\u000c",
+      "﻿gzip",
+      "﻿application/json",
+      "\u0085application/json\u001f",
+      "　gzip ",
+    ];
+    const python = runPython(
+      "import json, sys\n" +
+        "from fabric.wire._pipeline import media_type_of, content_encoding_of\n" +
+        "values = json.load(sys.stdin)\n" +
+        "print(json.dumps([[media_type_of(v), content_encoding_of(v)] for v in values]))",
+      [],
+      JSON.stringify(values),
+    ) as [string, string][];
+    expect(values.map((v) => [mediaTypeOf(v), contentEncodingOf(v)])).toEqual(python);
+  });
 
   it("error types come from the allowlist, read without running application code", () => {
     let touched = false;
