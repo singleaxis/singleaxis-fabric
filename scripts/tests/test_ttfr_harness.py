@@ -317,3 +317,30 @@ def test_ci_runs_ttfr_kubernetes_then_the_e2_acceptance_and_keeps_ttfr_json() ->
         "charts/fabric/**",
     ):
         assert path in filters
+
+
+def test_the_kubernetes_capture_policy_is_a_valid_production_policy() -> None:
+    """The page's ``destination.yaml`` and the fixture's carry one capture policy (a
+    production agent keeps model bodies only under one, and ``verify`` checks decisions
+    against them). With the tenant the chart adds per namespace, both validate as a
+    production policy that keeps the model exchanges; the fixture names its agent image."""
+    import re  # noqa: PLC0415
+
+    from fabric.deployment_policy import DeploymentPolicy  # noqa: PLC0415
+
+    page = (ROOT / "docs/get-started/kubernetes.md").read_text(encoding="utf-8")
+    block = re.search(r"```yaml\n(.*?)```", page, re.DOTALL)
+    assert block is not None
+    documented = yaml.safe_load(block.group(1))["injector"]["capturePolicy"]
+    fixture = _kube_module("fixtures").capture_policy(None)  # type: ignore[attr-defined]
+    assert "tenant_id" not in documented and "tenant_id" not in fixture
+    for policy, digest in ((documented, "sha256:" + "a" * 64), (fixture, None)):
+        policy = {**policy, "tenant_id": "acme"}
+        if digest:
+            policy["deployment"] = {**policy["deployment"], "image_digest": digest}
+        checked = DeploymentPolicy(policy).to_dict()
+        assert checked["deployment"]["profile"] == "production"
+        assert checked["privacy"]["model.exchange.request"] == "retain_original"
+    assert {k: v for k, v in documented.items() if k != "deployment"} == {
+        k: v for k, v in fixture.items() if k != "deployment"
+    }

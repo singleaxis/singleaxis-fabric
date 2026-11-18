@@ -20,4 +20,5 @@ uv export --project "${repo}/sdk/python" --frozen --no-emit-project --no-header 
   --extra cli --format requirements-txt --quiet --output-file "${out}/requirements.txt"
 "${python}" -m build --wheel --no-isolation --outdir "${out}/wheels" "${repo}/sdk/python" >/dev/null
 cp "${repo}/scripts/ttfr/model_server.py" "${repo}/scripts/ttfr/agents/httpx_tool_loop.py" \
+  "${repo}/scripts/ttfr/kubernetes/agent_command_tool.py" "${repo}/scripts/ttfr/kubernetes/agent_loop.py" \
   "${here}/run-agent.sh" "${out}/"

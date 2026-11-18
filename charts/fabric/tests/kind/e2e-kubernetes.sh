@@ -70,7 +70,7 @@ wait_health() {  # FIELD MIN SECONDS: the sensor reports FIELD >= MIN
     sleep 5
   done
 }
-injector="$(kubectl -n "${ns}" get deployment -l app.kubernetes.io/name=fabric-injector -o name)"
+injector="$(kubectl -n "${ns}" get deployment -l "app.kubernetes.io/component=injector,app.kubernetes.io/instance=${release}" -o name)"
 [[ -n "${injector}" ]] || fail "no injector Deployment in ${ns}"
 
 # --- 0. G4: verify exits 0 and the host sensor corroborates the run -------------------
@@ -119,8 +119,9 @@ log "kind's kubelet.slice cgroup layout"
 node="$(kind get nodes --name "${KIND_CLUSTER}" | head -n 1)"
 docker exec "${node}" test -d /sys/fs/cgroup/kubelet.slice/kubelet-kubepods.slice \
   || fail "the kind node does not use the kubelet.slice layout this test is about"
-kubectl -n "${ns}" get daemonset -l app.kubernetes.io/name=fabric-host-emitter -o json \
-  | jq -e '[.items[].spec.template.spec.containers[].env[]? | select(.name == "EMIT_AGENT_CGROUP_ROOTS")] | length == 0' \
+kubectl -n "${ns}" get daemonset -l "app.kubernetes.io/component=host-sensor,app.kubernetes.io/instance=${release}" -o json \
+  | jq -e '(.items | length == 1)
+           and ([.items[].spec.template.spec.containers[].env[]? | select(.name == "EMIT_AGENT_CGROUP_ROOTS")] | length == 0)' \
     >/dev/null || fail "the sensor was given a cgroup override (the workaround this replaces)"
 [[ "$(counter pods_unscoped_cgroup_not_found "${line}")" == 0 ]] || fail "selected pods without a cgroup: ${line}"
 printf '   %s\n' "$(grep -o 'pods_selected=[0-9]* pods_scoped=[0-9]*' <<<"${line}")"
@@ -130,7 +131,9 @@ log "content to an S3-compatible store behind a private CA"
 kubectl -n "${ns}" get statefulset -l app.kubernetes.io/name=otel-collector -o json \
   | jq -e '.items[0].spec.template.spec as $pod
            | ([$pod.containers[0].env[] | select(.name == "AWS_CA_BUNDLE")] | length == 1)
-             and ([$pod.volumes[] | select(.secret.secretName == "fabric-content-s3-ca")] | length == 1)' \
+             and ([$pod.volumes[] | select(.secret.secretName == "fabric-content-s3-ca"
+                                           or any(.projected.sources[]?; .secret.name == "fabric-content-s3-ca"))]
+                  | length == 1)' \
     >/dev/null || fail "the Node does not trust the store's CA through content.s3.caSecret"
 objects="$("${PYTHON}" "${fixtures}" s3-objects --tenant "${tenant}" | tail -n 1)"
 (( objects > 0 )) || { kubectl -n "${ns}" logs -l app.kubernetes.io/name=otel-collector --tail=40 >&2 || true

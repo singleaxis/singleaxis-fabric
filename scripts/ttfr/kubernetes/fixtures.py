@@ -184,11 +184,10 @@ def deployment(ns: str, name: str, image: str, command: list[str], env: dict[str
 
 def agent_deployment(ns: str, image: str) -> dict[str, Any]:
     """The customer's agent, before Fabric: its image has the SDK (G4's one change) and
-    its own model settings; nothing names Fabric. One agent process per loop, so each
-    run ends and is delivered."""
+    its own model settings; nothing names Fabric. One agent process per run, so each run
+    ends and is delivered (``agent_loop.py``, which pauses in-process: see there). The
+    agent's tool runs a command (``agent_command_tool.py``)."""
     labels = {"app": "support-agent"}
-    loop = ("while true; do python /agent/httpx_tool_loop.py; sleep "
-            f"{AGENT_PAUSE_S}; done")  # fmt: skip
     return {
         "apiVersion": "apps/v1", "kind": "Deployment",
         "metadata": {"name": "support-agent", "namespace": ns, "labels": labels},
@@ -198,10 +197,44 @@ def agent_deployment(ns: str, image: str) -> dict[str, Any]:
                      "terminationGracePeriodSeconds": 30,
                      "containers": [{
                          "name": "agent", "image": image, "imagePullPolicy": "IfNotPresent",
-                         "command": ["sh", "-c", loop],
-                         "env": [{"name": "OPENAI_BASE_URL",
+                         "command": ["python", "-S", "/agent/agent_loop.py"],
+                         "env": [{"name": "AGENT_PAUSE_S", "value": str(AGENT_PAUSE_S)},
+                                 {"name": "OPENAI_BASE_URL",
                                   "value": f"http://model.{MODEL_NS}.svc:{MODEL_PORT}/v1"},
                                  {"name": "OPENAI_API_KEY", "value": MODEL_KEY}]}]}}},
+    }  # fmt: skip
+
+
+def capture_policy(agent_image: str | None) -> dict[str, Any]:
+    """The customer's capture policy as the Get started page writes it: the model
+    exchanges kept (the decisions chain needs them), the rest metadata only or left out.
+    ``tenant_id`` is left to the chart (each agent namespace's own); ``image_digest`` is
+    the agent image's id, a pinned digest as a production policy requires."""
+    digest = "sha256:" + "0" * 64
+    if agent_image:
+        done = subprocess.run(  # noqa: S603 - the fixture's own image
+            ["docker", "image", "inspect", "--format", "{{.Id}}", agent_image],  # noqa: S607
+            capture_output=True, text=True, check=False,
+        )  # fmt: skip
+        if done.returncode == 0 and done.stdout.strip().startswith("sha256:"):
+            digest = done.stdout.strip()
+    return {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "support-agent-capture", "policy_version": 1,
+        "workload_id": "support-agent",
+        "privacy": {
+            "model.exchange.request": "retain_original",
+            "model.exchange.response": "retain_original",
+            "model.exchange.part": "retain_original",
+            "record.evidence": "retain_original",
+            "terminal.argv": "redact", "terminal.context": "metadata_only",
+            "network.request": "metadata_only", "network.response": "metadata_only",
+        },
+        "storage": {"backend": "local", "region": "local", "key_id": "support-agent-key"},
+        "retention": {"days": 30},
+        "required_integrations": [],
+        "deployment": {"profile": "production", "image_digest": digest,
+                       "tls_required": True, "encrypted_store_required": True},
     }  # fmt: skip
 
 
@@ -292,6 +325,7 @@ def up(options: argparse.Namespace) -> int:
     content = make_store(release_ns, options.tenant, out)["otel-collector"]
     values["otel-collector"]["content"] = content["content"]
     values["otel-collector"]["networkPolicy"].update(content["networkPolicy"])
+    values["injector"] = {"capturePolicy": capture_policy(options.agent_image)}
     (out / "destination.yaml").write_text(json.dumps(values, indent=2) + "\n", "utf-8")
     (out / "fixture.json").write_text(
         json.dumps({
@@ -444,7 +478,7 @@ def make_store(release_ns: str, tenant: str, out: Path) -> dict[str, Any]:
     )
     values = {"otel-collector": {
         "content": {
-            "enabled": True, "backend": "s3", "allowedTenants": [tenant],
+            "enabled": True, "backend": "s3",
             "s3": {"bucket": S3_BUCKET, "prefix": S3_PREFIX, "region": S3_REGION,
                    "endpoint": f"https://{host}:{S3_PORT}", "usePathStyle": True,
                    "sse": "AES256",
