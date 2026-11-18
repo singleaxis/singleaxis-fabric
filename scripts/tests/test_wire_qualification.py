@@ -7,10 +7,13 @@ family; here: the audit script's channel list is the schema's, its ``--check`` c
 accepts a matching row and names the fix for a missing or differing one, the CI job audits
 exactly the builds the spec names (Node 22, 24.0.0, the lowest Node 24 build publishing
 both body channels and the newest audited 24.x), and no gate or active claim is made
-before its unit."""
+before its unit. An ``active`` tuple (unit 055-t6) carries the SHA-256 of its committed
+``ts-wire-passivity`` report, which passed every gate on exactly that build, and the CI
+passivity job runs on exactly the active tuples."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -25,6 +28,16 @@ TABLE = REPO_ROOT / "sdk" / "typescript" / "wire-qualification.json"
 SCRIPT = REPO_ROOT / "scripts" / "typescript" / "audit-undici-channels.mjs"
 SCHEMA = REPO_ROOT / "contracts/coverage/v1/schema/wire-qualification-v1.schema.json"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "recorder-ci.yml"
+RESULTS = REPO_ROOT / "qualification" / "node-wire" / "results"
+PASSIVITY_GATES = {
+    "calibration",
+    "hook_cost",
+    "gate_self_test",
+    "event_loop",
+    "forbidden_work",
+    "behaviour_identity",
+    "memory_bound",
+}
 
 
 def _table() -> dict[str, Any]:
@@ -111,15 +124,16 @@ def test_ci_audits_the_builds_the_spec_names() -> None:
 
 
 def test_table_makes_no_claim_before_its_units() -> None:
-    """Unit 055-t1 writes audited tuples only: active tuples arrive with their passivity
-    reports (055-t6, 055-t21) and the gates flip in 055-t17 and 055-t22."""
+    """Unit 055-t1 writes audited tuples; 055-t6 makes an undici tuple active with its
+    passivity report; core-HTTP tuples arrive with 055-t21 and the gates flip in 055-t17
+    and 055-t22."""
     table = _table()
     assert table["gates"] == {
         "TS-1U": "not_passed",
         "TS-1D": "not_passed",
         "TS-1H": "not_passed",
     }
-    assert {t["claim"] for t in table["tuples"]} == {"audited"}
+    assert {t["claim"] for t in table["tuples"]} <= {"audited", "active"}
     assert {t["point"] for t in table["tuples"]} == {"wire.ts.undici"}
     audited = {
         (a["node"], a["platform"])
@@ -127,3 +141,57 @@ def test_table_makes_no_claim_before_its_units() -> None:
         if a["result"] == "both_body_channels"
     }
     assert {(t["node"], t["platform"]) for t in table["tuples"]} == audited
+
+
+def _report_path(tuple_: dict[str, Any]) -> Path:
+    return RESULTS / f"passivity-{tuple_['node']}-{tuple_['platform']}.json"
+
+
+def _active() -> list[dict[str, Any]]:
+    return [t for t in _table()["tuples"] if t["claim"] == "active"]
+
+
+def test_every_active_tuple_has_its_passed_report_committed() -> None:
+    for tuple_ in _active():
+        path = _report_path(tuple_)
+        assert path.is_file(), f"{path.name}: commit the CI report of this tuple"
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        assert tuple_["report_sha256"] == f"sha256:{digest}", path.name
+        report = json.loads(path.read_text(encoding="utf-8"))
+        assert report["schema"] == "fabric.node-wire-passivity-report/v1"
+        assert report["quick"] is False and report["result"] == "passed"
+        assert report["voided_runs"] in (0, 1)
+        assert set(report["gates"]) == PASSIVITY_GATES
+        assert all(report["gates"].values()), path.name
+        assert report["tuple"] == {
+            "point": tuple_["point"],
+            "node": tuple_["node"],
+            "undici": tuple_["undici"],
+            "undici_origin": tuple_["undici_origin"],
+            "platform": tuple_["platform"],
+        }
+        assert report["hook_cost"]["trials"] >= 30
+        assert report["self_test_hook"]["gate_failed_on_stall"] is True
+        assert report["self_test_event_loop"]["gate_failed_on_stall"] is True
+    committed = {p.name for p in RESULTS.glob("passivity-*.json")}
+    assert committed == {_report_path(t).name for t in _active()}
+
+
+def test_the_passivity_job_runs_on_exactly_the_active_tuples() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    job = text[text.index("  ts-wire-passivity:") :]
+    job = job[: job.index("\n  typescript-native:")]
+    rows = re.findall(
+        r'node-version: "([^"]+)", platform: ([a-z0-9-]+), runner: ([a-z0-9.-]+)', job
+    )
+    runners = {
+        "linux-x64-glibc": "ubuntu-24.04",
+        "linux-arm64-glibc": "ubuntu-24.04-arm",
+    }
+    assert rows, "the ts-wire-passivity matrix lists its tuples"
+    for _node, platform, runner in rows:
+        assert runners.get(platform) == runner, platform
+    assert "qualification/node-wire/passivity/run.mjs" in job
+    assert {(n, p) for n, p, _ in rows} == {
+        (t["node"], t["platform"]) for t in _active()
+    }

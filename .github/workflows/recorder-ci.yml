@@ -229,6 +229,47 @@ jobs:
       - name: Audit this build and compare with the qualification table
         run: node scripts/typescript/audit-undici-channels.mjs --check sdk/typescript/wire-qualification.json
 
+  ts-wire-passivity:
+    # Spec 055 §9.2: the passivity gate of wire.ts.undici on each tuple the qualification
+    # table makes active (scripts/tests/test_wire_qualification.py keeps this matrix and
+    # the active tuples equal): calibration, hook cost (30 alternating trials in isolated
+    # processes), the gate self-test (an injected stall of twice each budget must fail
+    # it), event loop, no forbidden work in hooks, behaviour identity and memory bound.
+    # The JSON report is uploaded; the reports of the claimed tuples are committed under
+    # qualification/node-wire/results/. Re-run only when the calibration voided the run
+    # twice; run.mjs already repeats a void run once.
+    name: Wire passivity (Node ${{ matrix.node-version }}, ${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node-version: "24.4.0", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+          - { node-version: "24.22.3", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+          - { node-version: "24.4.0", platform: linux-arm64-glibc, runner: ubuntu-24.04-arm }
+          - { node-version: "24.22.3", platform: linux-arm64-glibc, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: Install locked dependencies
+        working-directory: sdk/typescript
+        run: npm ci
+      - name: Run the passivity gate
+        run: >-
+          node qualification/node-wire/passivity/run.mjs
+          --out passivity-${{ matrix.node-version }}-${{ matrix.platform }}.json
+      - name: Upload the passivity report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: passivity-${{ matrix.node-version }}-${{ matrix.platform }}
+          path: passivity-${{ matrix.node-version }}-${{ matrix.platform }}.json
+          if-no-files-found: error
+
   typescript-native:
     # Spec 055 §4.4, §9.2: the Node-API lock module, built and tested on the six targets
     # (Linux x64/arm64 on glibc and musl, macOS x64/arm64), with the loader's SHA-256
