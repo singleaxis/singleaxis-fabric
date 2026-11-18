@@ -15,6 +15,28 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: the `fetch` capture hook and its passivity
+  gate (spec 055, unit 055-t6).** Still not installable from the package
+  (that is unit 055-t14), and no Node.js build is released as qualified yet.
+  The hook that will record a Node agent's model calls now exists: it
+  listens to undici's diagnostics channels, which global `fetch` (and so the
+  official `openai` and `@anthropic-ai/sdk` clients) publish, and copies the
+  exact request and response bytes of calls to a configured model endpoint.
+  It never replaces `fetch`, installs a dispatcher, reads a body stream or
+  changes a request; other requests are left alone and cost about 1 µs. On a
+  Node build whose `fetch` does not publish body bytes (Node 22, Node 24.0
+  to 24.3) it installs nothing, so an empty body is never recorded as
+  complete. A new CI job, `ts-wire-passivity`, measures on each qualified
+  Node build that the hook stays inside the spec's budgets (about 7 µs per
+  model call and 0.3 µs per streamed 1 KiB chunk measured, against 50 µs
+  and 2 µs), does no file, network, hashing, JSON or logging work while it
+  runs, keeps the application's event loop, bytes, errors and exit code
+  unchanged, and holds memory to its configured bounds; it also proves it
+  would fail on an injected delay.
+- **Fix: an awaited stop of the Node capture worker could be cut short.**
+  When stopping the Fabric worker was the last thing a Node process waited
+  for, the process exited before the worker drained. A stop now keeps the
+  process open until it finishes, never past its deadline.
 - **Node.js capture groundwork: epoch registration (spec 055, unit
   055-t5).** Still no Node.js capture, and nothing new is exported from the
   package. A Node process that installs capture will register its epoch on
