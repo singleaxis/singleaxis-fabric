@@ -366,3 +366,35 @@ def test_no_reported_record_leaves_the_report_as_it_was(tmp_path: Path) -> None:
     (run,) = report["runs"]
     assert run["chains"]["controls"] == {"verdict": "partial",
                                          "reasons": ["control_pending_at_end"]}  # fmt: skip
+
+
+# --------------------------------------------------------------------------
+# Placement index (review fix: a lookup per run, not a scan of every record)
+# --------------------------------------------------------------------------
+
+
+def test_the_placement_index_answers_what_reported_joins_answered() -> None:
+    """Each record lands in a run by what it names: a call (D40/E04), a step (D06), or a
+    control id and a phase its D05 may answer (a resolution answers a request; a
+    revocation a request or a resolution, 052 §4.2.2); nothing else places it."""
+    from fabric.reconstruct._security import ReportedIndex  # noqa: PLC0415
+
+    items = [
+        {"gated_tool_call_id": "p-call", "phase": "observation"},
+        {"gated_step_id": "step-1", "phase": "observation"},
+        {"resolves": TICKET, "phase": "resolution"},
+        {"resolves": TICKET, "phase": "revocation"},
+        {"resolves": TICKET, "phase": "observation"},  # an observation answers nothing
+        {"phase": "observation"},  # names nothing
+    ]
+    index = ReportedIndex.build(items)
+    assert index.joined({"p-call"}, [], set()) == [0]
+    assert index.joined(set(), [], {"step-1"}) == [1]
+    assert index.joined(set(), [{"id": TICKET, "phase": "request"}], set()) == [2, 3]
+    assert index.joined(set(), [{"id": TICKET, "phase": "resolution"}], set()) == [3]
+    assert index.joined(set(), [{"id": TICKET, "phase": "observation"}], set()) == []
+    assert index.joined({"p-other"}, [{"id": "ctl-" + "0" * 32, "phase": "request"}],
+                        {"step-2"}) == []  # fmt: skip
+    # one record named twice by a run is placed once, in time order
+    assert index.joined({"p-call"}, [{"id": TICKET, "phase": "request"}],
+                        {"step-1"}) == [0, 1, 2, 3]  # fmt: skip

@@ -1048,7 +1048,7 @@ class ActionReader:
         self._snapshots: tuple[Any, _security.SnapshotIndex] | None = None
         # Spec 057 rev 3.14: control and hook records reported over OTLP (no records
         # identity), as items, per verifier; and those some run showed.
-        self._reported: tuple[Any, list[dict[str, Any]]] | None = None
+        self._reported: tuple[Any, _security.ReportedIndex] | None = None
         self._reported_shown: set[str] = set()
         self._sensor_cache: tuple[Any, dict[str, Any], dict[str, Any]] | None = None
 
@@ -1426,9 +1426,9 @@ class ActionReader:
             self._index = (verifier, _security.ControlIndex.build(verifier.records, reported))
         return self._index[1]
 
-    def _reported_items(self, verifier: Any) -> list[dict[str, Any]]:
+    def _reported_index(self, verifier: Any) -> _security.ReportedIndex:
         """The input's records reported over OTLP as control and hook items, in time
-        order, once per verifier."""
+        order and indexed by what each names, once per verifier."""
         if self._reported is None or self._reported[0] is not verifier:
             found = sorted(getattr(verifier, "reported", {}).values(),
                            key=lambda obs: (obs.span.start_ns, obs.event_id))  # fmt: skip
@@ -1437,7 +1437,7 @@ class ActionReader:
                 item = _security.reported_item(obs)
                 item["record"] = obs.kind
                 items.append(item)
-            self._reported = (verifier, items)
+            self._reported = (verifier, _security.ReportedIndex.build(items))
             self._reported_shown = set()
         return self._reported[1]
 
@@ -1450,16 +1450,13 @@ class ActionReader:
         as to any other record (``provider_id``, ``ref_join``, ``reported_ref``). It never
         joins by position or by trace: the reporting service's trace is not the agent's
         (052 B6)."""
-        items = self._reported_items(verifier)
-        if not items:
+        index = self._reported_index(verifier)
+        if not index.items:
             return
         calls = {i for entry in report.get("exchanges", ())
                  for i in entry.get("tool_call_ids_emitted", ()) if isinstance(i, str)}  # fmt: skip
-        controls = list(sec["controls"])
-        attempts = set(sec["attempts"])
-        for item in items:
-            if not _security.reported_joins(item, calls, controls, attempts):
-                continue
+        for n in index.joined(calls, list(sec["controls"]), set(sec["attempts"])):
+            item = index.items[n]
             placed = {k: v for k, v in item.items() if k != "record"}
             sec["hooks" if item["record"] == "hook" else "controls"].append(placed)
             self._reported_shown.add(item["event_id"])
@@ -1473,7 +1470,7 @@ class ActionReader:
             if self._reported is None:
                 return None
             verifier = self._reported[0]
-        items = self._reported_items(verifier)
+        items = self._reported_index(verifier).items
         rest = [i for i in items if i["event_id"] not in self._reported_shown]
         if not rest:
             return None

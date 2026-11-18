@@ -93,6 +93,7 @@ __all__ = [
     "SECURITY_POINTS",
     "WATCHED_CLASS",
     "ControlIndex",
+    "ReportedIndex",
     "SecurityResult",
     "SnapshotIndex",
     "analyse",
@@ -101,7 +102,6 @@ __all__ = [
     "fact_rows",
     "present",
     "reported_item",
-    "reported_joins",
     "resolve_refs",
     "view_events",
     "with_no_effect_rows",
@@ -265,23 +265,57 @@ def reported_item(obs: Any) -> dict[str, Any]:
     return item
 
 
-def reported_joins(
-    item: Mapping[str, Any], calls: set[str], controls: Iterable[Mapping[str, Any]],
-    attempts: set[str],
-) -> bool:  # fmt: skip
-    """Whether a reported item names something a run holds, for placing it there (rev
-    3.14): one of the run's captured tool calls by its D40 or E04 id; a control record
-    of the run its D05 may answer (a request for a resolution; a request or resolution
-    for a revocation, by ``fabric.control.id``, 052 §4.2.2); or one of its attempts by
-    D06."""
-    call, step = item.get("gated_tool_call_id"), item.get("gated_step_id")
-    if (isinstance(call, str) and call in calls) or (isinstance(step, str) and step in attempts):
-        return True
-    phases = _TARGET_PHASES.get(str(item.get("phase")), frozenset())
-    target = item.get("resolves")
-    return isinstance(target, str) and any(
-        c.get("id") == target and c.get("phase") in phases for c in controls
-    )
+@dataclass(frozen=True)
+class ReportedIndex:
+    """The input's records reported over OTLP (``items``, in time order), indexed by what
+    each names, for placing them in the runs that hold it (rev 3.14): its D40 or E04 tool
+    call, its D06 step, and the control id and phase its D05 may answer (a request for a
+    resolution; a request or resolution for a revocation, 052 §4.2.2). Built once per
+    input, so placing them costs each run a lookup per call, step and control record it
+    holds, not a scan of every reported record."""
+
+    items: tuple[dict[str, Any], ...]
+    by_call: Mapping[str, tuple[int, ...]]
+    by_step: Mapping[str, tuple[int, ...]]
+    by_target: Mapping[tuple[str, str], tuple[int, ...]]
+
+    @classmethod
+    def build(cls, items: Iterable[dict[str, Any]]) -> ReportedIndex:
+        listed = tuple(items)
+        by_call: dict[str, list[int]] = defaultdict(list)
+        by_step: dict[str, list[int]] = defaultdict(list)
+        by_target: dict[tuple[str, str], list[int]] = defaultdict(list)
+        for n, item in enumerate(listed):
+            call, step = item.get("gated_tool_call_id"), item.get("gated_step_id")
+            if isinstance(call, str):
+                by_call[call].append(n)
+            if isinstance(step, str):
+                by_step[step].append(n)
+            target = item.get("resolves")
+            if isinstance(target, str):
+                for phase in _TARGET_PHASES.get(str(item.get("phase")), frozenset()):
+                    by_target[(target, phase)].append(n)
+        return cls(listed, {k: tuple(v) for k, v in by_call.items()},
+                   {k: tuple(v) for k, v in by_step.items()},
+                   {k: tuple(v) for k, v in by_target.items()})  # fmt: skip
+
+    def joined(
+        self, calls: Iterable[str], controls: Iterable[Mapping[str, Any]],
+        attempts: Iterable[str],
+    ) -> list[int]:  # fmt: skip
+        """The positions in ``items`` of the records that name one of a run's captured
+        tool ``calls``, one of its ``attempts``, or a control record of the run (its
+        ``id`` and ``phase``) they may answer; in time order."""
+        found: set[int] = set()
+        for call in calls:
+            found.update(self.by_call.get(call, ()))
+        for step in attempts:
+            found.update(self.by_step.get(step, ()))
+        for control in controls:
+            control_id, phase = control.get("id"), control.get("phase")
+            if isinstance(control_id, str) and isinstance(phase, str):
+                found.update(self.by_target.get((control_id, phase), ()))
+        return sorted(found)
 
 
 _PTH = re.compile(r"pth-[0-9a-f]{32}")
