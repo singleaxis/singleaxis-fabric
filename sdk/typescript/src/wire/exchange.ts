@@ -336,6 +336,14 @@ export class ExchangeTable {
     this.touch(handle, REQUEST, true);
   }
 
+  /**
+   * Response bytes were forwarded that the hook could not snapshot (an unexpected chunk
+   * type): `truncated(transport_incomplete)`, never exact.
+   */
+  responseIncomplete(handle: number): void {
+    this.touch(handle, RESPONSE, true);
+  }
+
   private touch(handle: number, side: Side, incomplete: boolean): void {
     if (handle < 0) return;
     const index = handle % 65536;
