@@ -88,9 +88,11 @@ jobs:
           ruff format --check sc_ra3 run_sc_ra3.py tests/test_sc_ra3_checks.py tests/test_sc_ra3_live_mode.py
           mypy --strict --config-file ../../sdk/python/pyproject.toml sc_ra3 run_sc_ra3.py tests/test_sc_ra3_checks.py tests/test_sc_ra3_live_mode.py
       - name: Harness tests (a real run, each check's negative edits, the live plumbing)
-        run: >-
-          python -m pytest qualification/security-context/tests -q -p no:cacheprovider
-          -k "sc_ra3" --basetemp "${RUNNER_TEMP}/sc-ra3/pytest"
+        # --basetemp keeps each run's logs (the Node, the approval service) for the upload.
+        run: |
+          mkdir -p "${RUNNER_TEMP}/sc-ra3-tests"
+          python -m pytest qualification/security-context/tests -q -p no:cacheprovider \
+            -k "sc_ra3" --basetemp "${RUNNER_TEMP}/sc-ra3-tests/pytest"
       - name: SC-RA-3 fixture
         run: |
           python qualification/security-context/run_sc_ra3.py --out "${RUNNER_TEMP}/sc-ra3"
@@ -99,6 +101,8 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sc-ra3-${{ matrix.os }}
-          path: ${{ runner.temp }}/sc-ra3
+          path: |
+            ${{ runner.temp }}/sc-ra3
+            ${{ runner.temp }}/sc-ra3-tests
           if-no-files-found: ignore
           retention-days: 14
