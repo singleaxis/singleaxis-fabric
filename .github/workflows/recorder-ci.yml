@@ -335,6 +335,35 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  plan-scenarios:
+    # Spec 058 §3.3, G5 (WP8-21): `fabric plan` answers each of the friction audit's five
+    # "which layers do I need?" scenarios (scripts/plan_scenarios/scenarios.json) in one
+    # command, in at most 10 s, with no network: each runs in a network namespace with an
+    # audit hook that aborts on any socket use. plan-scenarios.json is kept.
+    name: Plan scenarios (G5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the CLI under test
+        run: |
+          scripts/ci/install-python-locked.sh --extra cli --no-default-groups --group ci
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - name: Plan the five audit scenarios
+        run: >-
+          python3 scripts/plan_scenarios/run.py --netns require
+          --work "${RUNNER_TEMP}/f058-plan-scenarios" --out plan-scenarios.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: plan-scenarios
+          path: plan-scenarios.json
+          if-no-files-found: warn
+          retention-days: 30
+
   fabricctl:
     name: Recorder CLI
     runs-on: ubuntu-latest
