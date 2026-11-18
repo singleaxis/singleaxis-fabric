@@ -945,6 +945,16 @@ never kept and verify cannot pass.
 Fix: set injector.capturePolicy to your fabric.deployment-policy/v1 document in your values
 (docs/get-started/kubernetes.md), run fabric up --kubernetes again, then roll out your agents.
 
+### FC-156
+
+`sensor_runtime_class_unread`, warning: the host sensor could not read the RuntimeClass of some
+selected pods, so a gVisor or Kata pod among them cannot be reported unsupported_runtime and may be
+counted as scoped.
+
+Fix: grant the sensor's service account get on runtimeclasses.node.k8s.io (the chart's ClusterRole
+does: run helm upgrade; for deploy/kubernetes/host-emitter-daemonset.yaml apply its current
+ClusterRole), and check that each RuntimeClass the pods name exists.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001

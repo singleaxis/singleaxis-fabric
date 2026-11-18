@@ -764,13 +764,6 @@ def content_store(install: _kubeview.Install, view: _kubeview.View,
                else "content delivery is off (otel-collector.content.enabled=false)")  # fmt: skip
         view.findings.append(Finding("FC-154", why))
         return None, None
-    if (
-        install.production
-        and install.injector.get("enabled")
-        and not install.injector.get("capturePolicy")
-    ):
-        # Without a capture policy a production SDK keeps model bodies out (FW-008).
-        view.findings.append(Finding("FC-155", "injector.capturePolicy is empty"))
     from ..content_store.s3 import S3ContentStore  # noqa: PLC0415
 
     own_endpoint = any((environ.get(name) or "").strip() for name in _AWS_ENDPOINT_VARIABLES)

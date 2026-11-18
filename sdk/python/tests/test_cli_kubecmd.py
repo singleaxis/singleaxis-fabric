@@ -47,7 +47,7 @@ def _install(**changes: Any) -> dict[str, Any]:
                              "nodeSecret": "fabric-ingress-agents",
                              "ports": {"grpc": 4337, "http": 4338}}],
         "injector": {"enabled": True, "deployment": "fabric-fabric-injector",
-                     "webhook": "fabric-injector-fabric-system-fabric"},
+                     "webhook": "fabric-injector-fabric-system-fabric", "capturePolicy": True},
         "hostSensor": {"enabled": True, "idKeySecret": "fabric-id-key",
                        "nodes": [{"name": "kind-control-plane", "port": 4417,
                                   "secret": "fabric-host-kind-control-plane"}]},
@@ -72,7 +72,7 @@ HEALTH_OK = (
     "2026/11/17 10:00:00 fabric-host-emitter: health partial_quarantined_batches=0 "
     "pod_roots=1 pod_selector_matched=1 pod_cgroups_found=1 pods_selected=1 pods_scoped=1 "
     "pods_unscoped=0 pods_unscoped_cgroup_not_found=0 pods_unscoped_unsupported_runtime=0 "
-    "pods_unscoped_node_not_supported=0 pods_unscoped_pod_limit=0\n"
+    "pods_unscoped_node_not_supported=0 pods_unscoped_pod_limit=0 pods_runtime_unknown=0\n"
 )
 
 
@@ -807,23 +807,43 @@ def test_verify_reads_the_release_content_store_with_the_workstations_aws_config
     assert store is not None and store.endpoint_url is None  # botocore reads the variable
 
 
-def test_verify_names_a_production_injector_without_a_capture_policy(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:  # fmt: skip
+def test_doctor_and_verify_name_a_production_injector_without_a_capture_policy() -> None:
     """A production SDK keeps model bodies out without a capture policy (FW-008), so the
-    store has nothing to verify the decisions against: verify says why."""
-    monkeypatch.setattr(S3ContentStore, "ensure_client", lambda self: None)
-    store = {"backend": "s3", "bucket": "acme-content", "region": "us-east-1"}
-    node = {"service": "fabric-otel-collector", "content": True, "contentStore": store}
-    for policy, expected in ((False, ["FC-155"]), (True, [])):
-        injector = {"enabled": True, "deployment": "d", "capturePolicy": policy}
-        view = _kubeview.View()
-        opened, _ = _kubecmd.content_store(
-            _kubeview.Install(_install(node=node, injector=injector)), view, {}
+    decisions cannot be verified whatever the content store: ``doctor`` and ``verify``
+    say why, with or without ``--spans`` and an S3 store."""
+    for policy, expected in ((False, True), (True, False)):
+        cluster = _healthy()
+        cast(dict[str, Any], cluster.install)["injector"]["capturePolicy"] = policy
+        doctor, _ = _kubecmd.run_doctor(
+            _options("doctor", "--kubernetes"), {}, cluster=_c(cluster), probe=_never_probe
         )
-        assert opened is not None and _ids(view.findings) == expected
-        if expected:
-            assert "injector.capturePolicy" in str(view.findings[0].detail)
+        verify, _ = _kubecmd.run_verify(
+            _options("verify", "--kubernetes"), {}, cluster=_c(cluster),
+            probe=_never_probe, canary=_no_canary,
+        )  # fmt: skip
+        for report in (doctor, verify):
+            found = [f for f in report.findings if f.id == "FC-155"]
+            assert bool(found) is expected, report.command
+            if expected:
+                assert "injector.capturePolicy" in str(found[0].detail)
+                assert "FC-097" not in _ids(report.findings)
+
+
+def test_the_sensor_reports_pods_whose_runtime_class_it_cannot_read() -> None:
+    """The emitter's ``pods_runtime_unknown`` (RBAC without get on runtimeclasses): a
+    gVisor pod could pass for scoped, so doctor names it with the fix, never silence."""
+    cluster = _healthy()
+    cluster.logs_by_pod["fabric-host-emitter-abc"] = HEALTH_OK.replace(
+        "pods_runtime_unknown=0", "pods_runtime_unknown=2"
+    )
+    report, _ = _kubecmd.run_doctor(
+        _options("doctor", "--kubernetes"), {}, cluster=_c(cluster), probe=_never_probe
+    )
+    by_id = {f.id: str(f.detail) for f in report.findings}
+    assert by_id["FC-156"] == "node kind-control-plane: 2 pod(s)"
+    assert "FC-136" not in by_id and "FC-097" not in by_id
+    nodes = report.data["kubernetes"]["sensor"]["nodes"]
+    assert nodes["kind-control-plane"]["pods_runtime_unknown"] == 2
 
 
 def test_verify_says_why_decisions_cannot_be_verified_without_a_readable_store(

@@ -364,6 +364,10 @@ def check_injector(cluster: Cluster, install: Install, view: View) -> bool | Non
         elif _labels(namespace).get(INJECTION_LABEL) != "enabled":
             unlabelled.append(str(agent.get("name")))
             view.findings.append(Finding("FC-132", str(agent.get("name"))))
+    if install.production and not install.injector.get("capturePolicy"):
+        # Without a capture policy a production SDK keeps model bodies out (FW-008), so
+        # decisions cannot be verified however content is delivered.
+        view.findings.append(Finding("FC-155", "injector.capturePolicy is empty"))
     view.data["injector"] = {"enabled": True, "available": available, "unlabelled": unlabelled}
     view.lines.append("injector: " + ("available" if available else "not available"))
     return available
@@ -570,6 +574,11 @@ def check_sensor(cluster: Cluster, install: Install, view: View) -> None:
         }
         for reason, count in seen.unscoped.items():
             view.findings.append(Finding("FC-134", f"node {node}: {count} pod(s), {reason}"))
+        if scope.get("pods_runtime_unknown"):
+            nodes[node]["pods_runtime_unknown"] = scope["pods_runtime_unknown"]
+            view.findings.append(
+                Finding("FC-156", f"node {node}: {scope['pods_runtime_unknown']} pod(s)")
+            )
         if seen.export_code:
             view.findings.append(Finding("FC-135", f"node {node}: grpc_code={seen.export_code}"))
         counts = (
@@ -578,7 +587,8 @@ def check_sensor(cluster: Cluster, install: Install, view: View) -> None:
             else "no health line yet (it logs one every 30 s)"
         )
         view.lines.append(f"host sensor on {node}: {counts}")
-        if seen.scope is not None and not seen.unscoped and not seen.export_code:
+        if (seen.scope is not None and not seen.unscoped and not seen.export_code
+                and not scope.get("pods_runtime_unknown")):  # fmt: skip
             view.findings.append(Finding("FC-136", f"node {node}: {counts}"))
     view.data["sensor"] = {"enabled": True, "nodes": nodes}
 
