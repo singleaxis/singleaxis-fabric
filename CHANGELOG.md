@@ -48,7 +48,9 @@ it never makes, applies, waits for or returns one.
   `cgroup_not_found`, `unsupported_runtime` (the pod runs under a gVisor or
   Kata RuntimeClass, whose system calls never reach the node's kernel),
   `node_not_supported` (the kernel cannot load the sensor) or `pod_limit`. A
-  WARN line names each reason with its fix instead of staying silent.
+  WARN line names each reason with its fix instead of staying silent. A pod
+  whose RuntimeClass the sensor cannot read (no `get` on `runtimeclasses`)
+  is counted in `pods_runtime_unknown` with a WARN naming the permission.
 - **`fabric` on Kubernetes.** `fabric up --kubernetes` installs the release
   with one `helm upgrade --install` and a preset (`--render DIR` writes the
   values and Secret manifests for your own pipeline instead); `fabric down
@@ -70,7 +72,8 @@ it never makes, applies, waits for or returns one.
   each agent namespace with that namespace's tenant, and the injector mounts
   it read-only for the agents. In production an agent keeps model bodies
   only under a policy; without one, `fabric verify --kubernetes` says why it
-  cannot check the agent's decisions.
+  cannot check the agent's decisions, and so does `fabric doctor
+  --kubernetes`.
 - **With the host sensor, injected agents record the commands they run.**
   The chart sets `FABRIC_WIRE_EXEC=1` for injected pods when
   `hostSensor.enabled`. An agent's commands are what ties the sensor's
@@ -80,7 +83,7 @@ it never makes, applies, waits for or returns one.
   agent that runs in a loop. The newest run is always younger than the
   sensor's last heartbeat, so a run judged on an earlier look stays a
   candidate until its evidence arrives.
-- New diagnostics `FC-120` to `FC-155` for the Kubernetes commands, each
+- New diagnostics `FC-120` to `FC-156` for the Kubernetes commands, each
   with its fix.
 - New diagnostics `FC-100` to `FC-112` say what went wrong with Kubernetes
   Secrets (no kubectl, missing namespace, no permission, API unreachable, an
