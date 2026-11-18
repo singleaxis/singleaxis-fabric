@@ -49,9 +49,14 @@ export function sourceId(fill: string): string {
 
 /** Bundles the holder fixture into a temporary CommonJS file. */
 export function bundleHolder(): { file: string; cleanup(): void } {
-  const dir = mkdtempSync(join(tmpdir(), "f055-t5-holder-"));
+  return bundleFixture("holder");
+}
+
+/** Bundles `fixtures/<name>.ts` into a temporary CommonJS file `<name>.cjs`. */
+export function bundleFixture(name: string): { file: string; cleanup(): void } {
+  const dir = mkdtempSync(join(tmpdir(), `f055-t5-${name}-`));
   buildSync({
-    entryPoints: [join(HERE, "fixtures", "holder.ts")],
+    entryPoints: [join(HERE, "fixtures", `${name}.ts`)],
     outdir: dir,
     outExtension: { ".js": ".cjs" },
     bundle: true,
@@ -61,7 +66,7 @@ export function bundleHolder(): { file: string; cleanup(): void } {
     logLevel: "silent",
   });
   return {
-    file: join(dir, "holder.cjs"),
+    file: join(dir, `${name}.cjs`),
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
 }

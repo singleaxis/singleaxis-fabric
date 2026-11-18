@@ -16,6 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { Worker } from "node:worker_threads";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
@@ -49,7 +50,7 @@ import {
 } from "../../../src/wire/registration.js";
 import { WireRuntime, createRuntimeShared } from "../../../src/wire/runtime.js";
 import { REPO, contract } from "../helpers.js";
-import { type Native, native, sourceId, spoolDir } from "./helpers.js";
+import { type Native, bundleFixture, native, sourceId, spoolDir } from "./helpers.js";
 
 let lib: Native;
 /** The module as shipped: real shared mappings (8 per process, never unmapped, §4.4). */
@@ -578,6 +579,40 @@ describe("a filesystem that does not enforce flock (a Docker Desktop bind mount)
     done(registration);
     expect(names(dir)).toEqual([]); // a clean close leaves nothing
   });
+
+  it("never declares it from another isolate that knows the runtime, as the Fabric worker", async () => {
+    // The scan in this isolate is protected by this isolate's held list; the Fabric
+    // worker's isolate has none, so only the published mirror handle protects the epoch.
+    const dir = spool();
+    const rt = runtime();
+    const registration = reg(dir, rt, { addon: unenforced(), warn: () => undefined });
+    expect(registration.status).toBe("registered");
+    rt.allocate();
+    const scanner = bundleFixture("scanner");
+    try {
+      const result = await new Promise<{ withRuntime: string[][]; withoutRuntime: string[][] }>(
+        (resolve, reject) => {
+          const worker = new Worker(scanner.file, {
+            workerData: {
+              shared: rt.shared,
+              prebuilds: lib.build.dir,
+              digest: lib.digest,
+              spool: dir,
+            },
+          });
+          worker.once("message", resolve);
+          worker.once("error", reject);
+        },
+      );
+      expect(result.withRuntime).toEqual([]);
+      // Without the runtime, that isolate takes the live epoch for an orphan: the check
+      // above is what protects it, not this isolate's held list.
+      expect(result.withoutRuntime).toEqual([[sourceId("a"), String(rt.epoch)]]);
+    } finally {
+      scanner.cleanup();
+    }
+    done(registration);
+  }, 60_000);
 
   it("removes a finished writer's file that another process declared", () => {
     const dir = spool();
