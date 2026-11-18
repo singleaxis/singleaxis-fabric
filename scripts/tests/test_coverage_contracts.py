@@ -684,8 +684,9 @@ def _vector_code(document: Any) -> str:
 def test_p1_every_section_4_3_artifact_is_pinned() -> None:
     manifest = json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())
     pinned = {record["path"]: record for record in manifest["artifacts"]}
-    # 1.2.0: spec 056 (WP6-01); 1.3.0: 056 M2 (WP6-11); 1.4.0: spec 057 WP7-0
-    assert manifest["version"] == "1.4.0"
+    # 1.2.0: spec 056 (WP6-01); 1.3.0: 056 M2 (WP6-11); 1.4.0: spec 057 WP7-0;
+    # 1.5.0: spec 058 WP8-17 (the integration rows registry)
+    assert manifest["version"] == "1.5.0"
     for path in P1_ARTIFACTS:
         assert path in pinned, path
     assert (
@@ -1633,3 +1634,119 @@ def test_056_m2_peer_address_and_sandbox_id_vectors() -> None:
     assert docker in {
         c["ids"].get("fabric.execution.sandbox_id") for c in sandbox["cgroups"]
     }
+
+
+# ------------------------------------------------------------------ spec 058 §12.1 (WP8-17)
+ROWS_PATH = "registry/integration-rows-v1.json"
+
+
+def _rows_error(tmp_path: Path, change: Callable[[dict[str, Any]], None]) -> str:
+    from contracts.validate_coverage_contracts import check_integration_rows  # noqa: PLC0415
+
+    document = json.loads((REPO_ROOT / FAMILY / ROWS_PATH).read_text("utf-8"))
+    change(document)
+    target = tmp_path / FAMILY / ROWS_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(CoverageContractError) as caught:
+        check_integration_rows(tmp_path, load_registries(REPO_ROOT))
+    return caught.value.code
+
+
+def _row(document: dict[str, Any], row_id: str) -> dict[str, Any]:
+    row: dict[str, Any] = next(r for r in document["rows"] if r["id"] == row_id)
+    return row
+
+
+def test_integration_rows_registry_is_valid_and_covers_the_spec_rows() -> None:
+    """Spec 058 §12.1: the twelve rows of the table, plus the per-request tenant row of
+    OQ-13 and the remote sandbox row of the audit's Path 5, each mapped and checked."""
+    from contracts.validate_coverage_contracts import check_integration_rows  # noqa: PLC0415
+
+    ids = check_integration_rows(REPO_ROOT, load_registries(REPO_ROOT))
+    assert ids == ["model_calls", "tool_calls", "commands", "remote_sandbox", "files", "network",
+                   "mcp", "host", "permissions", "run_identity", "tenant_per_request",
+                   "subagents", "browser", "realtime"]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("change", "code"),
+    [
+        (
+            lambda d: _row(d, "model_calls")["fields"].append("Z99"),
+            "coverage.rows.fields",
+        ),
+        (
+            lambda d: _row(d, "commands")["capture_points"].append(
+                {
+                    "id": "no.such.point",
+                    "runtime": "python",
+                    "built": True,
+                    "switch": "always",
+                }
+            ),
+            "coverage.rows.points",
+        ),
+        # wire.py.httpx supplies no file field
+        (
+            lambda d: _row(d, "files")["capture_points"].append(
+                {
+                    "id": "wire.py.httpx",
+                    "runtime": "python",
+                    "built": True,
+                    "switch": "always",
+                }
+            ),
+            "coverage.rows.points",
+        ),
+        # a hook (kind H) is configuration, never code
+        (
+            lambda d: _row(d, "commands")["capture_points"][0].update(
+                switch="code", code="x()"
+            ),
+            "coverage.rows.switch",
+        ),
+        (
+            lambda d: _row(d, "commands")["capture_points"][0].pop("fix"),
+            "coverage.rows.fix",
+        ),
+        (
+            lambda d: _row(d, "commands")["capture_points"][0].update(
+                fix="edit a YAML file"
+            ),
+            "coverage.rows.fix",
+        ),
+        (
+            lambda d: _row(d, "commands")["capture_points"][0].update(
+                switch="capture.everything"
+            ),
+            "coverage.rows.switch",
+        ),
+        # the capture-point registry says wire.py.httpx is built
+        (
+            lambda d: _row(d, "model_calls")["capture_points"][0].update(built=False),
+            "coverage.rows.built",
+        ),
+        (
+            lambda d: _row(d, "files")["invisible"][0].update(reason="because"),
+            "coverage.rows.reason",
+        ),
+        (lambda d: _row(d, "files").update(invisible=[]), "coverage.rows.invisible"),
+        (
+            lambda d: _row(d, "tool_calls")["capture_points"][0].update(
+                from_row="realtime"
+            ),
+            "coverage.rows.switch",
+        ),
+        (
+            lambda d: _row(d, "files").update(question=_row(d, "commands")["question"]),
+            "coverage.rows.id",
+        ),
+        (lambda d: _row(d, "files").update(extra=True), "coverage.rows.shape"),
+        (lambda d: d.update(states=["recorded"]), "coverage.rows.states"),
+    ],
+)
+def test_integration_rows_registry_refuses(
+    tmp_path: Path, change: Callable[[dict[str, Any]], None], code: str
+) -> None:
+    assert _rows_error(tmp_path, change) == code

@@ -2714,6 +2714,268 @@ def check_spec(root: Path, reg: Mapping[str, Any], *, write: bool = False) -> li
     return sorted(expected)
 
 
+# ------------------------------------------------------------------ spec 058 section 12.1
+INTEGRATION_ROWS = "registry/integration-rows-v1.json"
+ROW_STATES = ["recorded", "fix", "needs code", "invisible", "partial", "not observed"]
+ROW_RUNTIMES = {"python", "node", "other", "any"}
+ROW_SWITCHES = {
+    "always",
+    "derived",
+    "code",
+    "capture.exec",
+    "capture.http_hosts",
+    "capture.mcp",
+    "sensor",
+}
+_ROW_KEYS = {
+    "id",
+    "question",
+    "fields",
+    "capture_points",
+    "invisible",
+    "limits",
+    "show_libraries",
+}
+_POINT_KEYS = {
+    "id",
+    "runtime",
+    "libraries",
+    "built",
+    "switch",
+    "fix",
+    "code",
+    "evidence",
+    "from_row",
+    "supporting",
+    "via",
+}
+_INVISIBLE_KEYS = {"runtime", "reason", "text", "alternative"}
+_LIMIT_KEYS = {
+    "id",
+    "runtime",
+    "libraries",
+    "node_below",
+    "question",
+    "reason",
+    "text",
+    "fix",
+}
+_ROW_ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
+_LIBRARY_RE = re.compile(r"^(@[a-z0-9-]+/)?[a-z0-9][a-z0-9._-]{0,63}$")
+_ENV_SWITCH_RE = re.compile(r"^env:FABRIC_[A-Z0-9_]{1,64}$")
+
+
+def _closed(document: Mapping[str, Any], allowed: set[str], where: str) -> None:
+    extra = set(document) - allowed
+    if extra:
+        _fail("coverage.rows.shape", where, f"unknown keys {sorted(extra)}")
+
+
+def _text(value: Any, where: str, limit: int = 240) -> None:
+    if not isinstance(value, str) or not value.strip() or len(value) > limit:
+        _fail(
+            "coverage.rows.text",
+            where,
+            f"needs a non-empty text of at most {limit} chars",
+        )
+
+
+def check_integration_rows(root: Path, reg: Mapping[str, Any]) -> list[str]:
+    """Spec 058 section 12.1: the coverage report's rows agree with the field and
+    capture-point registries. Every row's fields exist; every capture point it lists
+    exists and supplies at least one of the row's fields (or, with ``via``, the fields it
+    names); a records (``R``) point is the only kind a ``code`` switch names; a switch
+    that is neither always on, derived nor code names the one command that turns it on; a
+    point marked not built is not built in the capture-point registry either; and every
+    invisible or limit reason is a coverage reason. Returns the row ids."""
+    path = INTEGRATION_ROWS
+    document = _load(root / FAMILY / path)
+    _closed(
+        document,
+        {"schema_version", "registry_revision", "spec", "comment", "states", "rows"},
+        path,
+    )
+    if document.get("schema_version") != "fabric.integration-rows/v1":
+        _fail(
+            "coverage.rows.shape",
+            path,
+            "schema_version must be fabric.integration-rows/v1",
+        )
+    if document.get("states") != ROW_STATES:
+        _fail("coverage.rows.states", path, f"states must be {ROW_STATES}")
+    fields = {f["id"] for f in reg["fields"]["fields"]}
+    points = {p["id"]: p for p in reg["points"]["capture_points"]}
+    reasons = {r["value"] for r in reg["vocab"]["reason"]}
+    rows = document.get("rows")
+    if not isinstance(rows, list) or not rows:
+        _fail("coverage.rows.shape", path, "rows must be a non-empty list")
+    ids: list[str] = []
+    questions: set[str] = set()
+    for row in rows:
+        _closed(row, _ROW_KEYS, path)
+        row_id = row.get("id")
+        where = f"{path}#{row_id}"
+        if not isinstance(row_id, str) or not _ROW_ID_RE.match(row_id) or row_id in ids:
+            _fail("coverage.rows.id", where, "row ids are unique snake_case names")
+        ids.append(row_id)
+        _text(row.get("question"), where, 60)
+        if row["question"] in questions:
+            _fail("coverage.rows.id", where, "questions are unique")
+        questions.add(row["question"])
+        row_fields = row.get("fields")
+        if not isinstance(row_fields, list) or not row_fields:
+            _fail("coverage.rows.fields", where, "a row maps to at least one field")
+        unknown = sorted(set(row_fields) - fields)
+        if unknown:
+            _fail(
+                "coverage.rows.fields",
+                where,
+                f"fields not in the field registry: {unknown}",
+            )
+        for library in row.get("show_libraries", []):
+            if not _LIBRARY_RE.match(library):
+                _fail("coverage.rows.library", where, f"bad library name {library!r}")
+        entries = row.get("capture_points")
+        if not isinstance(entries, list) or not entries:
+            _fail(
+                "coverage.rows.points", where, "a row lists at least one capture point"
+            )
+        for entry in entries:
+            _check_row_point(entry, row, where, points, ids[:-1])
+        invisible = row.get("invisible")
+        if not isinstance(invisible, list) or not invisible:
+            _fail("coverage.rows.invisible", where, "a row says what stays invisible")
+        runtimes = [item.get("runtime") for item in invisible]
+        if len(set(runtimes)) != len(runtimes):
+            _fail("coverage.rows.invisible", where, "one invisible entry per runtime")
+        for item in invisible:
+            _closed(item, _INVISIBLE_KEYS, where)
+            if item.get("runtime") not in (ROW_RUNTIMES - {"any"}) | {"*"}:
+                _fail(
+                    "coverage.rows.runtime",
+                    where,
+                    f"bad runtime {item.get('runtime')!r}",
+                )
+            if item.get("reason") not in reasons:
+                _fail(
+                    "coverage.rows.reason",
+                    where,
+                    f"{item.get('reason')!r} is not a reason",
+                )
+            _text(item.get("text"), where)
+            if "alternative" in item:
+                _text(item["alternative"], where)
+        for limit in row.get("limits", []):
+            _closed(limit, _LIMIT_KEYS, where)
+            if limit.get("runtime") not in ROW_RUNTIMES - {"any"}:
+                _fail(
+                    "coverage.rows.runtime",
+                    where,
+                    f"bad runtime {limit.get('runtime')!r}",
+                )
+            if not limit.get("libraries") and not limit.get("node_below"):
+                _fail(
+                    "coverage.rows.limit",
+                    where,
+                    "a limit applies to libraries or a version",
+                )
+            if limit.get("reason") not in reasons:
+                _fail(
+                    "coverage.rows.reason",
+                    where,
+                    f"{limit.get('reason')!r} is not a reason",
+                )
+            for key in ("question", "text", "fix"):
+                _text(
+                    limit.get(key),
+                    f"{where}/{limit.get('id')}",
+                    60 if key == "question" else 240,
+                )
+    return ids
+
+
+def _check_row_point(
+    entry: Mapping[str, Any],
+    row: Mapping[str, Any],
+    where: str,
+    points: Mapping[str, Any],
+    earlier_rows: Sequence[str],
+) -> None:
+    _closed(entry, _POINT_KEYS, where)
+    point_id = entry.get("id")
+    point = points.get(point_id)
+    if point is None:
+        _fail("coverage.rows.points", where, f"{point_id!r} is not a capture point")
+    here = f"{where}/{point_id}"
+    supplies = set(point["supplies"])
+    via = entry.get("via")
+    if via is not None:
+        if not via or not set(via) <= supplies:
+            _fail(
+                "coverage.rows.points",
+                here,
+                "via names fields the capture point supplies",
+            )
+    elif not supplies & set(row["fields"]):
+        _fail(
+            "coverage.rows.points",
+            here,
+            "the capture point supplies none of the row's fields",
+        )
+    if entry.get("runtime") not in ROW_RUNTIMES:
+        _fail("coverage.rows.runtime", here, f"bad runtime {entry.get('runtime')!r}")
+    for library in entry.get("libraries", []):
+        if not _LIBRARY_RE.match(library):
+            _fail("coverage.rows.library", here, f"bad library name {library!r}")
+    if not isinstance(entry.get("built"), bool):
+        _fail("coverage.rows.points", here, "built is true or false")
+    if entry["built"] is False and str(point["state"]).lower().startswith("built"):
+        _fail(
+            "coverage.rows.built", here, "the capture-point registry says it is built"
+        )
+    switch = entry.get("switch")
+    if switch not in ROW_SWITCHES and not (
+        isinstance(switch, str) and _ENV_SWITCH_RE.match(switch)
+    ):
+        _fail("coverage.rows.switch", here, f"unknown switch {switch!r}")
+    if switch == "code" and point["kind"] != "R":
+        _fail(
+            "coverage.rows.switch", here, "only a records (R) capture point needs code"
+        )
+    if (switch == "code") != ("code" in entry):
+        _fail(
+            "coverage.rows.switch",
+            here,
+            "a code switch, and only it, names the API call",
+        )
+    needs_fix = switch not in {"always", "derived", "code"}
+    if needs_fix and entry["built"] and "fix" not in entry:
+        _fail(
+            "coverage.rows.fix",
+            here,
+            "a switched capture point names the command that fixes it",
+        )
+    if not needs_fix and "fix" in entry:
+        _fail("coverage.rows.fix", here, "only a switched capture point has a fix")
+    if (switch == "derived") != ("from_row" in entry):
+        _fail(
+            "coverage.rows.switch",
+            here,
+            "a derived point, and only it, names its from_row",
+        )
+    if switch == "derived" and entry["from_row"] not in earlier_rows:
+        _fail("coverage.rows.switch", here, "from_row names an earlier row")
+    for key in ("fix", "code", "evidence"):
+        if key in entry:
+            _text(entry[key], here)
+    if "fix" in entry and not re.match(r"^(fabric |FABRIC_[A-Z0-9_]+=)", entry["fix"]):
+        _fail(
+            "coverage.rows.fix",
+            here,
+            "a fix is a fabric command or an SDK variable line",
+        )
+
+
 def validate_coverage_contracts(repo_root: Path, *, write: bool = False) -> list[str]:
     """Validate the family and the spec's generated blocks; return what was checked."""
     reg = load_registries(repo_root)
@@ -2727,7 +2989,12 @@ def validate_coverage_contracts(repo_root: Path, *, write: bool = False) -> list
     pinned = check_manifest(repo_root)
     validate_artifacts(repo_root, reg)
     blocks = check_spec(repo_root, reg, write=write)
-    return [f"coverage/{p}" for p in pinned] + [f"spec/{b}" for b in blocks]
+    rows = check_integration_rows(repo_root, reg)  # spec 058 section 12.1
+    return (
+        [f"coverage/{p}" for p in pinned]
+        + [f"spec/{b}" for b in blocks]
+        + [f"rows/{r}" for r in rows]
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
