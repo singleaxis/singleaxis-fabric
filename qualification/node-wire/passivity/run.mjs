@@ -254,7 +254,6 @@ function memory() {
             "--expose-gc",
         ]).json;
     }
-    const mean = (values) => values.reduce((a, b) => a + b, 0) / values.length;
     const verdicts = {};
     for (const arm of ["enabled", "saturated"]) {
         const a = arms[arm];
@@ -382,6 +381,16 @@ const report = {
 };
 const text = `${JSON.stringify(report, null, 2)}\n`;
 if (OUT !== undefined) writeFileSync(OUT, text);
+// The numbers behind each gate, in the job log too (an artifact can be unavailable).
+log(
+    `hook cost (enabled, ns): ${JSON.stringify(Object.fromEntries(Object.entries(result.hook_cost.enabled).map(([k, v]) => [k, [v.added_ns, v.budget_ns]])))}`,
+);
+log(
+    `event loop: ${JSON.stringify({ p99_delta_ms: result.event_loop.p99_delta_ms, max_delta_ms: result.event_loop.max_delta_ms, utilization_delta: result.event_loop.utilization_delta, scale: result.event_loop.scale })}`,
+);
+log(
+    `memory: ${JSON.stringify({ enabled: result.memory_bound.enabled.excess_growth_bytes, saturated: result.memory_bound.saturated.excess_growth_bytes })}`,
+);
 log(`gates: ${JSON.stringify(gates)}`);
 log(`result: ${report.result}`);
 process.exitCode = passed ? 0 : 1;

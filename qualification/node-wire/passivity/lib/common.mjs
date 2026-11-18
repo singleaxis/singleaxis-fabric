@@ -227,12 +227,16 @@ export function fixtures(port) {
  * or with `&lockstep=1` only after the client called `step()` for the previous one (so
  * each event is published as its own 1 KiB chunk; undici coalesces fast writes).
  */
+const LIMITS = { sse: 100_000, delay: 1000, gap: 1000, lockstep: 1 };
+
 export async function localProvider() {
     const json = Buffer.from(JSON.stringify({ id: "r", content: "y".repeat(KIB - 24) }));
     const event = Buffer.from(`data: ${"z".repeat(KIB - 8)}\n\n`);
+    // Loopback-only harness parameters, bounded: no request can hold a timer longer than
+    // a second or stream more than 100,000 events.
     const param = (url, name) => {
-        const found = new RegExp(`[?&]${name}=(\\d+)`).exec(url);
-        return found === null ? undefined : Number(found[1]);
+        const found = new RegExp(`[?&]${name}=(\\d{1,6})(?:&|$)`).exec(url);
+        return found === null ? undefined : Math.min(Number(found[1]), LIMITS[name] ?? 0);
     };
     let step = () => undefined;
     const server = http.createServer((req, res) => {
