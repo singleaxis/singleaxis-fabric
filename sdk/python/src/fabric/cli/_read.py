@@ -368,8 +368,13 @@ def _permissions(base: Row, run: _Run) -> Row:
     return base
 
 
+#: Run ids no ``fabric.wire.run()`` scope gave: the source fallback, and the id taken from
+#: an OpenTelemetry trace that was active around the call (``wire/_stream.py``).
+_UNSCOPED_RUN_IDS = ("source:", "trace:")
+
+
 def _run_identity(base: Row, run: _Run) -> Row:
-    if any(not str(r["run_id"]).startswith("source:") for r in run.runs):
+    if any(not str(r["run_id"]).startswith(_UNSCOPED_RUN_IDS) for r in run.runs):
         return Row(base.question, "recorded", "fabric.wire.run() scopes", base.row_id)
     return base
 

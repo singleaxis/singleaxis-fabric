@@ -112,6 +112,14 @@ def test_mcp_http_controls_and_scopes_are_read_from_the_run(tmp_path: Path) -> N
     permissions = rows["permissions and control decisions"]
     assert permissions.state == "partial" and "control_pending_at_end" in permissions.note
     assert rows["end user and session"].note == "fabric.wire.run() scopes"
+    # A run id taken from an ambient OpenTelemetry trace is no run scope: still needs code.
+    traced = _rows(_read.coverage(resolved, _record(), [_run(run_id="trace:" + "ab" * 16)], None))[
+        "end user and session"
+    ]
+    assert (traced.state, traced.note) == (
+        "needs code",
+        "with fabric.wire.run(session_id=..., user_id=...)",
+    )
     empty = _rows(_read.coverage(resolved, _record(), [_run()], None, observed=_read.Observed({})))
     assert empty["MCP traffic"].state == "not observed"
     assert empty["network contacts (non-model HTTP)"].note == "no request to api.github.com"
