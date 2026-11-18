@@ -570,6 +570,15 @@ describe("metadata rules (Python parity)", () => {
     expect(name(Object.assign(new Error("x"), { name: "SocketError" }))).toBe("SocketError");
     expect(name(new CanaryNamedError("x"))).toBe("Error");
     expect(name(sneaky)).toBe("Error");
+    // An application abort reason can be a DOMException with its own `name` accessor.
+    const sneakyDom = Object.defineProperty(new DOMException("x", "AbortError"), "name", {
+      get: () => ((touched = true), "AbortError"),
+    });
+    expect(name(sneakyDom)).toBe("Error");
+    const ownData = Object.defineProperty(new DOMException("x"), "name", {
+      value: "canary-name",
+    });
+    expect(name(ownData)).toBe("Error");
     expect(name(new Proxy(new Error("x"), {}))).toBe("Error");
     expect(name("string reason")).toBe("Error");
     expect(touched).toBe(false);

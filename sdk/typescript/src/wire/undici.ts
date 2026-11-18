@@ -694,9 +694,13 @@ export function errorType(error: unknown): number {
     if (typeof error !== "object" || error === null || types.isProxy(error)) return 1;
     // The built-in `name` getter of an exact DOMException (fetch's AbortError and
     // TimeoutError) reads an internal slot; a subclass could define its own, so only the
-    // exact prototype is read.
+    // exact prototype is read, and only when the instance has no own `name` (an own
+    // accessor would be application code; an own data property is read below).
     const domException = globalThis.DOMException;
-    if (Object.getPrototypeOf(error) === domException.prototype) {
+    if (
+      Object.getPrototypeOf(error) === domException.prototype &&
+      Object.getOwnPropertyDescriptor(error, "name") === undefined
+    ) {
       return ERROR_CODES.get((error as InstanceType<typeof domException>).name) ?? 1;
     }
     let target: object | null = error;
