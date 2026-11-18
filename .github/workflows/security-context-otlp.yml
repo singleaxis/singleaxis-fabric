@@ -90,7 +90,7 @@ jobs:
       - name: Harness tests (a real run, each check's negative edits, the live plumbing)
         run: >-
           python -m pytest qualification/security-context/tests -q -p no:cacheprovider
-          -k "sc_ra3"
+          -k "sc_ra3" --basetemp "${RUNNER_TEMP}/sc-ra3/pytest"
       - name: SC-RA-3 fixture
         run: |
           python qualification/security-context/run_sc_ra3.py --out "${RUNNER_TEMP}/sc-ra3"

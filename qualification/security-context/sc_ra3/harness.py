@@ -402,8 +402,16 @@ class Harness:
             )
             deadline = time.monotonic() + 30
             while not port_file.exists() or not port_file.read_text().strip():
-                if self.process.poll() is not None or time.monotonic() > deadline:
-                    raise RuntimeError(f"the approval service did not start; see {log.name}")
+                code = self.process.poll()
+                if code is not None or time.monotonic() > deadline:
+                    log.flush()
+                    why = f"exited with {code}" if code is not None else "wrote no port in 30 s"
+                    tail = Path(log.name).read_text(errors="replace")[-2000:].strip()
+                    raise RuntimeError(
+                        f"the approval service did not start ({why}); its log, {log.name}, "
+                        f"ends with:\n{tail or '(empty)'}\nCheck that the OpenTelemetry SDK and "
+                        "OTLP/HTTP exporter are installed (the sdk/python dev group)."
+                    )
                 time.sleep(0.05)
             self.url = f"http://127.0.0.1:{port_file.read_text().strip()}"
             return self.url
