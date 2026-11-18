@@ -82,6 +82,18 @@ def test_exec_on_but_the_manifest_says_off_is_a_finding(tmp_path: Path) -> None:
         "the run's capture manifest reports the exec hook off",
     )
     assert [f.id for f in findings] == ["FC-162"]
+    assert findings[0].detail and "fabric doctor says why" in findings[0].detail
+    # With the run's status file, the finding names the SDK's own reason ids.
+    findings.clear()
+    _read.coverage(
+        _resolved(tmp_path, exec=True),
+        _record(),
+        [_run()],
+        {"warning_ids": ["FW-004", "FW-006", "FW-004"]},
+        observed=observed,
+        findings=findings,
+    )
+    assert findings[0].detail and findings[0].detail.endswith("(the SDK reported FW-004, FW-006)")
 
 
 def test_a_partial_row_names_each_reason_in_words(tmp_path: Path) -> None:

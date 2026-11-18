@@ -223,6 +223,8 @@ def explain_run(run: Mapping[str, Any]) -> list[str]:
 # ---------------------------------------------------------------- coverage report (§12)
 
 _SCHEME = re.compile(r'"schemes":\s*\["(https?)"')
+#: A diagnostics catalogue id, as a status file names one (13.1).
+_ID = re.compile(r"F[CWERN]-[0-9]{3}")
 
 
 def provider_url(entry: Mapping[str, Any]) -> str:
@@ -317,8 +319,14 @@ def _commands(base: Row, run: _Run) -> Row:
         return base
     if run.observed.channels.get("exec.subprocess") == "disabled":
         if run.findings is not None:
+            # §12.4 step 4: the cause, as the run's status file names it (FW-* ids).
+            status = run.status or {}
+            ids = [status.get("reason_id"), *(status.get("warning_ids") or ())]
+            named = list(dict.fromkeys(i for i in ids if isinstance(i, str) and _ID.fullmatch(i)))
+            cause = (f"the SDK reported {', '.join(named)}" if named
+                     else "fabric doctor says why")  # fmt: skip
             run.findings.append(Finding("FC-162", "capture.exec: true, but exec.subprocess was "
-                                        "off in the run (fabric doctor says why)"))  # fmt: skip
+                                        f"off in the run ({cause})"))  # fmt: skip
         why = "the run's capture manifest reports the exec hook off"
         return Row(base.question, "not observed", why, base.row_id)
     return _from_chain(base.question, run.runs, "effects", "exec hook", base.row_id)
