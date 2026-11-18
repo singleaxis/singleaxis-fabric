@@ -82,7 +82,7 @@ class Runner:
 
     def __call__(self, argv: Sequence[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
         self.calls.append(list(argv))
-        if argv[1:3] == ["-I", "-c"]:
+        if tuple(argv[1:4]) == _plan.INTERPRETER_FLAGS:
             out = json.dumps({"python": "3.12.7", "dists": self.distributions})
         elif argv[1:] == ["--version"]:
             out = self.node + "\n"
@@ -191,7 +191,9 @@ def test_plan_writes_nothing_and_runs_no_agent_code(tmp_path: Path) -> None:
     plan(project, root, runner, ["--mcp-config", "mcp.json", "--", *command])
     after = sorted((p.relative_to(tmp_path), p.stat().st_mtime_ns) for p in tmp_path.rglob("*"))
     assert before == after
-    assert runner.calls == [[str(project / ".venv/bin/python"), "-I", "-c", _plan._DISTRIBUTIONS]]
+    assert runner.calls == [
+        [str(project / ".venv/bin/python"), "-I", "-S", "-c", _plan._DISTRIBUTIONS]
+    ]
     assert "import importlib.metadata" in _plan._DISTRIBUTIONS
     assert "import fabric" not in _plan._DISTRIBUTIONS
 
@@ -726,3 +728,39 @@ def test_the_real_interpreter_probe_lists_distributions_without_importing_them()
     assert source == "interpreter" and libraries is not None
     assert "singleaxis-fabric" in libraries and "pytest" in libraries
     assert agent.version == ".".join(str(n) for n in sys.version_info[:3])
+
+
+def test_the_probe_runs_no_pth_or_sitecustomize_of_the_agents_environment(
+    tmp_path: Path,
+) -> None:
+    """§5.2 "runs no agent code": a ``.pth`` import line and a ``sitecustomize`` in the
+    agent's virtual environment execute whenever ``site`` runs; the probe starts the
+    interpreter without it (``-S``) and still lists the environment's distributions."""
+    venv = tmp_path / "venv"
+    subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
+        [sys.executable, "-m", "venv", "--without-pip", str(venv)], check=True, timeout=120
+    )
+    python = venv / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    found = subprocess.run(  # noqa: S603 - the fixture venv's interpreter
+        [str(python), "-I", "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+        capture_output=True, text=True, check=True, timeout=60,
+    )  # fmt: skip
+    site_packages = Path(found.stdout.strip())
+    marker = tmp_path / "agent-code-ran"
+    (site_packages / "zz_agent.pth").write_text(
+        f"import pathlib; pathlib.Path({str(marker)!r}).write_text('pth')\n"
+    )
+    (site_packages / "sitecustomize.py").write_text(
+        f"import pathlib; pathlib.Path({str(marker)!r}).write_text('sitecustomize')\n"
+    )
+    dist = site_packages / "example_http_client-1.0.dist-info"
+    dist.mkdir()
+    (dist / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: Example_HTTP.Client\nVersion: 1.0\n"
+    )
+    agent = _plan.Agent("python", "python", "python", python)
+    libraries, source = _plan.python_libraries(agent, tmp_path, subprocess.run)
+    assert not marker.exists(), marker.read_text()
+    assert source == "interpreter" and libraries is not None
+    assert libraries.get("example-http-client") == "1.0"
+    assert "singleaxis-fabric" not in libraries  # this venv's, not the base interpreter's

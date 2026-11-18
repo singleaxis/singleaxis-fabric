@@ -6,7 +6,8 @@ its evidence or the one command that closes the gap) and the next command.
 
 Read-only. It writes nothing, starts nothing, runs no agent code and makes no network
 connection (I4): it reads a few local files, asks the agent's own interpreter for its
-installed distributions with ``-I -c`` (``importlib.metadata``, nothing imported), and
+installed distributions with ``-I -S -c`` (``importlib.metadata``, nothing imported, no
+``.pth`` or ``sitecustomize`` of the agent's environment run), and
 reads ``package.json`` and its lockfile. It detects languages, interpreters, HTTP and
 protocol libraries, the OS, the kernel and the container runtime, never an agent
 framework (I6): a package the registry does not name changes nothing."""
@@ -54,11 +55,33 @@ _REPORTED = frozenset({
     "daytona-sdk", "playwright", "selenium", "websockets",
     "@singleaxis/fabric", "undici", "axios", "@modelcontextprotocol/sdk", "puppeteer",
 })  # fmt: skip
-#: Asks an interpreter (``-I``) for its distributions' names and versions; imports none.
+#: How the agent's interpreter is started for the listing: isolated (``-I``: no
+#: ``PYTHON*`` variable, no user site, not the working directory) and without ``site``
+#: (``-S``), so no ``.pth`` line and no ``sitecustomize`` of the agent's environment runs
+#: (they can execute code: "runs no agent code", §5.2).
+INTERPRETER_FLAGS = ("-I", "-S", "-c")
+#: Asks an interpreter for its distributions' names and versions; imports none of them.
+#: Without ``site`` it finds site-packages itself: a virtual environment's
+#: ``pyvenv.cfg`` (beside the executable or one level up) names the environment's prefix,
+#: and the base prefix only when it includes the system site-packages, as ``site`` does.
 _DISTRIBUTIONS = (
-    "import importlib.metadata as m, json, sys\n"
+    "import importlib.metadata as m, json, os, site, sys\n"
+    "prefixes = [sys.prefix, sys.exec_prefix]\n"
+    "here = os.path.dirname(os.path.abspath(sys.executable))\n"
+    "for d in (here, os.path.dirname(here)):\n"
+    " cfg = os.path.join(d, 'pyvenv.cfg')\n"
+    " if os.path.isfile(cfg):\n"
+    "  system = False\n"
+    "  with open(cfg, encoding='utf-8') as f:\n"
+    "   for line in f:\n"
+    "    k, _, v = line.partition('=')\n"
+    "    if k.strip().lower() == 'include-system-site-packages':\n"
+    "     system = v.strip().lower() == 'true'\n"
+    "  prefixes = [d] + (prefixes if system else [])\n"
+    "  break\n"
+    "paths = [p for p in dict.fromkeys(site.getsitepackages(prefixes)) if os.path.isdir(p)]\n"
     "out = {}\n"
-    "for d in m.distributions():\n"
+    "for d in m.distributions(path=paths):\n"
     " n = (d.metadata.get('Name') or '').strip()\n"
     " if n: out[n] = d.version\n"
     "print(json.dumps({'python': '%d.%d.%d' % sys.version_info[:3], 'dists': out}))\n"
@@ -284,11 +307,11 @@ def agent_from_directory(cwd: Path, environ: Mapping[str, str]) -> Agent | None:
 
 def python_libraries(agent: Agent, cwd: Path, runner: Callable[..., Any]
                      ) -> tuple[dict[str, str] | None, str | None]:  # fmt: skip
-    """The agent interpreter's distributions (``-I -c``, nothing imported), else the
-    project's declared dependencies (``pyproject.toml``, ``requirements.txt``)."""
+    """The agent interpreter's distributions (``-I -S -c``: no ``site``, nothing imported),
+    else the project's declared dependencies (``pyproject.toml``, ``requirements.txt``)."""
     if agent.interpreter is not None:
         try:
-            result = runner([str(agent.interpreter), "-I", "-c", _DISTRIBUTIONS],
+            result = runner([str(agent.interpreter), *INTERPRETER_FLAGS, _DISTRIBUTIONS],
                             capture_output=True, text=True, timeout=PROBE_TIMEOUT_S,
                             check=False, stdin=subprocess.DEVNULL, cwd=str(cwd))  # fmt: skip
             answer = json.loads(result.stdout.strip().splitlines()[-1])
