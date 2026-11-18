@@ -106,12 +106,15 @@ def run_plan(
     except Forbidden as exc:
         view.skipped("nodes", exc)
     capable, node_rows = [], []
+    incapable: list[tuple[str, str]] = []
     for node in nodes:
         info = (node.get("status") or {}).get("nodeInfo") or {}
         name = _kubeview._name(node)
         reason = _kubeview.node_sensor_reason(node)
         if reason is None:
             capable.append(name)
+        else:
+            incapable.append((name, reason))
         node_rows.append({
             "name": name, "kernel": info.get("kernelVersion"), "os": info.get("osImage"),
             "runtime": info.get("containerRuntimeVersion"), "kubelet": info.get("kubeletVersion"),
@@ -132,7 +135,7 @@ def run_plan(
         if [f.id for f in exc.findings] != ["FC-122"]:
             raise
     lines.append("")
-    rows = _plan_rows(install, capable, nodes, sandboxes, cgroups, policies)
+    rows = _plan_rows(install, capable, nodes, sandboxes, cgroups, policies, incapable)
     lines.extend(f"  {question:<38} {state:<12} {note}" for question, state, note in rows)
     lines.append("")
     if install is None:
@@ -188,7 +191,7 @@ def _serves_network_policies(cluster: Cluster) -> bool | None:
 def _plan_rows(
     install: _kubeview.Install | None, capable: Sequence[str], nodes: Sequence[Any],
     sandboxes: Sequence[tuple[str, str]], cgroups: Mapping[str, Any] | None,
-    policies: bool | None,
+    policies: bool | None, incapable: Sequence[tuple[str, str]] = (),
 ) -> list[tuple[str, str, str]]:  # fmt: skip
     """The predicted coverage rows of a cluster (§12.3), from what was read."""
     injector = bool(install and install.injector.get("enabled"))
@@ -202,8 +205,13 @@ def _plan_rows(
             else "--set injector.enabled=true and agentNamespaces; then annotate the agent's pods",
         ),
         ("tool calls and results", "recorded" if injector else "fix", "parsed from model bodies"),
-        ("commands the agent runs", "fix", "--set injector.env.FABRIC_WIRE_EXEC=1"),
-    ]
+        (
+            ("commands the agent runs", "recorded",
+             "exec hook (the chart turns FABRIC_WIRE_EXEC on with the host sensor)")
+            if injector and sensor
+            else ("commands the agent runs", "fix", "--set injector.env.FABRIC_WIRE_EXEC=1")
+        ),
+    ]  # fmt: skip
     layout = (
         f"kubelet cgroup driver {cgroups.get('driver')}, root {cgroups.get('root')}"
         if cgroups
@@ -219,6 +227,10 @@ def _plan_rows(
         rows.append(("host evidence (kernel sensor)", "fix",
                      f"--set preset=production-host-sensor ({len(capable)} of {len(nodes)} "
                      f"node(s) can run it; {layout})"))  # fmt: skip
+    if capable:
+        # §10.5: a node that cannot run the sensor is invisible, with its reason.
+        rows.extend((f"host evidence on node {name}", "invisible", reason)
+                    for name, reason in incapable)  # fmt: skip
     for name, handler in sandboxes:
         rows.append(
             (

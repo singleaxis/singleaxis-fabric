@@ -496,6 +496,21 @@ def test_a_default_deny_policy_and_a_failing_export_are_named() -> None:
     }
 
 
+def test_policy_ports_by_name_are_not_called_blocked() -> None:
+    """A named port resolves against container ports this check does not read: an
+    allow rule by name is never reported as a block; a numeric string is a number."""
+    labels = {"app.kubernetes.io/name": "fabric-host-emitter"}
+
+    def policy(port: Any) -> list[dict[str, Any]]:
+        return [{"spec": {"podSelector": {}, "policyTypes": ["Egress"],
+                          "egress": [{"ports": [{"port": port}]}]}}]  # fmt: skip
+
+    assert _kubeview._allows(policy("otlp-grpc"), labels, "Egress", 4417) is True
+    assert _kubeview._allows(policy("4417"), labels, "Egress", 4417) is True
+    assert _kubeview._allows(policy("53"), labels, "Egress", 4417) is False
+    assert _kubeview._allows(policy(53), labels, "Egress", 4417) is False
+
+
 def test_missing_secrets_a_down_node_and_a_missing_sensor_pod_are_errors() -> None:
     cluster = _healthy()
     del cluster.secrets[(AGENTS, "fabric-agent")]
@@ -955,9 +970,28 @@ def test_plan_reads_the_cluster_and_predicts_without_changing_anything() -> None
     assert "1 of 2 node(s)" in rows["host evidence (kernel sensor)"]["note"]
     assert rows["pods under RuntimeClass gvisor"]["state"] == "invisible"
     assert "unsupported_runtime" in rows["pods under RuntimeClass gvisor"]["note"]
+    # §10.5: the node that cannot run the sensor is an invisible row with its reason.
+    assert rows["host evidence on node fargate-x"]["state"] == "invisible"
+    assert "fargate" in rows["host evidence on node fargate-x"]["note"]
+    assert rows["commands the agent runs"]["state"] == "fix"
     assert any(line.startswith("next: fabric up --kubernetes") for line in lines)
     assert {"FC-138", "FC-148"} <= set(_ids(report.findings))
     assert {verb for verb, _ in cluster.calls} <= {"version", "items", "find", "raw"}
+
+
+def test_plan_with_the_sensor_installed_records_the_agents_commands() -> None:
+    """The chart sets FABRIC_WIRE_EXEC for injected agents with the host sensor, so plan
+    does not tell the operator to set it again."""
+    cluster = _healthy()
+    cluster.lists[("nodes", "")] = [
+        {"metadata": {"name": "kind-control-plane", "labels": {"kubernetes.io/os": "linux"}},
+         "status": {"nodeInfo": {"kernelVersion": "6.8.0"}}},
+    ]  # fmt: skip
+    report, _ = _kubecmd.run_plan(_options("plan", "--kubernetes"), {}, cluster=_c(cluster))
+    rows = {row["row"]: row for row in report.data["coverage"]}
+    assert rows["commands the agent runs"]["state"] == "recorded"
+    assert rows["host evidence (kernel sensor)"]["state"] == "recorded"
+    assert not [r for r in rows if r.startswith("host evidence on node")]
 
 
 def test_plan_without_kubernetes_is_still_not_built(capsys: pytest.CaptureFixture[str]) -> None:

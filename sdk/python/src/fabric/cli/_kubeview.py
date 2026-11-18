@@ -667,8 +667,8 @@ def _allows(policies: Sequence[Mapping[str, Any]], labels: Mapping[str, str], di
             port: int) -> bool | None:  # fmt: skip
     """Whether pods with ``labels`` may send (``Egress``) or receive (``Ingress``) on TCP
     ``port``, by the namespace's NetworkPolicies alone: None when no policy isolates them
-    in that direction, True when a selecting policy has a rule for the port (peers are not
-    judged), False when they are isolated and no rule names the port."""
+    in that direction, True when a selecting policy has a rule for the port or a named port
+    (peers are not judged), False when they are isolated and no rule names the port."""
     isolated = False
     for policy in policies:
         spec = policy.get("spec") or {}
@@ -686,6 +686,14 @@ def _allows(policies: Sequence[Mapping[str, Any]], labels: Mapping[str, str], di
                 first, last = entry.get("port"), entry.get("endPort")
                 if first is None or first == port:
                     return True
+                if isinstance(first, str) and not first.isdigit():
+                    # A named port resolves against the pods' container ports, which
+                    # this check does not read: never call it blocked.
+                    return True
+                if isinstance(first, str):
+                    first = int(first)
+                    if first == port:
+                        return True
                 if isinstance(first, int) and isinstance(last, int) and first <= port <= last:
                     return True
     return False if isolated else None

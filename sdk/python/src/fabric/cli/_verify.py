@@ -216,9 +216,7 @@ def _canary(
         findings.append(
             Finding("FC-073", error)
             if error
-            else Finding(
-                "FC-063", f"none of its records in {dest.spans_dir} after {wait:g} s"
-            )
+            else Finding("FC-063", f"none of its records in {dest.spans_dir} after {wait:g} s")
         )
         lines.append("canary: delivered to the Node, not found in the destination")
         return label, data
