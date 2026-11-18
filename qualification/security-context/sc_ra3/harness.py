@@ -382,6 +382,8 @@ class Harness:
             self.process = subprocess.Popen(
                 [
                     sys.executable,
+                    "-X",
+                    "faulthandler",  # SIGABRT on a start timeout dumps where it waits
                     str(SERVICE),
                     "--port-file",
                     str(port_file),
@@ -404,9 +406,16 @@ class Harness:
             while not port_file.exists() or not port_file.read_text().strip():
                 code = self.process.poll()
                 if code is not None or time.monotonic() > deadline:
+                    if code is None:
+                        self.process.send_signal(signal.SIGABRT)
+                        try:
+                            self.process.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            self.process.kill()
+                            self.process.wait(timeout=10)
                     log.flush()
                     why = f"exited with {code}" if code is not None else "wrote no port in 30 s"
-                    tail = Path(log.name).read_text(errors="replace")[-2000:].strip()
+                    tail = Path(log.name).read_text(errors="replace")[-4000:].strip()
                     raise RuntimeError(
                         f"the approval service did not start ({why}); its log, {log.name}, "
                         f"ends with:\n{tail or '(empty)'}\nCheck that the OpenTelemetry SDK and "
