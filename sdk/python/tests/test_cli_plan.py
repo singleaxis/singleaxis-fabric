@@ -491,6 +491,32 @@ def test_other_runtimes(tmp_path: Path, command: list[str], kind: str) -> None:
     assert found["host evidence (kernel sensor)"]["state"] == "recorded"
 
 
+def test_a_runner_command_is_its_program_never_the_runner_binary(tmp_path: Path) -> None:
+    """§5.2: ``uv run``/``poetry run`` are Python. Before the runner has created the
+    project's environment there is no interpreter to ask, so the declared dependencies
+    answer; the runner's own binary (an ELF or Mach-O file) is never read as the agent."""
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pyproject.toml").write_text('[project]\nname = "a"\ndependencies = ["httpx"]\n')
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name in ("uv", "poetry"):
+        (bin_dir / name).write_bytes(b"\x7fELF\x02\x01\x01" + b"\x00" * 64)
+        (bin_dir / name).chmod(0o755)
+    env = {"PATH": str(bin_dir)}
+    runner, root = Runner(), linux_root(tmp_path)
+    for command in (["uv", "run", "agent.py"], ["poetry", "run", "python", "agent.py"]):
+        report, _ = plan(project, root, runner, ["--", *command], env)
+        agent = report.data["agent"]
+        assert (agent["runtime"], agent["kind"]) == ("python", "python"), agent
+        assert agent["libraries_from"] == "project files"
+        assert rows(report)["model calls (requests and responses)"]["state"] == "recorded"
+    report, _ = plan(project, root, runner, ["--", "uv", "run", "mytool"], env)
+    agent = report.data["agent"]
+    assert agent["kind"] == "unknown" and "uv run" in (agent["detail"] or ""), agent
+    assert runner.calls == []
+
+
 @pytest.mark.parametrize(
     ("manifest", "runtime", "kind"),
     [

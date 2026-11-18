@@ -262,7 +262,7 @@ def _which_in(name: str, environ: Mapping[str, str], cwd: Path) -> Path | None:
     return Path(found) if found else None
 
 
-def agent_from_command(command: Sequence[str], environ: Mapping[str, str], cwd: Path) -> Agent:
+def agent_from_command(command: Sequence[str], environ: Mapping[str, str], cwd: Path) -> Agent:  # noqa: PLR0911 - one return per runtime
     """§5.2 "Agent runtime" from ``CMD``: ``_run.detect`` (the rule ``fabric run`` uses),
     refined for what ``run`` calls other: a JavaScript runtime Fabric does not capture,
     ``java -jar``, a compiled binary (with its Go version when it has build info)."""
@@ -272,6 +272,16 @@ def agent_from_command(command: Sequence[str], environ: Mapping[str, str], cwd: 
         return Agent("python", "python", name, runtime.interpreter, detail=runtime.detail)
     if runtime.kind == "node":
         return Agent("node", "node", name)
+    if name in _run._RUNNERS and command[1:2] == ["run"]:
+        # `uv run`, `poetry run`, ...: the project environment's program, never the runner
+        # binary itself. A Python target whose environment does not exist yet (the runner
+        # creates it on first run) is still Python: its packages come from the project
+        # files.
+        words = [word for word in command[2:] if not word.startswith("-")]
+        target = Path(words[0]).name if words else ""
+        if not target or _run._PYTHON_RE.match(target) or target.endswith(".py"):
+            return Agent("python", "python", name, None, detail=runtime.detail)
+        return Agent("other", "unknown", name, detail=runtime.detail)
     if name in ("bun", "deno"):
         return Agent("other", "javascript", name, detail=f"{name} is a JavaScript runtime "
                      "Fabric does not capture")  # fmt: skip
