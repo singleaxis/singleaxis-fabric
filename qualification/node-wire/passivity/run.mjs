@@ -266,8 +266,13 @@ function memory() {
             settings.slack_bytes;
         const excess = b.map((batch, i) => batch.rss - arms.baseline.batches[i].rss);
         const n = b.length;
-        const growth = mean(excess.slice(n - 4)) - mean(excess.slice(n - 8, n - 4));
-        const heapGrowth = b[n - 1].heap_used - b[settings.warmup_batches].heap_used;
+        const w = settings.warmup_batches;
+        // Linear growth: the excess still rising at the end, above the highest excess of
+        // the first half after warm-up. A one-time allocator step that then stays flat is
+        // not growth; a steady leak of more than growth_bytes over the second half is.
+        const half = w + Math.floor((n - w) / 2);
+        const growth = excess[n - 1] - Math.max(...excess.slice(w, half));
+        const heapGrowth = b[n - 1].heap_used - b[w].heap_used;
         const peaks = b[n - 1].peaks;
         verdicts[arm] = {
             excess_rss_bytes: excess,

@@ -89,6 +89,8 @@ export function scaleFor(ns) {
 export function markers() {
     const totals = Object.fromEntries(CHANNELS.map((name) => [name, 0]));
     const counts = Object.fromEntries(CHANNELS.map((name) => [name, 0]));
+    /** Each response-chunk publication's hook time (ms), for a per-chunk median. */
+    const chunkTimes = [];
     let started = 0;
     let inside = false;
     const begins = CHANNELS.map((name) => [
@@ -101,14 +103,17 @@ export function markers() {
     const ends = CHANNELS.map((name) => [
         name,
         () => {
-            totals[name] += performance.now() - started;
+            const took = performance.now() - started;
+            totals[name] += took;
             counts[name]++;
+            if (name === "undici:request:bodyChunkReceived") chunkTimes.push(took);
             inside = false;
         },
     ]);
     return {
         totals,
         counts,
+        chunkTimes,
         get inside() {
             return inside;
         },
@@ -116,6 +121,7 @@ export function markers() {
         end: () => ends.forEach(([n, f]) => diagnosticsChannel.subscribe(n, f)),
         reset() {
             for (const name of CHANNELS) totals[name] = counts[name] = 0;
+            chunkTimes.length = 0;
         },
     };
 }

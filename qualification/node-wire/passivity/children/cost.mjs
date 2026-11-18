@@ -86,6 +86,11 @@ for (const scenario of ["matched", "chunk", "unmatched"]) {
 plan("none");
 
 // -------------------------------------------------------------------------- server
+// Hook time is taken per request (the requests run one at a time, so everything between
+// the markers during a request is that request's) and per chunk, and the median is
+// reported: a garbage-collection pause that a hook happens to trigger is the runtime's,
+// paid by whichever allocation crosses the threshold, and would otherwise be charged in
+// full to the sample it lands in.
 const inHook = () => CHANNELS.reduce((sum, name) => sum + mark.totals[name], 0);
 const serverNs = {};
 const post = (base, query = "") =>
@@ -100,17 +105,19 @@ for (const [scenario, base] of [
     ["unmatched", other.base],
 ]) {
     plan(scenario);
-    const samples = [];
+    const perRequest = [];
     for (let s = 0; s < SAMPLES; s++) {
         await drained();
-        mark.reset();
-        for (let i = 0; i < 10; i++) await (await post(base)).arrayBuffer();
-        samples.push((inHook() * 1e6) / 10);
+        for (let i = 0; i < 10; i++) {
+            mark.reset();
+            await (await post(base)).arrayBuffer();
+            perRequest.push(inHook() * 1e6);
+        }
     }
-    serverNs[scenario] = median(samples);
+    serverNs[scenario] = median(perRequest);
 }
 plan("chunk");
-const chunkSamples = [];
+const perChunk = [];
 let chunkBytes = 0;
 let chunks = 0;
 for (let s = 0; s < SAMPLES; s++) {
@@ -121,11 +128,10 @@ for (let s = 0; s < SAMPLES; s++) {
         chunkBytes += part.byteLength;
         provider.step();
     }
-    const name = "undici:request:bodyChunkReceived";
-    chunks += mark.counts[name];
-    chunkSamples.push((mark.totals[name] * 1e6) / Math.max(1, mark.counts[name]));
+    chunks += mark.chunkTimes.length;
+    for (const took of mark.chunkTimes) perChunk.push(took * 1e6);
 }
-serverNs.chunk = median(chunkSamples);
+serverNs.chunk = median(perChunk);
 plan("none");
 
 const stats = started ? { ...started.hook.stats } : undefined;

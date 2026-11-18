@@ -29,7 +29,9 @@ Steps (child script, then what fails the gate):
   must stay within 50 µs, 2 µs and 5 µs × scale, by two methods: undici's own
   publications built as undici builds them (no network noise), and real global
   `fetch` calls to a loopback HTTP/SSE provider, timed between marker
-  subscribers placed before and after the hook. An enabled trial that refused
+  subscribers placed before and after the hook (median per request and per
+  chunk, so a garbage-collection pause a hook happens to trigger is not
+  charged in full to one sample). An enabled trial that refused
   a chunk, or a stream whose chunks were not 1 KiB, voids the step.
 - **Gate self-test** (`cost.mjs` and `eventloop.mjs`, arm `stall`): a stall of
   twice each scaled budget injected between the hook and the end marker, and a
@@ -54,8 +56,10 @@ Steps (child script, then what fails the gate):
 - **Memory bound** (`memory.mjs`): tiny-chunk storms and zero-body requests in
   10 batches with small configured bounds, with the Fabric worker draining and
   with none (saturated). RSS over baseline within the shared buffers' maximum
-  plus per-entry, worker-isolate and slack bytes; no growth after warm-up; heap
-  flat after GC; pool peaks within their bounds; no exchange left open.
+  plus per-entry, worker-isolate and slack bytes; the last batch's excess no
+  higher than the first half's highest (after warm-up) plus 8 MiB, so a
+  one-time allocator step is not growth but a steady leak is; heap flat after
+  GC; pool peaks within their bounds; no exchange left open.
 
 `reference.json` holds the calibration reference, the budgets and the memory
 parameters. A change to it, or to the calibration workload, is a reviewed

@@ -26,7 +26,7 @@
     "self_test": 10
   },
   "memory": {
-    "comment": "Small configured bounds so that saturation is reached. Each arm runs `batches` equal batches; the first `warmup_batches` are warm-up. Per batch, the excess is the arm's RSS over the baseline arm's at the same batch. Bound on the excess: the shared buffers' maximum length plus entry_bytes per exchange slot (the hook's WeakMap entry and state object), the Fabric worker's isolate and slack for allocator noise. Linear growth: the mean excess of the last four batches over the four before may grow by at most growth_bytes; the main thread's heap after GC by at most heap_growth_bytes.",
+    "comment": "Small configured bounds so that saturation is reached. Each arm runs `batches` equal batches; the first `warmup_batches` are warm-up. Per batch, the excess is the arm's RSS over the baseline arm's at the same batch. Bound on the excess: the shared buffers' maximum length plus entry_bytes per exchange slot (the hook's WeakMap entry and state object), the Fabric worker's isolate and slack for allocator noise. Linear growth: the last batch's excess may exceed the highest excess of the first half after warm-up by at most growth_bytes (a one-time allocator step that stays flat is not growth); the main thread's heap after GC may grow by at most heap_growth_bytes.",
     "runtime": {
       "maxInflightBytes": 16777216,
       "maxRetainBytes": 1048576,
