@@ -63,6 +63,8 @@ its fix.
 ## Next
 
 - See what your agent did, with each tool call and its result: `fabric show`.
+- See what is recorded for your agent, what stays invisible and the command
+  that closes each gap: `fabric plan -- python agent.py`.
 - Record the commands your agent runs, or other hosts it calls:
   `fabric init --exec`, `fabric init --http-host api.example.com`.
 - Stop the recorder with `fabric down`. Your records stay in `./fabric-data`.

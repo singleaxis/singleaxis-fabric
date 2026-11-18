@@ -59,7 +59,9 @@ def _netns_prefix(mode: str) -> list[str]:
     unshare = shutil.which("unshare")
     if sys.platform.startswith("linux") and unshare:
         unprivileged = [unshare, "--user", "--map-root-user", "--net"]
-        probe = subprocess.run([*unprivileged, "true"], capture_output=True, check=False)
+        probe = subprocess.run(
+            [*unprivileged, "true"], capture_output=True, check=False
+        )
         if probe.returncode == 0:
             return [*unprivileged, "--"]
         sudo, setpriv = shutil.which("sudo"), shutil.which("setpriv")
@@ -98,9 +100,16 @@ def _compiled_agent(target: Path, work: Path) -> str:
     if go:
         module = work / "go-agent"
         module.mkdir(parents=True, exist_ok=True)
-        (module / "go.mod").write_text("module example.com/agent\n\ngo 1.21\n", encoding="utf-8")
+        (module / "go.mod").write_text(
+            "module example.com/agent\n\ngo 1.21\n", encoding="utf-8"
+        )
         (module / "main.go").write_text(_GO_AGENT, encoding="utf-8")
-        env = {**os.environ, "CGO_ENABLED": "0", "GOFLAGS": "-mod=mod", "GOTOOLCHAIN": "local"}
+        env = {
+            **os.environ,
+            "CGO_ENABLED": "0",
+            "GOFLAGS": "-mod=mod",
+            "GOTOOLCHAIN": "local",
+        }
         built = subprocess.run([go, "build", "-o", str(target), "."], cwd=module, env=env,
                                capture_output=True, text=True, check=False)  # fmt: skip
         if built.returncode == 0:
@@ -117,7 +126,9 @@ def build(scenario: dict[str, Any], work: Path) -> tuple[Path, list[str], str]:
     made = "venv"
     if agent["runtime"] == "python":
         venv = project / ".venv"
-        subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(venv)], check=True)
+        subprocess.run(
+            [sys.executable, "-m", "venv", "--without-pip", str(venv)], check=True
+        )
         python = venv / "bin" / "python"
         site = _site_packages(python)
         for name, version in agent.get("distributions", {}).items():
@@ -129,7 +140,9 @@ def build(scenario: dict[str, Any], work: Path) -> tuple[Path, list[str], str]:
         made = _compiled_agent(binary, work)
         command = [f"./{agent['script']}"]
     if "mcp_config" in scenario:
-        (project / "mcp.json").write_text(json.dumps(scenario["mcp_config"]), encoding="utf-8")
+        (project / "mcp.json").write_text(
+            json.dumps(scenario["mcp_config"]), encoding="utf-8"
+        )
     (project / "home").mkdir()
     return project, command, made
 
@@ -147,7 +160,9 @@ def check(scenario: dict[str, Any], report: dict[str, Any]) -> list[str]:
         if row is None:
             problems.append(f"no row {question!r}")
         elif row["state"] != state:
-            problems.append(f"{question}: {row['state']} ({row['note']}), expected {state}")
+            problems.append(
+                f"{question}: {row['state']} ({row['note']}), expected {state}"
+            )
     for question, needle in expect.get("notes", {}).items():
         row = rows.get(question)
         if row is not None and needle not in row["note"]:
@@ -197,14 +212,21 @@ def run_scenario(scenario: dict[str, Any], work: Path, prefix: list[str],
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--work", type=Path, required=True, help="an empty working directory")
+    parser.add_argument(
+        "--work", type=Path, required=True, help="an empty working directory"
+    )
     parser.add_argument("--out", type=Path, default=Path("plan-scenarios.json"))
     parser.add_argument("--netns", choices=("require", "auto", "off"), default="auto")
     parser.add_argument("--scenarios", type=Path, default=HERE / "scenarios.json")
     args = parser.parse_args(argv)
     document = json.loads(args.scenarios.read_text("utf-8"))
-    if not Path("/sys/kernel/btf/vmlinux").exists() and sys.platform.startswith("linux"):
-        print("plan-scenarios: the expectations assume a Linux host with BTF", file=sys.stderr)
+    if not Path("/sys/kernel/btf/vmlinux").exists() and sys.platform.startswith(
+        "linux"
+    ):
+        print(
+            "plan-scenarios: the expectations assume a Linux host with BTF",
+            file=sys.stderr,
+        )
     prefix = _netns_prefix(args.netns)
     args.work.mkdir(parents=True, exist_ok=True)
     results = [run_scenario(s, args.work, prefix, float(document["budget_s"]))
@@ -215,7 +237,9 @@ def main(argv: list[str] | None = None) -> int:
     failed = 0
     for outcome in results:
         status = "ok" if not outcome["problems"] else "FAIL"
-        print(f"{status:<4} {outcome['id']:<22} {outcome['seconds']:>6.2f} s  {outcome['audit']}")
+        print(
+            f"{status:<4} {outcome['id']:<22} {outcome['seconds']:>6.2f} s  {outcome['audit']}"
+        )
         for problem in outcome["problems"]:
             print(f"     - {problem}")
         failed += bool(outcome["problems"])

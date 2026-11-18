@@ -15,6 +15,20 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **`fabric plan` tells you which layers you need.** Run
+  `fabric plan -- python agent.py` (or with no command, in your project
+  directory) to see what Fabric would record for that agent on this machine,
+  what stays invisible and why, and the one command that closes each gap. It
+  reads your Python packages, `package.json`, model base-URL variables, the
+  OS and kernel, containers, sandboxes and serverless platforms, and an MCP
+  client configuration (`--mcp-config`). It is read-only, makes no network
+  connection and takes well under a second.
+- **`fabric verify` explains every reason in plain words.** Each reason a
+  run, a command, a host event or a control decision is not complete is
+  printed with what it means and how to fix it, and the coverage report shows
+  the same rows as `fabric plan`, as observed. Commands that ran before the
+  agent's first model call are listed as such, not as a problem. The words for
+  every reason are in the [diagnostics catalogue](docs/diagnostics.md).
 - **Kubernetes install with one value.** The Helm chart takes
   `--set preset=local`, `production` or `production-host-sensor` instead of
   a profile file, so the published chart installs without pulling it first.
