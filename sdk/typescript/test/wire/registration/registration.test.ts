@@ -323,6 +323,41 @@ describe("registration (rule 2) and the mirror (rule 3)", () => {
     expect(other.mirror).toBeUndefined();
   });
 
+  it("repairs a stale mirror store that landed after a newer one, in at most 8 rounds", () => {
+    const dir = spool();
+    const rt = runtime();
+    const registration = reg(dir, rt, { addon: real });
+    const other = new WireRuntime(rt.shared, "application");
+    attachMirror(other, real);
+    const store = rt.mirror!;
+    // Isolate A allocates 0; before its store of 1 lands, isolate B allocates 1 and
+    // stores 2. A's late store of 1 must not be the last word.
+    let interleave = true;
+    rt.mirror = (next) => {
+      if (interleave) {
+        interleave = false;
+        other.allocate();
+        expect(fields(file(dir, rt.epoch)).nextSequence).toBe(2n);
+      }
+      store(next);
+    };
+    expect(rt.allocate().sequence).toBe(0n);
+    expect(fields(file(dir, rt.epoch)).nextSequence).toBe(2n);
+    // An isolate that keeps losing the race stops after 8 stores: bounded, never a hang.
+    const stores: bigint[] = [];
+    rt.mirror = (next) => {
+      stores.push(next);
+      other.allocate(); // a newer allocation in another isolate, every round
+      store(next);
+    };
+    rt.allocate();
+    expect(stores).toHaveLength(8);
+    rt.mirror = store;
+    rt.allocate(); // the next allocation repairs whatever the bounded one left
+    expect(fields(file(dir, rt.epoch)).nextSequence).toBe(rt.nextSequence);
+    done(registration);
+  });
+
   it("brings the mirror up to date when it binds a runtime that already allocated", () => {
     const dir = spool();
     const rt = runtime();
