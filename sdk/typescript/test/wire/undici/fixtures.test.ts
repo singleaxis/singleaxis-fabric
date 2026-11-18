@@ -107,6 +107,23 @@ describe.skipIf(!PUBLISHES_BODIES)("byte fixtures", () => {
     });
   });
 
+  it("C40: a repeated request id joins as Python's headers.get; an overlong one is not kept", async () => {
+    let id: string[] = ["req_a", "req_b"];
+    server.route(CHAT, (_req, res) => {
+      res.writeHead(200, { "content-type": "application/json", "x-request-id": id });
+      res.end(RESPONSE);
+    });
+    cap.close();
+    cap = capture(server.port, { providerRequestId: true });
+    await (await post(CHAT)).text();
+    id = ["r".repeat(200), "s".repeat(60)];
+    await (await post(CHAT)).text();
+    await settle();
+    const [joined, overlong] = cap.jobs();
+    expect(joined!.undici.providerRequestId).toBe("req_a, req_b");
+    expect(overlong!.undici.providerRequestId).toBeUndefined();
+  });
+
   it("SSE split at every byte boundary is captured whole and read unchanged", async () => {
     let split = 0;
     server.route(CHAT, (_req, res) => {

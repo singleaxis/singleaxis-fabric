@@ -561,6 +561,8 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
     if (typeof type === "string") entry.requestMedia = mediaTypeOf(type);
     const headers = request.headers;
     if (!Array.isArray(headers)) return;
+    // Repeated headers join with ", ", as Python's `headers.get` returns them.
+    let encoding: string | undefined;
     for (let i = 0; i + 1 < headers.length; i += 2) {
       const name = headers[i];
       if (typeof name !== "string" || name.length !== 16) continue;
@@ -568,11 +570,9 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
       const value = headers[i + 1];
       const text = Array.isArray(value) ? value.join(", ") : value;
       if (typeof text !== "string") continue;
-      entry.requestEncoding =
-        entry.requestEncoding === "" ? text : `${entry.requestEncoding}, ${text}`;
+      encoding = encoding === undefined ? text : `${encoding}, ${text}`;
     }
-    if (entry.requestEncoding !== "")
-      entry.requestEncoding = contentEncodingOf(entry.requestEncoding);
+    if (encoding !== undefined) entry.requestEncoding = contentEncodingOf(encoding);
   };
 
   const responseHeaders = (entry: Entry, headers: unknown): void => {
@@ -584,6 +584,7 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
       : "";
     let media: string | undefined;
     let encoding: string | undefined;
+    let requestId: string | undefined;
     for (let i = 0; i + 1 < headers.length; i += 2) {
       const raw = headers[i];
       const length = raw instanceof Uint8Array || typeof raw === "string" ? raw.length : -1;
@@ -599,9 +600,12 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
       if (value === undefined) continue;
       if (isMedia) media = media === undefined ? value : `${media}, ${value}`;
       else if (isEncoding) encoding = encoding === undefined ? value : `${encoding}, ${value}`;
-      else if (entry.requestId === "" && value.length > 0 && value.length <= MAX_REQUEST_ID) {
-        entry.requestId = value;
-      }
+      else requestId = requestId === undefined ? value : `${requestId}, ${value}`;
+    }
+    // C40, as Python's `read_provider_request_id`: the (joined) value, kept only when
+    // non-empty and at most 256 characters.
+    if (requestId !== undefined && requestId.length > 0 && requestId.length <= MAX_REQUEST_ID) {
+      entry.requestId = requestId;
     }
     if (media !== undefined) entry.responseMedia = mediaTypeOf(media);
     if (encoding !== undefined) entry.responseEncoding = contentEncodingOf(encoding);
