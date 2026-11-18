@@ -288,6 +288,21 @@ describe("a crashed Fabric worker", () => {
     await until(() => Atomics.load(report, 0) === 2);
   }, 30_000);
 
+  it("an awaited stop() completes even when nothing else keeps the process alive", () => {
+    // The worker is unref'd so it never holds the agent's process open; an explicit
+    // stop the agent awaits must still drain and resolve within its deadline.
+    const child = spawnSync(
+      process.execPath,
+      [bundles.file("stopper"), bundles.file("fabric-entry")],
+      {
+        encoding: "utf8",
+        timeout: 60_000,
+      },
+    );
+    expect([child.status, child.signal, child.stderr]).toEqual([0, null, ""]);
+    expect(JSON.parse(child.stdout)).toEqual({ stopped: true, clean: true, queued: 0 });
+  });
+
   it("a worker that crashes while it drains for stop() is not reported as a clean stop", async () => {
     const { fabric, table, runtime } = start();
     fabric.start();

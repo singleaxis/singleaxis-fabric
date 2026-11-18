@@ -30,14 +30,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 export interface Bundles {
   readonly dir: string;
-  file(name: "producer" | "fabric-entry" | "host"): string;
+  file(name: "producer" | "fabric-entry" | "host" | "stopper"): string;
   cleanup(): void;
 }
 
 /** Bundles the worker fixtures into a temporary directory as CommonJS files. */
 export function bundleFixtures(): Bundles {
   const dir = mkdtempSync(join(tmpdir(), "f055-t4-runtime-"));
-  const names = ["producer", "fabric-entry", "host"] as const;
+  const names = ["producer", "fabric-entry", "host", "stopper"] as const;
   buildSync({
     entryPoints: names.map((name) => join(HERE, "fixtures", `${name}.ts`)),
     outdir: dir,

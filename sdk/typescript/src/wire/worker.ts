@@ -141,14 +141,18 @@ export class FabricWorker {
     const worker = this.thread;
     if (worker === undefined) return true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // The caller awaits this stop with a deadline, so the worker and the deadline timer
+    // hold the process open until it ends: unref'd, an agent whose last act is an
+    // awaited close would exit before the drain finished. Never longer than the deadline.
+    worker.ref();
     const exited = new Promise<boolean>((resolve) => {
       this.stopping = resolve;
       timer = setTimeout(() => resolve(false), timeoutMs);
-      timer.unref();
     });
     this.runtime.requestStop();
     const clean = await exited;
     clearTimeout(timer);
+    worker.unref();
     this.stopping = undefined;
     if (!clean) {
       this.thread = undefined;
