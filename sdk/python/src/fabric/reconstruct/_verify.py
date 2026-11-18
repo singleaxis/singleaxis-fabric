@@ -48,6 +48,7 @@ from fabric.reconstruct._inputs import (
     Observation,
     ReconstructInputError,
     RecordObs,
+    ReportedObs,
     SegmentSealObs,
     SpanFormat,
     SpanRecord,
@@ -57,6 +58,7 @@ from fabric.reconstruct._inputs import (
     observe,
     opaque_id,
     read_span_file,
+    reported_record,
     uuid4_value,
 )
 from fabric.reconstruct._objects import ObjectResult, StoreReader
@@ -530,7 +532,7 @@ def reconstruct_with_graphs(  # noqa: PLR0915 - one statement per reader input
                 raise ReconstructInputError(
                     f"span file {index} span {number}: an exchange span has a malformed identity"
                 ) from None
-            verifier.add(observation, record)
+            verifier.take(observation, record)
     verifier.finalize()
     verifier.trusted_source = trusted_source
     verifier.production = (
@@ -576,12 +578,29 @@ def reconstruct_with_graphs(  # noqa: PLR0915 - one statement per reader input
         "runs": runs,
         "scopes": scopes,
     }
-    # Spec 056 §4.3 "Host events in no run": captured host activity no run lists or counts
-    # stays visible. Only over every run: with --run the other runs were not joined.
-    unattributed = verifier.actions.unattributed_host_events() if wanted is None else None
+    if wanted is None:  # with --run the other runs were not joined
+        _outside_runs(document, verifier)
+    return document, graphs
+
+
+def _outside_runs(document: dict[str, Any], verifier: _Verifier) -> None:
+    """What no run holds, read over every run. Spec 056 §4.3 "Host events in no run":
+    captured host activity no run lists or counts stays visible. Spec 057 rev 3.14: the
+    control and hook records reported over OTLP that no run showed, with their own
+    controls chain (F3 when they name what no run holds)."""
+    actions = verifier.actions
+    if actions is None:
+        return
+    unattributed = actions.unattributed_host_events()
     if unattributed is not None:
         document["unattributed_host_events"] = unattributed_host_json(unattributed)
-    return document, graphs
+    outside = actions.reported_outside_runs(verifier)
+    if outside is not None:
+        document["reported_outside_runs"] = {
+            "count": len(outside.controls) + len(outside.hooks),
+            "controls": outside.chain,
+            "security_context": outside.context,
+        }
 
 
 def _allowlist(entries: Sequence[str]) -> tuple[str, ...]:
@@ -754,6 +773,9 @@ class _Verifier:
         # Spec 050 §3.12: records, segments, seals and manifests.
         self.records: set[RecordObs] = set()
         self.run_records: dict[str, list[RecordObs]] = defaultdict(list)
+        # Spec 057 §4.5 (rev 3.14): control and hook records reported over OTLP with no
+        # records identity, once per trace and span id (a redelivery is one record).
+        self.reported: dict[str, ReportedObs] = {}
         self.segments: dict[str, _Segment] = {}
         self._seals: set[SegmentSealObs] = set()
         self.manifest_obs: dict[SourceKey, set[ManifestObs]] = defaultdict(set)
@@ -842,6 +864,16 @@ class _Verifier:
     def _claim_manifest(self, key: SourceKey, manifest_seq: int | None) -> None:
         if manifest_seq is not None:
             self.manifest_claims[key] = max(manifest_seq, self.manifest_claims.get(key, -1))
+
+    def take(self, obs: Observation | None, span: SpanRecord) -> None:
+        """One span of the input: its observation, or, for a span no observation
+        classifies, a control or hook record reported over OTLP (spec 057 rev 3.14), kept
+        once per trace and span id and never accounted: it has no position."""
+        reported = reported_record(span) if obs is None else None
+        if reported is not None:
+            self.reported.setdefault(reported.event_id, reported)
+            return
+        self.add(obs, span)
 
     def add(self, obs: Observation | None, span: SpanRecord | None = None) -> None:
         obs = self._labels(obs)

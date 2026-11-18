@@ -8,9 +8,10 @@ imported by the capture path (a test pins both). It has no fleet management, no 
 and no phone-home: no command opens a network connection the operator did not ask for.
 
 Commands (the I1 allowlist; additions need a spec change): ``plan``, ``init``, ``up``,
-``down``, ``run``, ``verify``, ``doctor``, ``show``, ``version``, ``help``. This release
-builds ``init``, ``up``, ``down``, ``run``, ``verify``, ``doctor`` and ``show`` for the local
-profile, ``version`` and ``help``; ``plan`` says so and points at the manual route.
+``down``, ``run``, ``verify``, ``doctor``, ``show``, ``snapshot``, ``version``, ``help``.
+This release builds ``init``, ``up``, ``down``, ``run``, ``verify``, ``doctor`` and ``show``
+for the local profile, ``snapshot`` (spec 057 WP7-17, added by spec 058 OQ-3), ``version``
+and ``help``; ``plan`` says so and points at the manual route.
 
 Exit codes: 0 success; 1 a check did not pass; 2 usage or configuration error; 3 a
 prerequisite is missing. ``fabric run`` exits with the agent's exit code."""
@@ -36,11 +37,12 @@ from ._report import (
 
 #: The commands of spec 058 §5.1 (I1). Nothing else ships.
 COMMANDS: tuple[str, ...] = (
-    "plan", "init", "up", "down", "run", "verify", "doctor", "show", "version", "help",
+    "plan", "init", "up", "down", "run", "verify", "doctor", "show", "snapshot", "version",
+    "help",
 )  # fmt: skip
 #: The commands this release builds; the rest of COMMANDS report FC-010.
 BUILT: frozenset[str] = frozenset({
-    "init", "up", "down", "run", "verify", "doctor", "show", "version", "help",
+    "init", "up", "down", "run", "verify", "doctor", "show", "snapshot", "version", "help",
 })  # fmt: skip
 _SUMMARIES = {
     "plan": "predict what Fabric would record for this project",
@@ -51,6 +53,7 @@ _SUMMARIES = {
     "verify": "check that a recorded run reached the destination intact",
     "doctor": "check this machine and project for setup problems",
     "show": "show recorded runs",
+    "snapshot": "record what the agent's watched permission files say",
     "version": "print the CLI, SDK and endpoint-table versions",
     "help": "show this help",
 }
@@ -100,6 +103,8 @@ def build_parser() -> _Parser:
             _args.add_doctor_arguments(sub)
         elif name == "show":
             _args.add_show_arguments(sub)
+        elif name == "snapshot":
+            _args.add_snapshot_arguments(sub)
         parser.commands[name] = sub
     return parser
 
@@ -141,7 +146,7 @@ def _help(parser: _Parser, topic: str | None) -> str:
     if topic and topic != "help":
         return parser.commands[topic].format_help()
     lines = ["usage: fabric COMMAND [options]", "", "commands:"]
-    lines += [f"  {name:<8} {_SUMMARIES[name]}" + ("" if name in BUILT else " (not built yet)")
+    lines += [f"  {name:<9} {_SUMMARIES[name]}" + ("" if name in BUILT else " (not built yet)")
               for name in COMMANDS]  # fmt: skip
     options = "options on every command: --config PATH, --project NAME, --json, --quiet, --no-color"
     exits = ("exit codes: 0 ok, 1 a check did not pass, 2 usage or configuration error, "
@@ -187,6 +192,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0911 - one retur
         "version": _version, "init": _init.run, "up": _up.run_up, "down": _up.run_down,
         "run": lambda o: _run.print_env(o, o.agent_command), "verify": _reader_command("verify"),
         "doctor": _reader_command("doctor"), "show": _reader_command("show"),
+        "snapshot": _snapshot_command,
     }  # fmt: skip
     try:
         if command not in BUILT:
@@ -202,6 +208,13 @@ def _strip_dashes(command: Sequence[str]) -> list[str]:
     """``fabric run python app.py`` without ``--``: argparse leaves the words as given."""
     words = list(command)
     return words[1:] if words[:1] == ["--"] else words
+
+
+def _snapshot_command(options: argparse.Namespace) -> tuple[Report, list[str]]:
+    """``snapshot`` is loaded only when it runs, as the reader commands are."""
+    from . import _snapshot  # noqa: PLC0415 - loaded only for this command
+
+    return _snapshot.run(options)
 
 
 def _reader_command(name: str) -> Callable[[argparse.Namespace], tuple[Report, list[str]]]:

@@ -195,6 +195,16 @@
             "captureLabels": {"type": "string", "enum": ["pseudonymous", "clear"]},
             "identityMode": {"type": "string", "enum": ["pseudonymous", "clear"]}
           }
+        },
+        "mapping": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "profileConfigMap": {"$ref": "#/definitions/secretKeyReference"},
+            "idKeySecret": {"$ref": "#/definitions/secretKeyReference"},
+            "genaiSourceKeys": {"type": "string", "enum": ["", "1.42.0"]}
+          }
         }
       }
     },

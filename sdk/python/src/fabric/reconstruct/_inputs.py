@@ -924,6 +924,49 @@ def observe(span: SpanRecord) -> Observation | None:
     return dataclasses.replace(observed, authenticated=True)
 
 
+_TRACE_HEX = re.compile(r"[0-9a-f]{32}")
+_SPAN_HEX = re.compile(r"[0-9a-f]{16}")
+_REPORTED_FAMILIES: Mapping[str, str] = {"control": "fabric.control.", "hook": "fabric.hook."}
+
+
+@dataclass(frozen=True, slots=True)
+class ReportedObs:
+    """Spec 057 §4.5 (T): a control or hook record another system reported over OTLP (a
+    mapping profile's output, or an emitter writing the neutral keys), with no records
+    identity: no source, epoch, sequence, event id or attempt. It has no position, so it is
+    never accounted (no gap, no source); the reader shows it where it joins (spec 057
+    revision 3.14). ``event_id`` is ``otlp:<trace id>/<span id>``."""
+
+    kind: Literal["control", "hook"]
+    event_id: str
+    span: SpanRecord
+
+
+def reported_record(span: SpanRecord) -> ReportedObs | None:
+    """A span :func:`observe` does not classify that holds one control or hook record
+    reported over OTLP: ``fabric.step.kind`` ``control`` or ``hook`` (a mapping profile
+    stamps it), or else keys of exactly one of the two families; never a span with any
+    records-input, exchange, marker or event-id key. ``None`` otherwise, or when its trace
+    or span id is not an OTLP id (it could not be named)."""
+    attrs = span.attributes
+    if any(key in attrs for key in (A_CAPTURE_INPUT, A_SOURCE_SEQUENCE, A_EVENT_ID,
+                                    A_EXCHANGE_ID, A_ATTEMPT_UID, H_LAST, L_REASON)):  # fmt: skip
+        return None
+    kind = attrs.get("fabric.step.kind")
+    if kind not in _REPORTED_FAMILIES:
+        if kind is not None:
+            return None
+        found = [name for name, prefix in _REPORTED_FAMILIES.items()
+                 if any(key.startswith(prefix) for key in attrs)]  # fmt: skip
+        if len(found) != 1:
+            return None
+        kind = found[0]
+    if not (_TRACE_HEX.fullmatch(span.trace_id) and _SPAN_HEX.fullmatch(span.span_id)):
+        return None
+    return ReportedObs(cast("Literal['control', 'hook']", kind),
+                       f"otlp:{span.trace_id}/{span.span_id}", span)  # fmt: skip
+
+
 def authenticated(attrs: Mapping[str, Any]) -> bool:
     """Whether the record carries the Node's stamp (049 §7.9: a boolean ``true``; any
     other value, as an agent could forge it, is no stamp)."""

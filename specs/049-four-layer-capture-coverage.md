@@ -2479,6 +2479,7 @@ names): `initialize`, `ping`, `tools/list`, `tools/call`,
 | `fabric.grant.trigger` | new | G02 | META: closed enum (field type) | P0 (spec 057) |  |  |
 | `fabric.grant.previous_id` | new | G03 | ID: `grt-` + 32 hex | P0 (spec 057) |  |  |
 | `fabric.grant.source_boundary` | new | G04 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.grant.path_ref` | new | G04 | ID: `pth-` + 32 hex (the `pth-` v2 pseudonym of the watched_paths entry an operator snapshot read, under the id key; the same id as `fabric.sensor.watch_id` of an open of that entry; only with source boundary `operator_snapshot`; never the path) | P3 (spec 057) |  | Spec 057 section 4.10.2, WP7-17: the document's source.path_ref, the section 6.1 path_ref join key of an operator snapshot. |
 | `fabric.grant.permission_mode` | new | G05 | LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$` (the runtime's own mode name, verbatim) | P0 (spec 057) |  |  |
 | `fabric.grant.tools_allow.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |
 | `fabric.grant.tools_deny.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |

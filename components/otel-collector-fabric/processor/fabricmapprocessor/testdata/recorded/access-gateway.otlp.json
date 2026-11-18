@@ -1,0 +1,329 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "telemetry.sdk.language",
+            "value": {
+              "stringValue": "python"
+            }
+          },
+          {
+            "key": "telemetry.sdk.name",
+            "value": {
+              "stringValue": "opentelemetry"
+            }
+          },
+          {
+            "key": "telemetry.sdk.version",
+            "value": {
+              "stringValue": "1.45.2"
+            }
+          },
+          {
+            "key": "service.instance.id",
+            "value": {
+              "stringValue": "56f7bf3b-79c1-4ebf-b41c-67b04c1f73b1"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "access-gateway"
+            }
+          },
+          {
+            "key": "org.id",
+            "value": {
+              "stringValue": "org-4471"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "access-gateway"
+          },
+          "spans": [
+            {
+              "attributes": [
+                {
+                  "key": "gateway.kind",
+                  "value": {
+                    "stringValue": "policy"
+                  }
+                },
+                {
+                  "key": "gateway.verdict",
+                  "value": {
+                    "stringValue": "BLOCK"
+                  }
+                },
+                {
+                  "key": "gateway.policy_name",
+                  "value": {
+                    "stringValue": "tool-access"
+                  }
+                },
+                {
+                  "key": "gateway.policy_rev",
+                  "value": {
+                    "stringValue": "2026.11.0"
+                  }
+                },
+                {
+                  "key": "gateway.call_id",
+                  "value": {
+                    "stringValue": "call_7Hq2mXb41TzK"
+                  }
+                },
+                {
+                  "key": "gateway.ms",
+                  "value": {
+                    "intValue": "12"
+                  }
+                },
+                {
+                  "key": "user.email",
+                  "value": {
+                    "stringValue": "jane.doe@example.com"
+                  }
+                },
+                {
+                  "key": "gateway.prompt",
+                  "value": {
+                    "stringValue": "Refund order 8841 to the card ending 4242"
+                  }
+                }
+              ],
+              "endTimeUnixNano": "1794626360118782000",
+              "events": [
+                {
+                  "attributes": [
+                    {
+                      "key": "rule.text",
+                      "value": {
+                        "stringValue": "deny refunds over 500 for jane.doe@example.com"
+                      }
+                    }
+                  ],
+                  "name": "rule.matched",
+                  "timeUnixNano": "1794626360118761000"
+                }
+              ],
+              "flags": 256,
+              "kind": "SPAN_KIND_INTERNAL",
+              "name": "gateway.policy_check",
+              "spanId": "499416f7d759e5b6",
+              "startTimeUnixNano": "1794626360118691000",
+              "status": {},
+              "traceId": "97018ee21b3fcbc65608073be7f49737"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "telemetry.sdk.language",
+            "value": {
+              "stringValue": "python"
+            }
+          },
+          {
+            "key": "telemetry.sdk.name",
+            "value": {
+              "stringValue": "opentelemetry"
+            }
+          },
+          {
+            "key": "telemetry.sdk.version",
+            "value": {
+              "stringValue": "1.45.2"
+            }
+          },
+          {
+            "key": "service.instance.id",
+            "value": {
+              "stringValue": "56f7bf3b-79c1-4ebf-b41c-67b04c1f73b1"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "access-gateway"
+            }
+          },
+          {
+            "key": "org.id",
+            "value": {
+              "stringValue": "org-4471"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "access-gateway"
+          },
+          "spans": [
+            {
+              "attributes": [
+                {
+                  "key": "gateway.kind",
+                  "value": {
+                    "stringValue": "policy"
+                  }
+                },
+                {
+                  "key": "gateway.verdict",
+                  "value": {
+                    "stringValue": "PASS"
+                  }
+                },
+                {
+                  "key": "gateway.policy_name",
+                  "value": {
+                    "stringValue": "tool-access"
+                  }
+                },
+                {
+                  "key": "gateway.policy_rev",
+                  "value": {
+                    "stringValue": "2026.11.0"
+                  }
+                },
+                {
+                  "key": "gateway.call_id",
+                  "value": {
+                    "stringValue": "call_9Lp0cVd77WeR"
+                  }
+                },
+                {
+                  "key": "gateway.ms",
+                  "value": {
+                    "intValue": "3"
+                  }
+                },
+                {
+                  "key": "user.email",
+                  "value": {
+                    "stringValue": "jane.doe@example.com"
+                  }
+                },
+                {
+                  "key": "gateway.prompt",
+                  "value": {
+                    "stringValue": "Refund order 8841 to the card ending 4242"
+                  }
+                }
+              ],
+              "endTimeUnixNano": "1794626360346381000",
+              "events": [
+                {
+                  "attributes": [
+                    {
+                      "key": "rule.text",
+                      "value": {
+                        "stringValue": "deny refunds over 500 for jane.doe@example.com"
+                      }
+                    }
+                  ],
+                  "name": "rule.matched",
+                  "timeUnixNano": "1794626360346361000"
+                }
+              ],
+              "flags": 256,
+              "kind": "SPAN_KIND_INTERNAL",
+              "name": "gateway.policy_check",
+              "spanId": "a817b96f35b963a5",
+              "startTimeUnixNano": "1794626360346279000",
+              "status": {},
+              "traceId": "b2d9ce6b6528637252211faa6956a01e"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "telemetry.sdk.language",
+            "value": {
+              "stringValue": "python"
+            }
+          },
+          {
+            "key": "telemetry.sdk.name",
+            "value": {
+              "stringValue": "opentelemetry"
+            }
+          },
+          {
+            "key": "telemetry.sdk.version",
+            "value": {
+              "stringValue": "1.45.2"
+            }
+          },
+          {
+            "key": "service.instance.id",
+            "value": {
+              "stringValue": "56f7bf3b-79c1-4ebf-b41c-67b04c1f73b1"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "access-gateway"
+            }
+          },
+          {
+            "key": "org.id",
+            "value": {
+              "stringValue": "org-4471"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "access-gateway"
+          },
+          "spans": [
+            {
+              "attributes": [
+                {
+                  "key": "gateway.kind",
+                  "value": {
+                    "stringValue": "health"
+                  }
+                },
+                {
+                  "key": "user.email",
+                  "value": {
+                    "stringValue": "jane.doe@example.com"
+                  }
+                }
+              ],
+              "endTimeUnixNano": "1794626360350944000",
+              "flags": 256,
+              "kind": "SPAN_KIND_INTERNAL",
+              "name": "gateway.health",
+              "spanId": "4010caff31ae6152",
+              "startTimeUnixNano": "1794626360350910000",
+              "status": {},
+              "traceId": "f96c48e459da50b1b1ad1857047fb91f"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

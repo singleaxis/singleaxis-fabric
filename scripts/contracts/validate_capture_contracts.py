@@ -787,9 +787,33 @@ def _validate_unattributed_host(document: Mapping[str, Any]) -> None:
         )
 
 
+def _validate_reported_outside(document: Mapping[str, Any]) -> None:
+    """Spec 057 revision 3.14: the records reported over OTLP in no run carry a controls
+    chain and security_context that agree as a run's do, and never state F1 (there is no
+    run to declare a grant for)."""
+    block = document.get("reported_outside_runs")
+    if block is None:
+        return
+    path = "$.reported_outside_runs"
+    _check_security_context(
+        {
+            "chains": {"controls": block["controls"]},
+            "security_context": block["security_context"],
+        },
+        path,
+    )
+    if any(
+        f["code"] == "no_declared_grant" for f in block["security_context"]["facts"]
+    ):
+        raise _chain_fail(
+            f"{path}.security_context.facts", "records in no run never state F1"
+        )
+
+
 def _validate_reconstruction(document: Mapping[str, Any]) -> None:
     sources = _validate_sources(document)
     _validate_unattributed_host(document)
+    _validate_reported_outside(document)
     for run_index, run in enumerate(document["runs"]):
         path = f"$.runs[{run_index}]"
         checks = set(run["checks"].values())
@@ -1283,7 +1307,8 @@ _NEVER_MAPPED = frozenset(
 
 def _validate_mapping_profile(document: Mapping[str, Any]) -> None:
     """Rules a schema cannot state: one target per rule, never an invariant key, and a
-    pseudonymised source names an id key (``*.id``, ``*_id``, ``*_ref``)."""
+    pseudonymised source names an id key (``*.id``, ``*_id``, ``*_ref`` and
+    ``fabric.control.resolves``)."""
     for index, rule in enumerate(document["rules"]):
         targets = [m["target"] for m in rule["map"]] + [
             s["target"] for s in rule.get("set", [])
@@ -1296,7 +1321,10 @@ def _validate_mapping_profile(document: Mapping[str, Any]) -> None:
             )
         for mapping in rule["map"]:
             target = mapping["target"]
-            is_id = target.endswith((".id", "_id", "_ref", ".previous_id"))
+            # fabric.control.resolves is a control id without the suffix.
+            is_id = target.endswith((".id", "_id", "_ref", ".previous_id")) or (
+                target == "fabric.control.resolves"
+            )
             if is_id and "pseudonymise" not in mapping:
                 raise CaptureContractError(
                     "capture.mapping_profile.identity",

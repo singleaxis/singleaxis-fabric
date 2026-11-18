@@ -15,6 +15,59 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **SC-RA-3: control decisions from another service, end to end (spec 057
+  P3 acceptance).** A new acceptance run
+  (`qualification/security-context/run_sc_ra3.py`, CI workflow
+  `security-context-otlp.yml`) checks that a decision a separate approval
+  service reports over OpenTelemetry, under its own attribute names and
+  through a customer mapping profile on the Node, joins the agent's tool call
+  by the ticket id both sides know, and that a decision whose agent side is
+  missing is reported as `control_unmatched`. It also checks that nothing the
+  profile does not map (an email, a free-text note, an organisation id, the
+  clear ticket ids) leaves the Node, and that capture on and off give the
+  agent the same results.
+
+- **`fabric snapshot`: what the agent's permission files said (spec 057
+  P3b).** A host sensor already records that the agent opened a watched
+  permission file, never what it said. The operator can now run `fabric
+  snapshot` outside the agent: it reads the `watched_paths` entries of class
+  `permission_config` once and records each as a declared grant snapshot.
+  Telemetry carries keyed ids only (never the path or a file name); the
+  contents are kept only when your capture policy retains `run.permissions`,
+  so nothing of the file is kept under the default production profile. The
+  offline reader shows each watched open with the snapshot taken last before
+  it and the time between the two, and states a changed file as F2. The
+  agent process never opens the file for Fabric. New messages `FC-100` to
+  `FC-110` name each failure and its fix. See `docs/host-sensors.md`.
+
+- **Security context from other systems' OpenTelemetry (spec 057 P3a).** A
+  gateway, policy service, approval system or agent runtime that already
+  emits OpenTelemetry can report grants, control decisions, hook outcomes and
+  extensions to the Fabric Node. Writing the published `fabric.grant.*`,
+  `fabric.control.*`, `fabric.hook.*`, `fabric.extension.*` and `fabric.mcp.*`
+  attributes on a span, or on a log record with
+  `event_class=security_context`, needs nothing else: the Node keeps each
+  key only with a valid value, refuses a forged
+  `fabric.control.enforced_by_fabric` or `fabric.control.authentication`,
+  and drops everything else. The contract is in
+  `docs/security-context-otlp.md`.
+- **Mapping profiles on the Node (spec 057 P3a, off by default).** An
+  emitter that uses its own attribute names can keep them: you write a
+  mapping profile (`fabric.otlp-mapping-profile/v1`) and the Node's new
+  `fabricmap` processor, directly before `fabricguard`, rewrites matching
+  spans and log records to the neutral keys. Every attribute the profile
+  does not map is dropped, and the ids it names become keyed pseudonyms
+  that join the agents' own records. Helm: `fabric.mapping.enabled`,
+  `fabric.mapping.profileConfigMap`, `fabric.mapping.idKeySecret`. Fabric
+  ships no profile. A profile error stops the Node at startup with the
+  place and the fix; a source value a mapping cannot use is reported once
+  as a warning and counted per request in a debug line; `fabric-gate` refuses `fabricmap` anywhere but
+  directly before `fabricguard`.
+- **OpenTelemetry GenAI keys as sources (spec 057 OD-12).** With
+  `fabric.mapping.genaiSourceKeys: "1.42.0"`, `gen_ai.tool.call.id` and
+  `gen_ai.operation.name` on a neutral control or hook record fill its gated
+  tool call (as a `p-` pseudonym) and gated kind; Fabric never writes them as
+  its own keys.
 - **MCP servers as security context (spec 057 P1, second part).** For an MCP
   server reached over Streamable HTTP, the request and response bodies the
   non-model HTTP hook already records are now read as MCP by
@@ -528,6 +581,24 @@ it never makes, applies, waits for or returns one.
   may prune the namespace.
 
 ### Fixed
+
+- **The offline reader ignored control decisions other services reported
+  over OpenTelemetry (spec 057, found by SC-RA-3).** A decision an approval
+  service or policy service sent to the Node, through a mapping profile or
+  with the neutral `fabric.control.*` keys, never reached
+  `python -m fabric.reconstruct`: the agent's request stayed "pending at run
+  end" even when the service had answered, and a decision with no agent side
+  was not shown at all. The reader now shows each such decision in the run
+  that holds what it names: the tool call of its
+  `fabric.control.gated_tool_call_id`, or the request whose id its
+  `fabric.control.resolves` answers (the way a decision made in another
+  service joins the agent's tool call: the agent records that it asked with
+  its ticket or request id as `control_id`, the service reports the same id).
+  A decision no run holds is listed once in the report's new
+  `reported_outside_runs`, with its own controls chain
+  `partial(control_unmatched)`; the action view prints it after the runs.
+  Hooks reported over OpenTelemetry are read the same way. See
+  `docs/security-context-otlp.md`. Nothing to change in your configuration.
 
 - **eBPF host emitter: file access and failed execs were missing on Linux
   6.19+ kernels such as Ubuntu's 7.0.** On those kernels, an eBPF program

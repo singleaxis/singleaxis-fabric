@@ -517,6 +517,91 @@ one with the SDK (`fabric doctor` names the one it checked).
 
 Fix: nothing to do.
 
+### FC-100
+
+`snapshot_nothing_listed`, error: no watched file of class permission_config is listed, so there is
+nothing to snapshot.
+
+Fix: list the agent's permission files under security_context.watched_paths with class
+permission_config in the capture policy that capture.privacy names in fabric.yaml, or pass
+--watched-paths FILE.
+
+### FC-101
+
+`snapshot_list_invalid`, error: the watched paths list could not be read.
+
+Fix: the detail names the file or the entry and the rule it breaks; give a JSON list of objects with
+path, match, label and class, or a deployment policy in JSON.
+
+### FC-102
+
+`snapshot_no_id_key`, error: the snapshot needs the project's id key to write each file's keyed id,
+and no key is configured.
+
+Fix: run `fabric init`, which generates the key, or set secrets.id_key_file in fabric.yaml to the
+key the host sensor uses, so the snapshot and the watched opens carry the same id.
+
+### FC-103
+
+`snapshot_file_unreadable`, error: a watched permission file could not be read, so it was not
+snapshotted.
+
+Fix: the detail names the entry's label and the cause; for an error reading the file, run `fabric
+snapshot` as a user that can read it or correct the path in watched_paths; for a failure while
+recording it, run `fabric doctor`.
+
+### FC-104
+
+`snapshot_not_recorded`, error: the snapshot could not be recorded with this project's
+configuration.
+
+Fix: the detail holds the SDK's reason and fix; `fabric doctor` checks the same configuration.
+
+### FC-105
+
+`snapshot_not_delivered`, error: the snapshot was recorded, but the Fabric Node did not take the
+records in time.
+
+Fix: check that the Node runs (`fabric up`) and answers (`fabric doctor`), then run `fabric
+snapshot` again.
+
+### FC-106
+
+`snapshot_recorded`, info: every listed permission file was read and recorded as a declared grant
+snapshot.
+
+Fix: nothing to do.
+
+### FC-107
+
+`snapshot_contents_not_kept`, info: the files' contents were not kept, because the capture policy
+does not retain the run.permissions role; the keyed ids were recorded.
+
+Fix: nothing to do if the ids are enough; to keep the contents, name the run.permissions role in the
+capture policy.
+
+### FC-108
+
+`snapshot_contents_over_limit`, warning: a permission file is larger than a snapshot keeps, so its
+digest and size were recorded without its contents.
+
+Fix: nothing to do if the digest is enough; to keep the contents, split the file or list a smaller
+one.
+
+### FC-109
+
+`snapshot_file_changed`, info: a permission file differs from its last snapshot.
+
+Fix: nothing to do; the reader states the change as F2 (grant_changed).
+
+### FC-110
+
+`snapshot_folder_incomplete`, warning: a watched permission folder was snapshotted without some of
+its files.
+
+Fix: the detail names why; run `fabric snapshot` as a user that can read every file under the
+folder, or list a large or deep folder's subfolders as entries of their own.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001

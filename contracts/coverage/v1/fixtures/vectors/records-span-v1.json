@@ -67,6 +67,7 @@
     "fabric.grant.net_rules.count",
     "fabric.grant.network_default",
     "fabric.grant.parallel_tools",
+    "fabric.grant.path_ref",
     "fabric.grant.permission_mode",
     "fabric.grant.previous_id",
     "fabric.grant.sandbox_kind",

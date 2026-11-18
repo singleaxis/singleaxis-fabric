@@ -48,7 +48,12 @@ from fabric import _classify
 from fabric._model_names import parse_model_allowlist
 from fabric._sequence import label_pseudonym, pseudonym_v2
 from fabric.deployment_policy import DeploymentPolicy
-from fabric.reconstruct._attribute import ActionReader, ActionRun, action_rows
+from fabric.reconstruct._attribute import (
+    ActionReader,
+    ActionRun,
+    action_rows,
+    reported_outside_rows,
+)
 from fabric.reconstruct._derive import DERIVE_CHOICES, Derivation
 from fabric.reconstruct._explain import explain_no_runs
 from fabric.reconstruct._graph import RunGraph
@@ -1114,6 +1119,11 @@ def actions_main(argv: Sequence[str]) -> int:
     views = [_view(run, document) for run in reader.runs]
     # Spec 056 §4.3: host events no run lists or counts, every one (the report keeps 64).
     outside = reader.unattributed_host_events() if "unattributed_host_events" in document else None
+    # Spec 057 rev 3.14: records reported over OTLP that no run showed.
+    reported = None
+    if "reported_outside_runs" in document:
+        security = reader.reported_outside_runs()
+        reported = reported_outside_rows(security) if security is not None else None
     if args.json:
         out: dict[str, Any] = {"schema": "fabric.reconstruct.actions/v0", "runs": views}
         if outside is not None:
@@ -1121,12 +1131,16 @@ def actions_main(argv: Sequence[str]) -> int:
                 **unattributed_host_json(outside),
                 "events": outside,
             }
+        if reported is not None:
+            out["reported_outside_runs"] = reported
         for chunk in _report_chunks(out):
             sys.stdout.write(chunk)
     else:
         sys.stdout.write("\n".join(format_actions(view) for view in views))
         if outside:
             sys.stdout.write(("\n" if views else "") + format_unattributed_host(outside))
+        if reported is not None:
+            sys.stdout.write(("\n" if views or outside else "") + format_reported_outside(reported))
     _note_capture_policy(args, reader)
     if not document["runs"]:
         _explain_no_runs(args.spans, args.runs)
@@ -1249,7 +1263,7 @@ def format_actions(view: Mapping[str, Any]) -> str:
     for row in view["rows"]:
         number = f"{row['n']:>3}"
         if row["kind"] in _SECURITY_ROWS:
-            indent = "  " if row["kind"] in ("grant", "extension") else "    "
+            indent = "  " if row["kind"] in ("grant", "extension", "watched_open") else "    "
             lines.append(f"{number}{indent}{_security_text(row)}".rstrip())
         elif row["kind"] == "model_call":
             lines.append(f"{number}  model_call   {row.get('model', '-')}" + _model_call_text(row))
@@ -1336,7 +1350,8 @@ def _summary_lines(view: Mapping[str, Any], why: str, *, no_model: bool) -> list
 
 # Spec 057 §6.2: the security context rows. The view states what was recorded and the
 # closed facts of §6.3; it never says whether a call was right.
-_SECURITY_ROWS = frozenset({"grant", "extension", "control", "hook", "no_effect", "mcp_call"})
+_SECURITY_ROWS = frozenset({"grant", "extension", "control", "hook", "no_effect", "mcp_call",
+                            "watched_open"})  # fmt: skip
 _HINT_WORDS = (("destructive", "destructive"), ("read_only", "read-only"),
                ("open_world", "open-world"), ("idempotent", "idempotent"))  # fmt: skip
 _GRANT_COUNT_WORDS = {
@@ -1410,6 +1425,19 @@ def _link_tail(row: Mapping[str, Any]) -> str:
     return tail
 
 
+def _gap_text(gap_ns: int) -> str:
+    """The time between an operator snapshot and the open it is shown with (spec 057
+    §4.10.2): the reader shows the gap and never assumes the file was the same."""
+    seconds = abs(gap_ns) / 1e9
+    for unit, size in (("d", 86_400.0), ("h", 3_600.0), ("min", 60.0)):
+        if seconds >= size:
+            amount = f"{seconds / size:.0f} {unit}"
+            break
+    else:
+        amount = f"{seconds:.0f} s" if seconds >= 1 else "under 1 s"
+    return f"{amount} {'before' if gap_ns >= 0 else 'after'} open"
+
+
 def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - one branch per row kind
     kind = row["kind"]
     if kind == "grant":
@@ -1429,6 +1457,25 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - o
         if row.get("changed"):
             parts.append("(changed)")
         return "  ".join(parts) + f"  ({row['provenance']})"
+    if kind == "watched_open":  # spec 057 §4.10.2: a rule file the agent opened
+        parts = [f"file   {row['watch_class']}", str(row.get("watch_label", "-")),
+                 _short(row["watch_id"]),
+                 {"success": "opened", "failed": "open failed"}.get(row.get("result", ""),
+                                                                    "open attempted")]  # fmt: skip
+        if row["opens"] > 1:
+            parts.append(f"{row['opens']} times")
+        parts.append(f"({row['provenance']}, {row['via']})" if "via" in row
+                     else f"({row['provenance']})")  # fmt: skip
+        snapshot = row.get("snapshot")
+        if snapshot is None:
+            parts.append("no operator snapshot of this file in the input")
+        else:
+            grant_id = _short(snapshot["id"]) if "id" in snapshot else "-"
+            parts.append(f"snapshot {grant_id} {_gap_text(snapshot['gap_ns'])}"
+                         + (" (changed)" if snapshot.get("changed") else ""))  # fmt: skip
+            parts.append(f"(reported, operator_snapshot)   {row['link']['method']} · "
+                         f"{row['link']['confidence']}")  # fmt: skip
+        return "  ".join(parts)
     if kind == "extension":
         parts = ["ext   ", row["extension_kind"], _short(row["id"]) if "id" in row else "-"]
         parts += [str(row[k]) for k in ("name", "version") if k in row]
@@ -1468,7 +1515,8 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - o
             parts.append(_ms(row["latency_ms"]))
         if row.get("mode") not in (None, "unknown"):
             parts.append(f"mode {row['mode']}")
-        parts.append(f"({row['derivation']})")
+        parts.append(f"({row['derivation']}, {row['reported_via']})" if "reported_via" in row
+                     else f"({row['derivation']})")  # fmt: skip
         if "status" in row:
             parts.append(f"http {row['status']}")
         if row.get("body_not_retained"):
@@ -1505,7 +1553,8 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - o
             parts.append(f"exit {row['exit_code']}")
         if "latency_ms" in row:
             parts.append(_ms(row["latency_ms"]))
-        parts.append(f"({row['basis']})")
+        parts.append(f"({row['basis']}, {row['reported_via']})" if "reported_via" in row
+                     else f"({row['basis']})")  # fmt: skip
     for effect in row.get("deny_with_effect", ()):  # F6: co-occurrence, with how each is known
         where = f"#{effect['n']}" if "n" in effect else f"attempt {effect['attempt_uid'][:8]}…"
         parts.append(f"effect {where} {effect['method']} · {effect['confidence']}"
@@ -1552,6 +1601,20 @@ def format_unattributed_host(events: Sequence[Mapping[str, Any]]) -> str:
         if n
     )
     return f"session\n  {_unattributed_host_text(summary)}\n  ({legend})\n"
+
+
+def format_reported_outside(view: Mapping[str, Any]) -> str:
+    """The view's section for the records reported over OTLP that no run showed (spec 057
+    rev 3.14): their controls chain, one row each and the facts. A row names what it
+    gates; "(no matching call)" or "request · unresolved" means no run of the input holds
+    it."""
+    lines = [f"reported over OTLP, in no run  controls: {_chain_text(view['chains']['controls'])}"]
+    for row in view["rows"]:
+        lines.append(f"{row['n']:>3}    {_security_text(row)}".rstrip())
+    if view.get("facts"):
+        lines.append("  facts:")
+        lines += [f"    {_fact_text(fact)}" for fact in view["facts"]]
+    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":

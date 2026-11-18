@@ -74,6 +74,9 @@ func validateArgs(args []string) ([]tokenFile, error) {
 		return nil, err
 	}
 	guards := groupGuards(merged)
+	if err := checkMapping(merged, len(guards) > 0); err != nil {
+		return nil, err
+	}
 	if len(guards) > 0 {
 		if err := checkIngressGroups(merged, guards); err != nil {
 			return nil, err
@@ -483,7 +486,7 @@ func onlyContains(raw []any, wanted string) bool {
 }
 
 func approvedEvidenceProcessors(steps []string) bool {
-	if len(steps) < 1 || len(steps) > 3 {
+	if len(steps) < 1 || len(steps) > 4 {
 		return false
 	}
 	guardIndex := -1
@@ -491,6 +494,12 @@ func approvedEvidenceProcessors(steps []string) bool {
 		switch step {
 		case "memory_limiter":
 			if i != 0 {
+				return false
+			}
+		case "fabricmap":
+			// Spec 057 §4.5: the mapping processor, directly before the guard
+			// (checkMapping holds it to the guard's binding).
+			if i+1 >= len(steps) || steps[i+1] != "fabricguard" {
 				return false
 			}
 		case "fabricguard":

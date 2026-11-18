@@ -21,6 +21,7 @@ from fabric.reconstruct._inputs import (
     list_span_inputs,
     observe,
     read_span_file,
+    reported_record,
 )
 
 # A Fabric span name (``fabric.decision``, ``fabric.tool_call``): safe to print.
@@ -29,9 +30,9 @@ _MAX_NAMES = 8
 SCOPE_DOC = "docs/reconstruct.md#scope-of-the-verifier"
 
 
-def explain_no_runs(spans: Sequence[str], *, run_filter: bool) -> list[str]:
+def explain_no_runs(spans: Sequence[str], *, run_filter: bool) -> list[str]:  # noqa: PLR0911 - one answer per case
     """Lines that say why no run was reconstructed from ``spans``; ``[]`` if unreadable."""
-    total = capture = 0
+    total = capture = reported = 0
     fabric_names: Counter[str] = Counter()
     for path in list_span_inputs(spans):
         try:
@@ -46,6 +47,8 @@ def explain_no_runs(spans: Sequence[str], *, run_filter: bool) -> list[str]:
                 observed = None
             if observed is not None:
                 capture += 1
+            elif reported_record(record) is not None:
+                reported += 1
             elif _FABRIC_NAME_RE.fullmatch(record.name or ""):
                 fabric_names[record.name] += 1
     if total == 0:
@@ -61,6 +64,15 @@ def explain_no_runs(spans: Sequence[str], *, run_filter: bool) -> list[str]:
             f"the inputs hold {capture} capture records (heartbeats, markers or losses) but no "
             "model exchange or record that names a run: no model call matched a configured "
             "endpoint (FABRIC_WIRE_ENDPOINTS), or the run's records are in another export."
+        ]
+    if reported and not run_filter:
+        return [
+            f"the inputs hold {reported} control or hook records another service reported "
+            "over OTLP and no agent capture record: they are listed in the report's "
+            "reported_outside_runs and at the end of the action view.",
+            "a run needs the agent's own capture in the same export: put the agent's export "
+            "beside the service's (run python -m fabric.wire status with the agent's "
+            "environment to check its capture).",
         ]
     if fabric_names:
         names = ", ".join(name for name, _ in fabric_names.most_common(_MAX_NAMES))

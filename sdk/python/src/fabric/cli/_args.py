@@ -1,6 +1,7 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""The arguments of ``fabric verify``, ``show`` and ``doctor`` (spec 058 §5.6-§5.8).
+"""The arguments of ``fabric verify``, ``show``, ``doctor`` (spec 058 §5.6-§5.8) and
+``snapshot`` (spec 057 WP7-17).
 
 Kept apart from the commands, which import the reader: building the parser must stay
 cheap, because ``fabric run`` builds it too and adds at most 150 ms before ``exec``
@@ -65,6 +66,20 @@ def add_show_arguments(parser: argparse.ArgumentParser) -> None:
     view.add_argument("--transcript", action="store_true", help="the conversation only")
     parser.add_argument(
         "--content", action="store_true", help="print content even when stdout is not a terminal"
+    )
+
+
+def add_snapshot_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--watched-paths",
+        metavar="FILE",
+        help="the watched paths list, or the capture policy holding it (JSON; default: the "
+        "capture policy capture.privacy names in fabric.yaml)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="list the files that would be read; read and record nothing",
     )
 
 

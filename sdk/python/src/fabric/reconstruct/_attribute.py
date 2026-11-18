@@ -115,6 +115,7 @@ __all__ = [
     "attribute_effect",
     "candidates",
     "output_matches",
+    "reported_outside_rows",
     "sha256_text",
     "startup_effects",
     "tool_calls",
@@ -1044,6 +1045,11 @@ class ActionReader:
         self._run_claims: dict[str, list[tuple[str, dict[str, Any], Attribution, dict[str, Any]]]]
         self._run_claims = defaultdict(list)
         self._index: tuple[Any, _security.ControlIndex] | None = None
+        self._snapshots: tuple[Any, _security.SnapshotIndex] | None = None
+        # Spec 057 rev 3.14: control and hook records reported over OTLP (no records
+        # identity), as items, per verifier; and those some run showed.
+        self._reported: tuple[Any, _security.ReportedIndex] | None = None
+        self._reported_shown: set[str] = set()
         self._sensor_cache: tuple[Any, dict[str, Any], dict[str, Any]] | None = None
 
     def _mcp_hosts(self) -> frozenset[str]:
@@ -1088,6 +1094,7 @@ class ActionReader:
             self.policy_runs += 1
             self.policy_matched += reader._classification() is not None
         sec = reader.security(gaps)
+        self._place_reported(report, sec, run.verifier)
         # Spec 057 §6.4: a run with a security record or an active security capture point
         # is annotated too; any other run keeps the report it had (§9.1).
         annotated = bool(reader.channels) or self._host_configured() or _security.present(sec)
@@ -1108,7 +1115,9 @@ class ActionReader:
         if host is not None:
             self._sensor_rows(inp, result, host, reader._classification())
         self._os_refusals(inp, result, host)
-        security = _security.analyse(inp, result, sec, self._control_index(run.verifier))
+        self._watched_opens(inp, host)
+        security = _security.analyse(inp, result, sec, self._control_index(run.verifier),
+                                     snapshots=self._snapshot_index(run.verifier))  # fmt: skip
         _apply_security(result, security)
         self._claim_run_links(report, result)
         if self.keep_runs:
@@ -1370,11 +1379,105 @@ class ActionReader:
             rows.append(row)
         return rows
 
+    # -- spec 057 WP7-17: watched rule files and operator snapshots ------------------
+
+    def _watched_opens(self, inp: dict[str, Any], host: Any) -> None:
+        """The run's opens of a watched ``permission_config`` entry, as a host source
+        recorded them (label, class and keyed ``pth-`` id; never a path), added to the
+        input as ``watched_opens`` for ``_security.analyse``. An event of another process
+        or outside the run is not the run's. Fabric opened none of these files: the
+        agent did, and the sensor saw it (spec 057 §4.3)."""
+        if host is None:
+            return
+        traced = host.trace_host_events
+        outside = ("outside_run", "H4-other-process", "H4-other-lineage", "H4-earlier-process",
+                   "sandbox-unlinked")  # fmt: skip
+        rows: list[dict[str, Any]] = []
+        for event in self._host_events():
+            rule = traced.get(event.event_id)
+            if (rule is None or rule in outside or event.event_class != "file"
+                    or event.watch_class != _security.WATCHED_CLASS
+                    or event.watch_id is None):  # fmt: skip
+                continue
+            row: dict[str, Any] = {
+                "event_id": event.event_id, "start_ns": event.time_ns,
+                "sequence": event.sequence or 0, "via": event.source,
+                "watch_class": event.watch_class, "watch_id": event.watch_id,
+                "result": event.result,
+            }  # fmt: skip
+            if event.watch_label is not None:
+                row["watch_label"] = event.watch_label
+            rows.append(row)
+        if rows:
+            inp["watched_opens"] = rows
+
+    def _snapshot_index(self, verifier: Any) -> _security.SnapshotIndex:
+        """Every operator snapshot of the input, once per verifier: a snapshot is recorded
+        outside the agent, in a run of its own."""
+        if self._snapshots is None or self._snapshots[0] is not verifier:
+            self._snapshots = (verifier, _security.SnapshotIndex.build(verifier.records))
+        return self._snapshots[1]
+
     def _control_index(self, verifier: Any) -> _security.ControlIndex:
-        """Every control record of the input, once per verifier (052 §4.9 rule 3)."""
+        """Every control record of the input, once per verifier (052 §4.9 rule 3), the
+        records reported over OTLP included (spec 057 rev 3.14)."""
         if self._index is None or self._index[0] is not verifier:
-            self._index = (verifier, _security.ControlIndex.build(verifier.records))
+            reported = getattr(verifier, "reported", {}).values()
+            self._index = (verifier, _security.ControlIndex.build(verifier.records, reported))
         return self._index[1]
+
+    def _reported_index(self, verifier: Any) -> _security.ReportedIndex:
+        """The input's records reported over OTLP as control and hook items, in time
+        order and indexed by what each names, once per verifier."""
+        if self._reported is None or self._reported[0] is not verifier:
+            found = sorted(getattr(verifier, "reported", {}).values(),
+                           key=lambda obs: (obs.span.start_ns, obs.event_id))  # fmt: skip
+            items = []
+            for obs in found:
+                item = _security.reported_item(obs)
+                item["record"] = obs.kind
+                items.append(item)
+            self._reported = (verifier, _security.ReportedIndex.build(items))
+            self._reported_shown = set()
+        return self._reported[1]
+
+    def _place_reported(self, report: Mapping[str, Any], sec: dict[str, Any],
+                        verifier: Any) -> None:  # fmt: skip
+        """Spec 057 rev 3.14: a record reported over OTLP is shown in every run that holds
+        what it names: the tool call of its D40 or E04 id (a call this run captured on the
+        wire), the request its D05 answers (a control record of this run with that id and
+        a phase it may answer), or the step of its D06. There the run's joins apply to it
+        as to any other record (``provider_id``, ``ref_join``, ``reported_ref``). It never
+        joins by position or by trace: the reporting service's trace is not the agent's
+        (052 B6)."""
+        index = self._reported_index(verifier)
+        if not index.items:
+            return
+        calls = {i for entry in report.get("exchanges", ())
+                 for i in entry.get("tool_call_ids_emitted", ()) if isinstance(i, str)}  # fmt: skip
+        for n in index.joined(calls, list(sec["controls"]), set(sec["attempts"])):
+            item = index.items[n]
+            placed = {k: v for k, v in item.items() if k != "record"}
+            sec["hooks" if item["record"] == "hook" else "controls"].append(placed)
+            self._reported_shown.add(item["event_id"])
+
+    def reported_outside_runs(self, verifier: Any = None) -> _security.SecurityResult | None:
+        """Spec 057 rev 3.14: the records reported over OTLP that no run showed, joined
+        against nothing (:func:`_security.analyse_outside`); ``None`` when there are none.
+        Call after every run is annotated, and only over every run: with ``--run`` the
+        other runs were not read. ``verifier`` defaults to the one last read."""
+        if verifier is None:
+            if self._reported is None:
+                return None
+            verifier = self._reported[0]
+        items = self._reported_index(verifier).items
+        rest = [i for i in items if i["event_id"] not in self._reported_shown]
+        if not rest:
+            return None
+        strip = [{k: v for k, v in i.items() if k != "record"} for i in rest]
+        controls = [s for s, i in zip(strip, rest, strict=True) if i["record"] == "control"]
+        hooks = [s for s, i in zip(strip, rest, strict=True) if i["record"] == "hook"]
+        return _security.analyse_outside(controls, hooks, self._control_index(verifier))
 
     def _host_events(self) -> list[Any]:
         """The host events a host joiner reads (``_host.HostPlan``), one per event id; the
@@ -2162,6 +2265,22 @@ def _link_text(link: Mapping[str, Any]) -> str:
     method = link.get("method") or link.get("provenance", "")
     text = f"{method} · {link.get('confidence', '')}"
     return text + " · ambiguous" if link.get("state") == "ambiguous" else text
+
+
+def reported_outside_rows(security: _security.SecurityResult) -> dict[str, Any]:
+    """The action view of the records reported over OTLP in no run (spec 057 rev 3.14):
+    their ``controls`` chain, one numbered row each in time order, and the facts."""
+    events = _security.view_events(security, {})
+    events.sort(key=lambda item: item[:3])
+    rows: list[dict[str, Any]] = []
+    for *_, row in events:
+        row["n"] = len(rows) + 1
+        rows.append(row)
+    _security.resolve_refs(rows)
+    out: dict[str, Any] = {"chains": {"controls": security.chain}, "rows": rows}
+    if security.facts:
+        out["facts"] = _security.fact_rows(security, rows)
+    return out
 
 
 def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - one per row kind

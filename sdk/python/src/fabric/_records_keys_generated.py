@@ -542,6 +542,11 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
     "fabric.grant.parallel_tools": {
         "type": "bool",
     },
+    "fabric.grant.path_ref": {
+        "type": "string",
+        "pattern": "^pth-[0-9a-f]{32}$",
+        "examples": ("pth-9f86d081884c7d659a2feaa0c55ad015",),
+    },
     "fabric.grant.permission_mode": {
         "type": "string",
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$",

@@ -26,7 +26,9 @@ REPO = Path(__file__).resolve().parents[3]
 REPORT_SCHEMA = json.loads(
     (REPO / "contracts/cli-config/v1/schema/cli-report-v1.schema.json").read_text("utf-8")
 )
-SPEC_COMMANDS = ("plan", "init", "up", "down", "run", "verify", "doctor", "show", "version", "help")
+# Spec 058 §5.1, plus ``snapshot``: spec 057 WP7-17, placed in this CLI by spec 058 OQ-3.
+SPEC_COMMANDS = ("plan", "init", "up", "down", "run", "verify", "doctor", "show", "snapshot",
+                 "version", "help")  # fmt: skip
 
 
 def _run(args: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int, str, str]:

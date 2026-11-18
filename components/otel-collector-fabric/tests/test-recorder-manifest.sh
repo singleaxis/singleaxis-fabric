@@ -22,7 +22,8 @@ fail() {
 #               noredirect (local path — spec 048 H1),
 #               fabricenvelope (local path — spec 049 §7.8)
 #   receivers:  otlp, audit (local path — spec 030)
-#   processors: memory_limiter, batch, fabricguard (local path)
+#   processors: memory_limiter, batch, fabricguard (local path),
+#               fabricmap (local path — spec 057 §4.5)
 #   exporters:  debug, otlphttp, fabriccontent (local path — spec 048)
 #   providers:  env, file, yaml
 expected_gomods='github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension v0.164.1
@@ -32,6 +33,7 @@ github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporte
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/fabricenvelopeextension v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor v0.1.0
+github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricmapprocessor v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver v0.1.0
 go.opentelemetry.io/collector/confmap/provider/envprovider v1.70.0
 go.opentelemetry.io/collector/confmap/provider/fileprovider v1.70.0
@@ -55,7 +57,7 @@ if [ "${actual_gomods}" != "${expected_sorted}" ]; then
 fi
 
 # Local path references (`path:` keys and `replaces:` targets) may resolve
-# only to the in-repo component source trees (fabricguard, auditreceiver,
+# only to the in-repo component source trees (fabricguard, fabricmap, auditreceiver,
 # fabriccontent, noredirect, fabricenvelope) and the host-records library
 # the audit receiver imports (../hostrecords: relative to the dist/ output,
 # because OCB copies a replaces: target that is not a component verbatim).
@@ -67,6 +69,7 @@ expected_paths='../hostrecords
 ./extension/fabricenvelopeextension
 ./extension/noredirectextension
 ./processor/fabricguardprocessor
+./processor/fabricmapprocessor
 ./receiver/auditreceiver'
 [ "${actual_paths}" = "$(printf '%s\n' "${expected_paths}" | sort)" ] \
   || fail "manifest resolves unexpected local paths: ${actual_paths}"
@@ -81,6 +84,7 @@ expected_copy='exporter/fabriccontentexporter
 extension/fabricenvelopeextension
 extension/noredirectextension
 processor/fabricguardprocessor
+processor/fabricmapprocessor
 receiver/auditreceiver'
 [ "${copy_local}" = "$(printf '%s\n' "${expected_copy}" | sort)" ] \
   || fail "Dockerfile COPY references unexpected component sources: ${copy_local:-<none>}"
@@ -114,7 +118,7 @@ for ver in $(grep -E 'gomod:.*opentelemetry-collector-contrib/' "${manifest}" | 
   esac
 done
 
-local_gomods="${procgomod} ${root}/receiver/auditreceiver/go.mod ${root}/exporter/fabriccontentexporter/go.mod ${root}/extension/noredirectextension/go.mod ${root}/extension/fabricenvelopeextension/go.mod"
+local_gomods="${procgomod} ${root}/processor/fabricmapprocessor/go.mod ${root}/receiver/auditreceiver/go.mod ${root}/exporter/fabriccontentexporter/go.mod ${root}/extension/noredirectextension/go.mod ${root}/extension/fabricenvelopeextension/go.mod"
 for gomod in ${local_gomods}; do
   for req in $(grep -oE 'go\.opentelemetry\.io/collector/[A-Za-z0-9/._-]+ v[0-9]+\.[0-9]+\.[0-9]+' "${gomod}" | tr ' ' ':'); do
     mod="${req%%:*}"

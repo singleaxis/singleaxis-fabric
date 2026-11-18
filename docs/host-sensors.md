@@ -197,6 +197,58 @@ default; each is a separate switch:
   reads the file. A path is matched exactly as the process passed it, so a
   relative open is not labelled.
 
+### What a watched permission file said: `fabric snapshot`
+
+A watched open tells you *that* the agent loaded a rule file, never what
+the file said: the sensor does not read it, and neither does the agent's
+SDK. To record what it said, the operator runs, outside the agent:
+
+```sh
+fabric snapshot                      # the list in the capture policy fabric.yaml names
+fabric snapshot --watched-paths watched.json
+fabric snapshot --dry-run            # list what would be read; read nothing
+```
+
+The command reads each `watched_paths` entry of class `permission_config`
+once (a `prefix` entry: every regular file under the folder, never through
+a symbolic link) and records one `declared` grant snapshot per entry, with
+source boundary `operator_snapshot`, through the project's own capture
+configuration. It schedules nothing and installs nothing in the agent; run
+it when you deploy, when the file changes, or from your own scheduler.
+
+- **On telemetry:** keyed ids only: the snapshot's `grt-` id and the
+  entry's `pth-` id (`fabric.grant.path_ref`, the same id as the sensor's
+  `fabric.sensor.watch_id`). Never the path, a file name or any content.
+- **As content:** each file's SHA-256, size and contents verbatim, only when
+  your capture policy retains the `run.permissions` role (`retain_original`
+  or `original_plus_masked`; a masking mode keeps them masked, and the
+  command says so). Under the default production profile, and under `omit`
+  or `metadata_only`, nothing of the file is kept (`FC-107` says so). At
+  most 128 KiB of one file is kept, and the entry's document must fit the
+  role's 1 MiB body limit, which the SDK counts at up to 6 bytes per
+  character (about 170,000 characters of contents): the largest files'
+  contents are left out first until it fits. A file left out is recorded by
+  digest and size (`FC-108`). Fabric never parses or applies the rules.
+- **The same id key.** The sensor and `fabric snapshot` must use the same
+  id key (`EMIT_ID_KEY_FILE` and the project's `secrets.id_key_file`), and
+  the entry's `path` must be written the same way in both lists, or the two
+  ids differ and the reader cannot join them.
+- **A changed file** gives a new `grt-` id; the command says so (`FC-109`)
+  and the reader states F2 (`grant_changed`).
+- **A folder entry** reads at most 256 files, 8 levels deep. A file it
+  cannot read, or files past those limits, are left out of the snapshot
+  and the command warns (`FC-110`). A folder none of whose files can be
+  read is not recorded at all (`FC-103`): an empty snapshot would claim
+  the folder holds no rule file.
+
+With host records and the snapshots in its input, `python -m
+fabric.reconstruct --view actions` shows each watched open with the
+snapshot of that file taken last before it, and how long before
+([action reconstruction](action-reconstruction.md)). A snapshot shows the
+file at snapshot time; the reader shows the gap and never assumes the file
+was the same when the agent opened it. `fabric show` does not join host
+records, so it does not show these lines.
+
 The reader shows an `execve`, `openat` or `connect` refused with `EACCES`
 or `EPERM`, and a `SIGSYS` kill, as a control row
 `os_access · effect · deny  kernel` under the tool call its process belongs
