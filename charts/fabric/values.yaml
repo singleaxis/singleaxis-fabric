@@ -158,8 +158,19 @@ injector:
     # injector.env.FABRIC_WIRE_SPOOL_MAX_BYTES sets the bound by hand.
     sizeLimit: 1Gi
   # Extra FABRIC_* variables for every injected container, e.g.
-  #   env: {FABRIC_WIRE_EXEC: "1"}
+  #   env: {FABRIC_WIRE_HTTP_HOSTS: "api.example.com"}
+  # With the host sensor, FABRIC_WIRE_EXEC is "1" (the agent's commands are
+  # the process anchor the sensor's events are joined by); set it to "0"
+  # here to turn that off.
   env: {}
+  # Your capture policy (a fabric.deployment-policy/v1 document, as YAML): which
+  # content roles are kept, redacted or left out. A production Node's agents
+  # keep model bodies only under one, so without it they send metadata only and
+  # `fabric verify` cannot verify their decisions. Rendered as the ConfigMap
+  # fabric-capture-policy in each agent namespace, mounted read-only at
+  # /var/run/fabric/policy and named by FABRIC_CAPTURE_POLICY. Not a secret;
+  # Fabric ships no default: the privacy choices are yours.
+  capturePolicy: {}
   resources:
     limits:
       cpu: 500m

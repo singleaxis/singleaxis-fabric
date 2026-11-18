@@ -39,6 +39,28 @@ metadata:
     {{- include "fabric.componentLabels" (dict "root" $ "component" "injector") | nindent 4 }}
 data:
   sitecustomize.py: {{ $.Files.Get "files/autoload/sitecustomize.py" | quote }}
+{{- with $.Values.injector.capturePolicy }}
+{{- /* One policy value serves every agent namespace, each with its own tenant:
+     a policy without tenant_id gets the namespace's (the SDK refuses a policy of
+     another tenant, so a different one is a render error, not a silent no-op). */}}
+{{- $policy := deepCopy . }}
+{{- if and $agent.tenantId (not (hasKey $policy "tenant_id")) }}
+{{- $_ := set $policy "tenant_id" $agent.tenantId }}
+{{- else if and $agent.tenantId (ne (toString (get $policy "tenant_id")) (toString $agent.tenantId)) }}
+{{- fail (printf "injector.capturePolicy.tenant_id is %s but the agent namespace %s belongs to tenant %s, and the SDK refuses a capture policy of another tenant: leave tenant_id out (the chart sets each namespace's own) or make it %s" (toString (get $policy "tenant_id")) $agent.name $agent.tenantId $agent.tenantId) }}
+{{- end }}
+---
+# The operator's capture policy (injector.capturePolicy), for FABRIC_CAPTURE_POLICY.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fabric-capture-policy
+  namespace: {{ $agent.name }}
+  labels:
+    {{- include "fabric.componentLabels" (dict "root" $ "component" "injector") | nindent 4 }}
+data:
+  capture-policy.json: {{ toJson $policy | quote }}
+{{- end }}
 {{- end }}
 ---
 apiVersion: v1

@@ -30,6 +30,7 @@ the profile files alone is unchanged.
 {{- $_ := set $injector "deployment" (include "fabric.injectorName" .) }}
 {{- $_ := set $injector "webhook" (include "fabric.webhookName" .) }}
 {{- $_ := set $injector "tlsSecret" .Values.injector.tlsSecretName }}
+{{- $_ := set $injector "capturePolicy" (not (empty .Values.injector.capturePolicy)) }}
 {{- end }}
 {{- /* Where the Node writes model bodies, so verify can read them back with the
      operator's own credentials (spec 058 §5.6 step 5): location only. */ -}}

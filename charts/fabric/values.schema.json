@@ -178,6 +178,11 @@
           "propertyNames": {"pattern": "^FABRIC_[A-Z0-9_]{1,120}$"},
           "additionalProperties": {"type": "string", "maxLength": 4096}
         },
+        "capturePolicy": {
+          "type": "object",
+          "description": "the operator's fabric.deployment-policy/v1 document; empty: none",
+          "properties": {"schema_version": {"const": "fabric.deployment-policy/v1"}}
+        },
         "resources": {"$ref": "#/definitions/resources"}
       }
     },

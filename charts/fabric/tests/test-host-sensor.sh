@@ -81,6 +81,14 @@ check "${tmp}/default.yaml" "
 assert not [d for d in kinds('ConfigMap') if d['metadata']['name'].endswith('-fabric-install')], 'install-info without a preset'
 "
 
+# --- the operator's FABRIC_WIRE_EXEC wins over the sensor's default -----------------
+render "${sensor[@]}" --set injector.enabled=true --set-string injector.env.FABRIC_WIRE_EXEC=0 >"${tmp}/exec-off.yaml"
+check "${tmp}/exec-off.yaml" "
+import json
+injector = json.loads(one('ConfigMap', '-fabric-injector')['data']['config.json'])
+assert all(ns['env']['FABRIC_WIRE_EXEC'] == '0' for ns in injector['namespaces'].values()), injector
+"
+
 # --- the DaemonSet -----------------------------------------------------------------
 render "${sensor[@]}" --set injector.enabled=true >"${tmp}/sensor.yaml"
 check "${tmp}/sensor.yaml" "
@@ -141,6 +149,8 @@ for expected in ('fabric-id-key', 'fabric-host-emitter-tls', node_secret('node-a
 # The injector labels the pod for the sensor and names its node.
 injector = json.loads(one('ConfigMap', '-fabric-injector')['data']['config.json'])
 assert injector['hostSensor'] == {'podLabels': {'fabric.singleaxis.ai/agent': 'true'}, 'hostLabelFromNode': True}, injector
+# With the sensor, injected agents record their commands (the process anchor).
+assert all(ns['env']['FABRIC_WIRE_EXEC'] == '1' for ns in injector['namespaces'].values()), injector
 
 # Audit workaround 2: under the chart's default-deny policy the sensor reaches the
 # Node's ingress ports and the API server.
@@ -157,7 +167,8 @@ assert info['schema'] == 'fabric.install-info/v1' and info['preset'] == 'product
 assert info['hostSensor']['daemonSet'] == 'fabric-fabric-host-sensor' and info['hostSensor']['podSelector'] == 'fabric.singleaxis.ai/agent=true'
 assert [n['name'] for n in info['hostSensor']['nodes']] == ['node-a', 'node-b'] and info['hostSensor']['nodes'][1]['port'] == 4418
 assert info['injector'] == {'enabled': True, 'deployment': 'fabric-fabric-injector',
-                            'webhook': 'fabric-injector-fabric-system-fabric', 'tlsSecret': 'fabric-injector-tls'}, info['injector']
+                            'webhook': 'fabric-injector-fabric-system-fabric', 'tlsSecret': 'fabric-injector-tls',
+                            'capturePolicy': False}, info['injector']
 assert info['agentNamespaces'][0]['name'] == 'agents' and info['agentNamespaces'][0]['secret'] == 'fabric-agent'
 assert info['node']['service'] == 'fabric-otel-collector' and info['node']['denyDefault'] is True
 assert 'BEGIN' not in json.dumps(info) and 'token' not in info

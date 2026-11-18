@@ -211,6 +211,16 @@ group on a production Node.
 {{- if dig "content" "enabled" false $collector -}}
 {{- $_ := set $env "FABRIC_WIRE_CONTENT_ENDPOINT" (printf "https://%s:%d/v1/logs" $host $content) -}}
 {{- end -}}
+{{- if $.Values.injector.capturePolicy -}}
+{{- $_ := set $env "FABRIC_CAPTURE_POLICY" "/var/run/fabric/policy/capture-policy.json" -}}
+{{- end -}}
+{{- if $.Values.hostSensor.enabled -}}
+{{- /* The process anchor the host sensor's evidence is joined by (spec 056 §4.3): a
+     run names its process's pid and pid namespace only through the commands it
+     runs, so with the sensor injected agents record them. injector.env.FABRIC_WIRE_EXEC
+     (below) or the pod's own variable wins. */ -}}
+{{- $_ := set $env "FABRIC_WIRE_EXEC" "1" -}}
+{{- end -}}
 {{- range $name, $value := $.Values.injector.env -}}
 {{- $_ := set $env $name ($value | toString) -}}
 {{- end -}}
@@ -242,6 +252,7 @@ group on a production Node.
       "spoolSizeLimit" .Values.injector.spool.sizeLimit
       "spoolMaxBytes" $spoolMaxBytes
       "spoolClaim" "fabric-spool"
+      "capturePolicyConfigMap" (ternary "fabric-capture-policy" "" (not (empty .Values.injector.capturePolicy)))
       "hostSensor" $hostSensor
       "namespaces" $namespaces
   | toJson -}}

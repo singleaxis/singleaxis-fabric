@@ -734,3 +734,39 @@ def test_a_failing_derivation_never_fails_the_admission(monkeypatch: pytest.Monk
         {"name": "OPENAI_BASE_URL", "value": MODEL_URL}]}])  # fmt: skip
     after, outcome = _inject(pod)
     assert outcome == "injected" and _endpoints(after) is None
+
+
+def test_the_operators_capture_policy_is_mounted_read_only_when_the_chart_has_one() -> None:
+    """``injector.capturePolicy``: the operator's own policy (a production SDK keeps model
+    bodies only under one), an optional ConfigMap volume like the shim's; nothing is added
+    without it."""
+    after, outcome = _inject(_pod())
+    assert outcome == "injected"
+    assert _injector.VOLUME_POLICY not in {v["name"] for v in after["spec"]["volumes"]}
+    config = _injector.Config.from_json({
+        "version": "1", "capturePolicyConfigMap": "fabric-capture-policy",
+        "namespaces": {"agents": {"env": {**ENV, "FABRIC_CAPTURE_POLICY":
+                                          "/var/run/fabric/policy/capture-policy.json"}}},
+    })  # fmt: skip
+    after, outcome = _inject(_pod(), config)
+    assert outcome == "injected"
+    volume = next(v for v in after["spec"]["volumes"] if v["name"] == _injector.VOLUME_POLICY)
+    assert volume["configMap"] == {"name": "fabric-capture-policy", "defaultMode": 0o444,
+                                   "optional": True}  # fmt: skip
+    container = after["spec"]["containers"][0]
+    assert {"name": _injector.VOLUME_POLICY, "mountPath": "/var/run/fabric/policy",
+            "readOnly": True} in container["volumeMounts"]  # fmt: skip
+    env = {e["name"]: e.get("value") for e in container["env"]}
+    assert env["FABRIC_CAPTURE_POLICY"] == "/var/run/fabric/policy/capture-policy.json"
+    # A pod with its own policy keeps it (never overridden), and a mount there is a skip.
+    mine = [{"name": "FABRIC_CAPTURE_POLICY", "value": "/own.json"}]
+    own = _pod(containers=[{"name": "agent", "image": "a:1", "env": mine}])
+    after, _ = _inject(own, config)
+    kept = [
+        e for e in after["spec"]["containers"][0]["env"] if e["name"] == "FABRIC_CAPTURE_POLICY"
+    ]
+    assert kept == [{"name": "FABRIC_CAPTURE_POLICY", "value": "/own.json"}]
+    taken = _pod(containers=[{"name": "agent", "image": "a:1", "volumeMounts": [
+        {"name": "mine", "mountPath": "/var/run/fabric/policy"}]}])  # fmt: skip
+    _, outcome = _inject(taken, config)
+    assert outcome == "skipped: mount_path_taken"

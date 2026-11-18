@@ -282,4 +282,44 @@ assert info['node']['contentStore'] == {'backend': 's3', 'bucket': 'acme-fabric-
     'endpoint': 'https://s3.storage.internal:9000', 'pathStyle': True}, info['node']
 "
 
+# --- the operator's capture policy (injector.capturePolicy) ---------------------
+render --set preset=local --set 'agentNamespaces={agents,agents-b}' --set injector.enabled=true \
+  --set injector.capturePolicy.schema_version=fabric.deployment-policy/v1 \
+  --set injector.capturePolicy.policy_id=acme-prod --set injector.capturePolicy.policy_version=3 \
+  >"${tmp}/policy.yaml"
+check "${tmp}/policy.yaml" "
+import json
+maps = [d for d in docs if d['kind'] == 'ConfigMap' and d['metadata']['name'] == 'fabric-capture-policy']
+assert sorted(m['metadata']['namespace'] for m in maps) == ['agents', 'agents-b'], maps
+assert json.loads(maps[0]['data']['capture-policy.json']) == {
+    'schema_version': 'fabric.deployment-policy/v1', 'policy_id': 'acme-prod', 'policy_version': 3}
+config = json.loads(one('ConfigMap', '-fabric-injector')['data']['config.json'])
+assert config['capturePolicyConfigMap'] == 'fabric-capture-policy'
+assert config['namespaces']['agents']['env']['FABRIC_CAPTURE_POLICY'] == '/var/run/fabric/policy/capture-policy.json'
+"
+# Each namespace's policy names its own tenant when the operator leaves tenant_id
+# out (the SDK refuses a policy of another tenant); a different one is refused.
+policy=(--set injector.enabled=true --set injector.capturePolicy.schema_version=fabric.deployment-policy/v1
+  --set injector.capturePolicy.policy_id=acme-prod)
+render --set preset=local --set tenant.id=acme \
+  --set 'agentNamespaces[0]=agents' --set 'agentNamespaces[1].name=agents-b' \
+  --set 'agentNamespaces[1].tenantId=beta' "${policy[@]}" >"${tmp}/policy-tenants.yaml"
+check "${tmp}/policy-tenants.yaml" "
+import json
+maps = {d['metadata']['namespace']: json.loads(d['data']['capture-policy.json'])
+        for d in docs if d['kind'] == 'ConfigMap' and d['metadata']['name'] == 'fabric-capture-policy'}
+assert maps['agents']['tenant_id'] == 'acme' and maps['agents-b']['tenant_id'] == 'beta', maps
+assert maps['agents']['policy_id'] == 'acme-prod'
+"
+reject "injector.capturePolicy.tenant_id is other but the agent namespace agents belongs to tenant acme" \
+  --set preset=local --set tenant.id=acme --set 'agentNamespaces={agents}' "${policy[@]}" \
+  --set injector.capturePolicy.tenant_id=other
+render --set preset=local --set 'agentNamespaces={agents}' --set injector.enabled=true >"${tmp}/no-policy.yaml"
+check "${tmp}/no-policy.yaml" "
+import json
+assert not [d for d in docs if d['metadata']['name'] == 'fabric-capture-policy']
+config = json.loads(one('ConfigMap', '-fabric-injector')['data']['config.json'])
+assert config['capturePolicyConfigMap'] == '' and not {'FABRIC_CAPTURE_POLICY', 'FABRIC_WIRE_EXEC'} & set(config['namespaces']['agents']['env'])
+"
+
 printf 'PASS: secrets Job, agent namespaces and the injector render as spec 058 section 10 says\n'

@@ -1321,5 +1321,16 @@ CATALOGUE: dict[str, Any] = {
             "values (docs/get-started/kubernetes.md); this workstation reads it with "
             "your AWS configuration",
         },
+        {
+            "id": "FC-155",
+            "name": "no_capture_policy",
+            "severity": "warning",
+            "text": "the injector gives agents no capture policy, so on this production "
+            "Node they record metadata only: the model bodies the agent's decisions "
+            "are verified against are never kept and verify cannot pass",
+            "fix": "set injector.capturePolicy to your fabric.deployment-policy/v1 document "
+            "in your values (docs/get-started/kubernetes.md), run fabric up "
+            "--kubernetes again, then roll out your agents",
+        },
     ],
 }

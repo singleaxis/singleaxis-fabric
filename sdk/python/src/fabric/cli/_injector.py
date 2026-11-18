@@ -20,6 +20,8 @@ patch adds, never replaces:
   SDK's own spool bound (``FABRIC_WIRE_SPOOL_MAX_BYTES``) is set well under that limit:
   the kubelet evicts a pod whose ``emptyDir`` grows past its limit, and a spool that
   fills while the Node is away must never cost the agent its pod;
+- with the chart's ``injector.capturePolicy``: the operator's capture policy (a
+  ConfigMap, optional like the others) read-only at ``/var/run/fabric/policy``;
 - for ``python``: the standard-library autoload shim (a ConfigMap) at
   ``/var/run/fabric/autoload``, ``PYTHONPATH`` pointing at it and
   ``FABRIC_WIRE_AUTOLOAD=1``. The SDK itself must be in the image (OQ-6);
@@ -70,10 +72,12 @@ PYTHONPATH_ANNOTATION = "fabric.singleaxis.ai/pythonpath"
 MODES = ("python", "env")
 SECRETS_DIR = "/var/run/fabric/secrets"
 AUTOLOAD_DIR = "/var/run/fabric/autoload"
+POLICY_DIR = "/var/run/fabric/policy"
 SPOOL_DIR = "/var/lib/fabric"
 VOLUME_SECRETS = "fabric-secrets"
 VOLUME_AUTOLOAD = "fabric-autoload"
 VOLUME_SPOOL = "fabric-spool"
+VOLUME_POLICY = "fabric-capture-policy"
 SPOOL_MAX_BYTES = "FABRIC_WIRE_SPOOL_MAX_BYTES"
 ENDPOINTS = "FABRIC_WIRE_ENDPOINTS"
 HOST_LABEL = "FABRIC_HOST_LABEL"
@@ -93,6 +97,9 @@ class Config:
     spool_claim: str = "fabric-spool"
     #: The SDK spool bound for an ``emptyDir`` spool, in bytes (0: not set here).
     spool_max_bytes: int = 0
+    #: The operator's capture policy ConfigMap in each agent namespace ("" when the chart
+    #: has none): mounted read-only at ``POLICY_DIR`` (``FABRIC_CAPTURE_POLICY`` names it).
+    capture_policy_config_map: str = ""
     #: §10.5, with the chart's host sensor: labels added to an injected pod (the sensor's
     #: pod selector), and whether ``FABRIC_HOST_LABEL`` is set from the pod's node name.
     pod_labels: Mapping[str, str] = field(default_factory=dict)
@@ -116,6 +123,7 @@ class Config:
             spool_size_limit=str(data.get("spoolSizeLimit") or "1Gi"),
             spool_claim=str(data.get("spoolClaim") or "fabric-spool"),
             spool_max_bytes=max(0, int(data.get("spoolMaxBytes") or 0)),
+            capture_policy_config_map=str(data.get("capturePolicyConfigMap") or ""),
             namespaces=namespaces,
         )
 
@@ -223,6 +231,17 @@ def _volumes(config: Config, mode: str, annotations: Mapping[str, str]) -> list[
         )
     else:
         volumes.append({"name": VOLUME_SPOOL, "emptyDir": {"sizeLimit": config.spool_size_limit}})
+    if config.capture_policy_config_map:
+        volumes.append(
+            {
+                "name": VOLUME_POLICY,
+                "configMap": {
+                    "name": config.capture_policy_config_map,
+                    "defaultMode": 0o444,
+                    "optional": True,
+                },
+            }
+        )
     if mode == "python":
         volumes.append(
             {
@@ -237,11 +256,13 @@ def _volumes(config: Config, mode: str, annotations: Mapping[str, str]) -> list[
     return volumes
 
 
-def _mounts(mode: str) -> list[dict[str, Any]]:
+def _mounts(config: Config, mode: str) -> list[dict[str, Any]]:
     mounts: list[dict[str, Any]] = [
         {"name": VOLUME_SECRETS, "mountPath": SECRETS_DIR, "readOnly": True},
         {"name": VOLUME_SPOOL, "mountPath": SPOOL_DIR},
     ]
+    if config.capture_policy_config_map:
+        mounts.append({"name": VOLUME_POLICY, "mountPath": POLICY_DIR, "readOnly": True})
     if mode == "python":
         mounts.append({"name": VOLUME_AUTOLOAD, "mountPath": AUTOLOAD_DIR, "readOnly": True})
     return mounts
@@ -289,7 +310,7 @@ def _patch(  # noqa: PLR0912 - one step per thing the patch may add
     if taken & {v["name"] for v in ours}:
         raise Skip("volume_name_taken")
     containers = spec.get("containers") or []
-    mounts = _mounts(mode)
+    mounts = _mounts(config, mode)
     for container in containers:
         for existing in container.get("volumeMounts") or []:
             if any(_under(str(existing.get("mountPath") or ""), m["mountPath"]) for m in mounts):

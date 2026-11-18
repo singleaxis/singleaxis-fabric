@@ -929,12 +929,21 @@ Fix: pip install "singleaxis-fabric[cli,s3]" on this workstation, then run fabri
 
 ### FC-154
 
-`content_not_readable`, warning: the release keeps no model bodies where this workstation can
-read them, so the agent's model decisions cannot be verified and verify cannot pass.
+`content_not_readable`, warning: the release keeps no model bodies where this workstation can read
+them, so the agent's model decisions cannot be verified and verify cannot pass.
 
 Fix: deliver content to an S3 or S3-compatible store: otel-collector.content.enabled=true and
-content.backend=s3 in your values (docs/get-started/kubernetes.md); this workstation reads it
-with your AWS configuration.
+content.backend=s3 in your values (docs/get-started/kubernetes.md); this workstation reads it with
+your AWS configuration.
+
+### FC-155
+
+`no_capture_policy`, warning: the injector gives agents no capture policy, so on this production
+Node they record metadata only: the model bodies the agent's decisions are verified against are
+never kept and verify cannot pass.
+
+Fix: set injector.capturePolicy to your fabric.deployment-policy/v1 document in your values
+(docs/get-started/kubernetes.md), run fabric up --kubernetes again, then roll out your agents.
 
 ## The SDKs (wire capture, status, autoload)
 
