@@ -595,6 +595,57 @@ def test_without_run_the_newest_ended_run_is_judged_never_one_still_running() ->
     assert _kubecmd.ended_run_id({"runs": []}) is None
 
 
+def _judged(run_id: str, started: str, corroboration: str) -> dict[str, Any]:
+    return {**_run_doc(run_id, started, "terminated"), "verdict": "complete_for_declared_scope",
+            "chains": {"decisions": {"verdict": "complete"},
+                       "corroboration": {"verdict": corroboration}}}  # fmt: skip
+
+
+def test_a_run_judged_on_an_earlier_look_is_reported_once_its_evidence_arrives() -> None:
+    """A looping agent ends a run every few seconds, each younger than the host sensor's
+    last delivered heartbeat (``source_gap`` until the next one): the newest run alone
+    would never be seen corroborated, so a run an earlier look judged stays a candidate.
+    The newest run wins whenever it is complete; nothing older is reported otherwise."""
+    document = {"runs": [
+        _judged("r-1", "2026-11-17T00:00:01Z", "complete"),
+        _judged("r-2", "2026-11-17T00:00:07Z", "complete"),
+        _judged("r-3", "2026-11-17T00:00:13Z", "partial"),
+    ]}  # fmt: skip
+    judged = _kubecmd.judged_run_id
+    assert judged(document, sensor=True) == "r-3"  # no earlier look: the newest
+    assert judged(document, ["r-2", "r-1"], sensor=True) == "r-2"
+    assert judged(document, ["r-gone"], sensor=True) == "r-3"
+    assert judged(document, ["r-2"], sensor=False) == "r-3"  # complete without a sensor
+    document["runs"][2]["chains"]["corroboration"]["verdict"] = "complete"
+    assert judged(document, ["r-2"], sensor=True) == "r-3"
+    # An earlier run that is not complete either is never preferred to the newest.
+    document["runs"][1]["chains"]["decisions"]["verdict"] = "partial"
+    document["runs"][2]["chains"]["corroboration"]["verdict"] = "partial"
+    assert judged(document, ["r-2"], sensor=True) == "r-3"
+
+
+def test_verify_offers_the_runs_it_judged_before_to_the_next_look(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:  # fmt: skip
+    offered: list[list[str]] = []
+    ids = iter(["r-1", "r-2", "r-1"])
+
+    def read(cluster: Any, install: Any, view: Any, *args: Any) -> dict[str, Any]:
+        offered.append(list(args[-1]))
+        run_id = next(ids)
+        view.findings.append(Finding("FC-069" if len(offered) == 3 else "FC-068", run_id))
+        return {"run_id": run_id, "chains": {"corroboration": "complete"}}
+
+    monkeypatch.setattr(_kubecmd, "_read_run", read)
+    clock = _Clock()
+    report, _ = _kubecmd.run_verify(
+        _options("verify", "--kubernetes", "--spans", str(tmp_path)), {},
+        cluster=_c(_healthy()), probe=_never_probe, canary=_no_canary,
+        sleep=clock.sleep, clock=clock,
+    )  # fmt: skip
+    assert offered == [[], ["r-1"], ["r-2", "r-1"]] and report.exit_code == 0
+
+
 class _Clock:
     def __init__(self) -> None:
         self.now = 0.0
@@ -730,7 +781,8 @@ def test_the_content_port_is_checked_only_with_content_delivery_on() -> None:
 def _store_install(**store: Any) -> _kubeview.Install:
     node = {"service": "fabric-otel-collector", "healthPort": 13133, "content": bool(store),
             "contentStore": store or {"backend": ""}}  # fmt: skip
-    return _kubeview.Install(_install(node=node))
+    injector = {"enabled": True, "deployment": "fabric-fabric-injector", "capturePolicy": True}
+    return _kubeview.Install(_install(node=node, injector=injector))
 
 
 def test_verify_reads_the_release_content_store_with_the_workstations_aws_config(
@@ -753,6 +805,25 @@ def test_verify_reads_the_release_content_store_with_the_workstations_aws_config
         install, _kubeview.View(), {"AWS_ENDPOINT_URL_S3": "https://127.0.0.1:30833"}
     )
     assert store is not None and store.endpoint_url is None  # botocore reads the variable
+
+
+def test_verify_names_a_production_injector_without_a_capture_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    """A production SDK keeps model bodies out without a capture policy (FW-008), so the
+    store has nothing to verify the decisions against: verify says why."""
+    monkeypatch.setattr(S3ContentStore, "ensure_client", lambda self: None)
+    store = {"backend": "s3", "bucket": "acme-content", "region": "us-east-1"}
+    node = {"service": "fabric-otel-collector", "content": True, "contentStore": store}
+    for policy, expected in ((False, ["FC-155"]), (True, [])):
+        injector = {"enabled": True, "deployment": "d", "capturePolicy": policy}
+        view = _kubeview.View()
+        opened, _ = _kubecmd.content_store(
+            _kubeview.Install(_install(node=node, injector=injector)), view, {}
+        )
+        assert opened is not None and _ids(view.findings) == expected
+        if expected:
+            assert "injector.capturePolicy" in str(view.findings[0].detail)
 
 
 def test_verify_says_why_decisions_cannot_be_verified_without_a_readable_store(
@@ -1029,3 +1100,20 @@ def test_cli_dispatches_kubernetes_forms(monkeypatch: pytest.MonkeyPatch,
     for command in ("plan", "up", "down", "verify", "doctor"):
         cli.main([command, "--kubernetes", "--quiet"])
     assert called == ["run_plan", "run_up", "run_down", "run_verify", "run_doctor"]
+
+
+def test_the_commands_row_names_the_fix_only_where_the_exec_hook_is_off() -> None:
+    """With the host sensor the chart turns the exec hook on, so a run without commands is
+    ``not observed`` (and why that matters to the sensor's join), not a fix to apply."""
+    run: dict[str, Any] = {"chains": {"effects": {"verdict": "not_observed"},
+                                      "corroboration": {"verdict": "complete"}}}  # fmt: skip
+    chains = {"decisions": "complete"}
+    rows = {r.question: r for r in _kubecmd._coverage(_kubeview.Install(_install()), run,
+                                                      chains, 2)}  # fmt: skip
+    row = rows["commands the agent ran"]
+    assert row.state == "not observed" and "FABRIC_WIRE_EXEC" in row.note
+    assert rows["host evidence (kernel sensor)"].state == "recorded"
+    off = _kubeview.Install(_install(hostSensor={"enabled": False}))
+    row = {r.question: r for r in _kubecmd._coverage(off, run, chains, 2)}[
+        "commands the agent ran"]  # fmt: skip
+    assert row.state == "fix" and "injector.env.FABRIC_WIRE_EXEC=1" in row.note

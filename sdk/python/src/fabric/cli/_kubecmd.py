@@ -654,10 +654,13 @@ def _read_run(
     cluster: Cluster, install: _kubeview.Install, view: _kubeview.View,
     options: argparse.Namespace, node_pods: Sequence[Mapping[str, Any]],
     pods: Sequence[Mapping[str, Any]], environ: Mapping[str, str],
+    earlier: Sequence[str] = (),
 ) -> dict[str, Any] | None:  # fmt: skip
     """§5.6 steps 5 and 6 for a cluster: the reader over the destination's export
-    (``--spans``), the named run or the one that started last, judged, and its observed
-    coverage with the host sensor's records joined."""
+    (``--spans``), the named run or the newest ended one, judged, and its observed
+    coverage with the host sensor's records joined. ``earlier``: the runs judged on
+    earlier looks, newest first; one of them is reported instead when the newest is not
+    yet complete and it is (see :func:`judged_run_id`)."""
     from .._sequence import label_pseudonym  # noqa: PLC0415 - reader-only imports
     from ..reconstruct._attribute import ActionReader  # noqa: PLC0415
     from ..reconstruct._host import HostPlan, peer_id  # noqa: PLC0415
@@ -697,7 +700,9 @@ def _read_run(
                     else f"{text}; accepted: {ACCEPTED_INPUTS}")
         )  # fmt: skip
         return None
-    wanted = report_run_id(options.run, key) if options.run else ended_run_id(document)
+    sensor = bool(install.sensor.get("enabled"))
+    wanted = (report_run_id(options.run, key) if options.run
+              else judged_run_id(document, earlier, sensor=sensor))  # fmt: skip
     run = next((r for r in document.get("runs") or [] if r["run_id"] == wanted), None)
     if run is None:
         view.findings.append(
@@ -724,7 +729,6 @@ def _read_run(
                                + (f" - {reasons}" if reasons else ""))[:4000])
         )  # fmt: skip
     rows = _coverage(install, run, chains, exchanges)
-    sensor = bool(install.sensor.get("enabled"))
     if sensor and chains.get("corroboration") in (None, "not_observed"):
         view.findings.append(Finding("FC-141", str(run["run_id"])))
     view.lines.append("coverage (observed):")
@@ -760,6 +764,13 @@ def content_store(install: _kubeview.Install, view: _kubeview.View,
                else "content delivery is off (otel-collector.content.enabled=false)")  # fmt: skip
         view.findings.append(Finding("FC-154", why))
         return None, None
+    if (
+        install.production
+        and install.injector.get("enabled")
+        and not install.injector.get("capturePolicy")
+    ):
+        # Without a capture policy a production SDK keeps model bodies out (FW-008).
+        view.findings.append(Finding("FC-155", "injector.capturePolicy is empty"))
     from ..content_store.s3 import S3ContentStore  # noqa: PLC0415
 
     own_endpoint = any((environ.get(name) or "").strip() for name in _AWS_ENDPOINT_VARIABLES)
@@ -798,6 +809,35 @@ def ended_run_id(document: Mapping[str, Any]) -> str | None:
     return max(ended)[1] if ended else latest_run_id(document)
 
 
+def _run_complete(run: Mapping[str, Any], *, sensor: bool) -> bool:
+    """A run ``verify`` passes: complete, ended, decisions complete and, with the host
+    sensor installed, corroborated."""
+    from ..reconstruct._report import COMPLETE_VERDICTS, EXIT_RUN_STATES  # noqa: PLC0415
+
+    chains = run.get("chains") or {}
+    verdict = {name: (chain or {}).get("verdict") for name, chain in chains.items()}
+    return (run.get("verdict") in COMPLETE_VERDICTS
+            and run.get("run_state") in EXIT_RUN_STATES
+            and verdict.get("decisions") == "complete"
+            and (not sensor or verdict.get("corroboration") == "complete"))  # fmt: skip
+
+
+def judged_run_id(document: Mapping[str, Any], earlier: Sequence[str] = (), *,
+                  sensor: bool = False) -> str | None:  # fmt: skip
+    """The run ``verify --kubernetes`` judges: the newest ended run (:func:`ended_run_id`),
+    unless it is not complete yet and a run judged on an earlier look (``earlier``,
+    newest first) now is. An agent that runs in a loop ends a new run every few seconds,
+    always younger than the host sensor's last delivered heartbeat, so the newest run
+    alone would never be seen corroborated; the run an earlier look chose gets the time
+    its evidence needs to arrive."""
+    newest = ended_run_id(document)
+    runs = {str(r["run_id"]): r for r in document.get("runs") or []}
+    for candidate in (newest, *earlier):
+        if candidate in runs and _run_complete(runs[candidate], sensor=sensor):
+            return candidate
+    return newest
+
+
 def _coverage(install: _kubeview.Install, run: Mapping[str, Any],
               chains: Mapping[str, Any], exchanges: int) -> list[Any]:  # fmt: skip
     from . import _read  # noqa: PLC0415
@@ -810,7 +850,17 @@ def _coverage(install: _kubeview.Install, run: Mapping[str, Any],
             "parsed from the model bodies" if chains.get("decisions") else "no model call"),
     ]  # fmt: skip
     effects = (run.get("chains") or {}).get("effects") or {}
-    if effects.get("verdict") in (None, "not_observed"):
+    if effects.get("verdict") in (None, "not_observed") and install.sensor.get("enabled"):
+        # The chart turns the exec hook on with the sensor (injector.env can turn it off).
+        rows.append(
+            row(
+                "commands the agent ran",
+                "not observed",
+                "none in this run; the host sensor's events are joined to an agent's "
+                "process through the commands it runs (FABRIC_WIRE_EXEC)",
+            )
+        )
+    elif effects.get("verdict") in (None, "not_observed"):
         rows.append(
             row(
                 "commands the agent ran",
@@ -931,6 +981,10 @@ _POLL_S = 5.0
 _TRANSIENT = frozenset({"FC-126", "FC-133", "FC-135"})
 
 
+#: How many runs judged on earlier looks stay candidates (newest first).
+_KEEP_JUDGED = 8
+
+
 def _settled(found: dict[str, Any] | None, findings: Sequence[Finding], sensor: bool) -> bool:
     """A judged run that needs no more waiting: complete with decisions complete, no
     transient problem left and, with the host sensor installed, corroborated."""
@@ -963,6 +1017,7 @@ def run_verify(
     wait = KUBERNETES_WAIT_S if options.wait == DEFAULT_WAIT_S else float(options.wait)
     deadline = clock() + wait
     sensor = bool(install.sensor.get("enabled"))
+    judged: list[str] = []  # the runs earlier looks judged, newest first
     while True:
         view = _kubeview.gather(cluster, install, probe=probe)
         pods = view.data.pop("agent_pods", [])
@@ -972,7 +1027,11 @@ def run_verify(
             node_pods: list[dict[str, Any]] = []
             with contextlib.suppress(Forbidden, CliError):
                 node_pods = _kubeview.node_pods(cluster, install)
-            found = _read_run(cluster, install, attempt, options, node_pods, pods, environ)
+            found = _read_run(cluster, install, attempt, options, node_pods, pods, environ,
+                              judged)  # fmt: skip
+            if found is not None:
+                newest = str(found["run_id"])
+                judged = [newest, *(r for r in judged if r != newest)][:_KEEP_JUDGED]
         unreadable = any(f.id in ("FC-073", "FC-153") for f in attempt.findings)
         if (not reading or unreadable or clock() >= deadline
                 or _settled(found, [*view.findings, *attempt.findings], sensor)):  # fmt: skip
@@ -1006,6 +1065,7 @@ __all__ = [
     "ended_run_id",
     "health_probe",
     "helm_arguments",
+    "judged_run_id",
     "reader_peers",
     "run_canary",
     "run_doctor",
