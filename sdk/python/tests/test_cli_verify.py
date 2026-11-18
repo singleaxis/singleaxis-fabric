@@ -375,7 +375,9 @@ def test_the_judgement_is_the_readers_verdict_and_the_decisions_chain() -> None:
 
 
 def test_reader_outputs_name_no_evaluation_word() -> None:
-    """I1 / 057 B6: verify and show print the reader's facts, never an evaluation."""
+    """I1 / 057 B6: verify and show print the reader's facts, never an evaluation. The
+    coverage rows and every reason's words (WP8-17, WP8-18) are printed by verify and
+    plan from their own modules, so those are scanned too."""
     for module in (
         "cli/_verify.py",
         "cli/_show.py",
@@ -383,6 +385,11 @@ def test_reader_outputs_name_no_evaluation_word() -> None:
         "cli/_transcript.py",
         "cli/_doctor.py",
         "cli/_run.py",
+        "cli/_kubecmd.py",
+        "cli/_plan.py",
+        "cli/_coverage.py",
+        "cli/_reasons_data.py",
+        "cli/_rows_data.py",
     ):
         for literal in _printable_literals(_tree(module)):
             assert not FORBIDDEN_WORDS.search(literal), (module, literal)
