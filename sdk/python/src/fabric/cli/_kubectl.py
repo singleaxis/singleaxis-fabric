@@ -229,11 +229,14 @@ class Cluster:
         found: list[int] = []
 
         def read() -> None:
-            for line in process.stdout:
-                match = _FORWARD_RE.search(line)
-                if match:
-                    found.append(int(match.group(1)))
-                    return
+            # Read to the end, not only to the port: kubectl prints a line for every
+            # connection it forwards, and a pipe nobody empties stops the forward.
+            with contextlib.suppress(OSError, ValueError):
+                for line in process.stdout:
+                    if not found:
+                        match = _FORWARD_RE.search(line)
+                        if match:
+                            found.append(int(match.group(1)))
 
         reader = threading.Thread(target=read, daemon=True)
         reader.start()

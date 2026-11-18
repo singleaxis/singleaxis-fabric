@@ -16,6 +16,8 @@ import contextlib
 import json
 import re
 import subprocess
+import sys
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -287,6 +289,31 @@ def test_port_forward_yields_the_local_port_and_stops_kubectl() -> None:
         assert port == 45123
     assert started[0][1] == "port-forward" and "127.0.0.1" in started[0]
     assert process.terminated
+
+
+def test_port_forward_keeps_reading_kubectls_output(tmp_path: Path) -> None:
+    """kubectl prints a line per forwarded connection: the forward keeps emptying the
+    pipe, or a long verify would stop kubectl once the pipe is full."""
+    marker = tmp_path / "drained"
+    kubectl = tmp_path / "kubectl"
+    kubectl.write_text(
+        f"#!{sys.executable}\n"
+        "import sys, time\n"
+        "print('Forwarding from 127.0.0.1:45124 -> 4318', flush=True)\n"
+        "for _ in range(20000):\n"
+        "    print('Handling connection for 45124', flush=True)\n"
+        f"open({str(marker)!r}, 'w').close()\n"
+        "time.sleep(30)\n",
+        "utf-8",
+    )
+    kubectl.chmod(0o700)
+    cluster = _kubectl.Cluster(kubectl=str(kubectl))
+    with cluster.port_forward(NS, "svc/node", 4318, timeout=10) as port:
+        assert port == 45124
+        deadline = time.monotonic() + 10
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert marker.exists(), "kubectl blocked on a full stdout pipe"
 
 
 # ---------------------------------------------------------------- the sensor's log
