@@ -349,7 +349,7 @@ class Harness:
         """Wait until the sink holds a mapped record for every decision the service emitted
         and nothing new has arrived for a second (the Node delivers asynchronously)."""
         deadline = time.monotonic() + timeout_s
-        last, quiet_since = -1, time.monotonic()
+        last, quiet_since, mapped = -1, time.monotonic(), 0
         while time.monotonic() < deadline:
             found = rows(sink.records)
             mapped = sum(
@@ -362,6 +362,11 @@ class Harness:
             elif mapped >= len(decisions) and time.monotonic() - quiet_since > 1.0:
                 return
             time.sleep(0.2)
+        self.o.log(
+            f"the sink holds {mapped} mapped records for {len(decisions)} service decisions "
+            f"after {timeout_s:g} s; reading what arrived (check the Node's log, "
+            f"{self.o.out / 'node'}, for refused or dropped spans)"
+        )
 
     # -- the approval service -----------------------------------------------------------
 
