@@ -31,6 +31,14 @@ export default [
         URL: "readonly",
         setTimeout: "readonly",
         clearTimeout: "readonly",
+        // The fetch family and timers the wire capture tests drive (spec 055 §9.5).
+        setImmediate: "readonly",
+        fetch: "readonly",
+        Response: "readonly",
+        RequestInit: "readonly",
+        AbortController: "readonly",
+        ReadableStream: "readonly",
+        DOMException: "readonly",
       },
     },
     plugins: {
