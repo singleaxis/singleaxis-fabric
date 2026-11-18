@@ -260,6 +260,8 @@ jobs:
         working-directory: sdk/typescript
         run: npm ci
       - name: Run the passivity gate
+        env:
+          FABRIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: >-
           node qualification/node-wire/passivity/run.mjs
           --out passivity-${{ matrix.node-version }}-${{ matrix.platform }}.json

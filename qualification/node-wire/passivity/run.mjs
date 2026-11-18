@@ -68,9 +68,17 @@ const calibrate = () => median([0, 1, 2].map(() => child("calibrate.mjs", {}).js
 
 // ------------------------------------------------------------------------------ steps
 
-function hookCost(scale) {
+/**
+ * Hook cost. Measures with the stall the calibration before the run sets, and returns a
+ * `judge(scale)` so every verdict uses the run's final scale, clamp(min(before, after) /
+ * reference, 1, 4): a stall twice the budget at the larger scale stays at least twice
+ * the budget at the final one.
+ */
+function hookCost(stallScale) {
     const budgets = REFERENCE.budgets.hook_cost_ns;
-    const stallNs = Object.fromEntries(Object.entries(budgets).map(([k, v]) => [k, 2 * v * scale]));
+    const stallNs = Object.fromEntries(
+        Object.entries(budgets).map(([k, v]) => [k, 2 * v * stallScale]),
+    );
     const arms = { baseline: [], disabled: [], enabled: [], stall: [] };
     for (let t = 0; t < TRIALS; t++) {
         const order = ["baseline", "disabled", "enabled", ...(t < SELF_TRIALS ? ["stall"] : [])];
@@ -81,7 +89,7 @@ function hookCost(scale) {
         }
         log(`hook cost: trial ${t + 1}/${TRIALS}`);
     }
-    const judge = (arm, trials) => {
+    const judge = (trials, scale) => {
         const out = {};
         for (const method of ["fixtures_ns", "server_ns"]) {
             for (const scenario of Object.keys(budgets)) {
@@ -109,41 +117,44 @@ function hookCost(scale) {
     // copy, so a server measurement whose chunks were not 1 KiB is void.
     const chunkSize = median(arms.enabled.map((r) => r.mean_chunk_bytes));
     const chunksSized = Math.abs(chunkSize - 1024) <= 64;
-    const enabled = judge("enabled", arms.enabled);
-    const disabled = judge("disabled", arms.disabled);
-    const stall = judge("stall", arms.stall);
-    const passed =
-        refused === 0 &&
-        chunksSized &&
-        Object.values(enabled).every((g) => g.passed) &&
-        Object.values(disabled).every((g) => g.passed);
-    const selfTest = Object.values(stall).every((g) => !g.passed);
-    return {
-        hook_cost: {
-            trials: TRIALS,
-            budgets_ns: budgets,
-            scale: round(scale, 3),
-            enabled,
-            disabled,
-            void_trials_with_refused_chunks: refused,
-            mean_server_chunk_bytes: chunkSize,
-            raw_medians: Object.fromEntries(
-                Object.entries(arms).map(([arm, rs]) => [
-                    arm,
-                    rs.map((r) => ({ fixtures: r.fixtures_ns, server: r.server_ns })),
-                ]),
-            ),
-            passed,
-        },
-        self_test_hook: {
-            injected_stall_ns: stallNs,
-            measured: stall,
-            gate_failed_on_stall: selfTest,
-        },
+    return (scale) => {
+        const enabled = judge(arms.enabled, scale);
+        const disabled = judge(arms.disabled, scale);
+        const stall = judge(arms.stall, scale);
+        const passed =
+            refused === 0 &&
+            chunksSized &&
+            Object.values(enabled).every((g) => g.passed) &&
+            Object.values(disabled).every((g) => g.passed);
+        const selfTest = Object.values(stall).every((g) => !g.passed);
+        return {
+            hook_cost: {
+                trials: TRIALS,
+                budgets_ns: budgets,
+                scale: round(scale, 3),
+                enabled,
+                disabled,
+                void_trials_with_refused_chunks: refused,
+                mean_server_chunk_bytes: chunkSize,
+                raw_medians: Object.fromEntries(
+                    Object.entries(arms).map(([arm, rs]) => [
+                        arm,
+                        rs.map((r) => ({ fixtures: r.fixtures_ns, server: r.server_ns })),
+                    ]),
+                ),
+                passed,
+            },
+            self_test_hook: {
+                injected_stall_ns: stallNs,
+                measured: stall,
+                gate_failed_on_stall: selfTest,
+            },
+        };
     };
 }
 
-function eventLoop(scale) {
+/** Event loop; measured with the stall `stallScale` sets, judged by `judge(scale)`. */
+function eventLoop(stallScale) {
     const budget = REFERENCE.budgets.event_loop;
     const run = (arm, workload, extra = {}) =>
         child("eventloop.mjs", { ...common, arm, workload, durationMs: 3000, ...extra }).json;
@@ -154,50 +165,56 @@ function eventLoop(scale) {
         log(`event loop: round ${r + 1}/${ROUNDS}`);
     }
     const metric = (arm, name) => median(rounds[arm].map((r) => r[name]));
-    const judge = (sample) => {
-        const p99 = sample.p99_ms - metric("baseline", "p99_ms");
-        const max = sample.max_ms - metric("baseline", "max_ms");
-        const utilization = sample.utilization - metric("baseline", "utilization");
-        return {
-            p99_delta_ms: round(p99, 3),
-            max_delta_ms: round(max, 3),
-            utilization_delta: round(utilization, 4),
-            passed:
-                p99 <= budget.p99_ms * scale &&
-                max <= budget.max_ms * scale &&
-                utilization <= budget.utilization_delta,
-        };
-    };
-    const enabled = judge({
-        p99_ms: metric("enabled", "p99_ms"),
-        max_ms: metric("enabled", "max_ms"),
-        utilization: metric("enabled", "utilization"),
+    const stalledSample = run("stall", "paced", {
+        stallNs: 2 * budget.max_ms * stallScale * MS,
     });
-    const stalled = judge(run("stall", "paced", { stallNs: 2 * budget.max_ms * scale * MS }));
     const stressBase = run("baseline", "stress");
     const stressOn = run("enabled", "stress");
     const drift = Math.max(...rounds.enabled.map((r) => r.drift_max_ms));
-    return {
-        event_loop: {
-            workload: "paced fan-out: 16 clients, JSON after 10 ms, 40 SSE events 5 ms apart",
-            rounds: ROUNDS,
-            budgets: budget,
-            scale: round(scale, 3),
-            ...enabled,
-            enabled_drift_max_ms: round(drift, 3),
-            samples: rounds,
-            stress_not_gated: {
-                workload: "unpaced fan-out (about 100x an agent's call rate); reported, not gated",
-                baseline: stressBase,
-                enabled: stressOn,
-                utilization_delta: round(stressOn.utilization - stressBase.utilization, 4),
+    return (scale) => {
+        const judge = (sample) => {
+            const p99 = sample.p99_ms - metric("baseline", "p99_ms");
+            const max = sample.max_ms - metric("baseline", "max_ms");
+            const utilization = sample.utilization - metric("baseline", "utilization");
+            return {
+                p99_delta_ms: round(p99, 3),
+                max_delta_ms: round(max, 3),
+                utilization_delta: round(utilization, 4),
+                passed:
+                    p99 <= budget.p99_ms * scale &&
+                    max <= budget.max_ms * scale &&
+                    utilization <= budget.utilization_delta,
+            };
+        };
+        const enabled = judge({
+            p99_ms: metric("enabled", "p99_ms"),
+            max_ms: metric("enabled", "max_ms"),
+            utilization: metric("enabled", "utilization"),
+        });
+        const stalled = judge(stalledSample);
+        return {
+            event_loop: {
+                workload: "paced fan-out: 16 clients, JSON after 10 ms, 40 SSE events 5 ms apart",
+                rounds: ROUNDS,
+                budgets: budget,
+                scale: round(scale, 3),
+                ...enabled,
+                enabled_drift_max_ms: round(drift, 3),
+                samples: rounds,
+                stress_not_gated: {
+                    workload:
+                        "unpaced fan-out (about 100x an agent's call rate); reported, not gated",
+                    baseline: stressBase,
+                    enabled: stressOn,
+                    utilization_delta: round(stressOn.utilization - stressBase.utilization, 4),
+                },
             },
-        },
-        self_test_event_loop: {
-            injected_stall_ms: 2 * budget.max_ms * scale,
-            measured: stalled,
-            gate_failed_on_stall: !stalled.passed,
-        },
+            self_test_event_loop: {
+                injected_stall_ms: 2 * budget.max_ms * stallScale,
+                measured: stalled,
+                gate_failed_on_stall: !stalled.passed,
+            },
+        };
     };
 }
 
@@ -219,7 +236,12 @@ function identity() {
         const off = child(file, { capture: "off" });
         const on = child(file, { capture: "on", bundle: bundle.capture, worker: bundle.worker });
         const differs = [];
-        for (const key of Object.keys(off.json?.transcript ?? {})) {
+        // Every key either run recorded: a scenario missing from one side is a difference.
+        const keys = new Set([
+            ...Object.keys(off.json?.transcript ?? {}),
+            ...Object.keys(on.json?.transcript ?? {}),
+        ]);
+        for (const key of keys) {
             if (!isDeepStrictEqual(off.json.transcript[key], on.json?.transcript?.[key]))
                 differs.push(key);
         }
@@ -233,6 +255,7 @@ function identity() {
                 off.status === on.status &&
                 off.signal === on.signal &&
                 differs.length === 0 &&
+                keys.size > 0 &&
                 (on.json.hook?.matched ?? 0) > 0,
         };
     }
@@ -311,30 +334,37 @@ function attempt() {
     const before = calibrate();
     const scaleBefore = scaleFor(before);
     log(`calibration before: ${before} ns (scale ${scaleBefore.toFixed(3)})`);
-    const results = {
-        ...hookCost(scaleBefore),
-        ...eventLoop(scaleBefore),
-        ...forbidden(),
-        ...identity(),
-        ...memory(),
-    };
+    const judgeHookCost = hookCost(scaleBefore);
+    const judgeEventLoop = eventLoop(scaleBefore);
+    const others = { ...forbidden(), ...identity(), ...memory() };
     const after = calibrate();
     const ratio = Math.max(before, after) / Math.min(before, after);
+    // Spec 055 §9.2: scale = clamp(min(before, after) / reference, 1, 4), for every verdict.
+    const scale = scaleFor(Math.min(before, after));
+    log(`calibration after: ${after} ns (final scale ${scale.toFixed(3)})`);
     return {
         calibration: {
             reference_ns: REFERENCE.calibration.reference_ns,
             before_ns: before,
             after_ns: after,
-            scale: round(scaleFor(Math.min(before, after)), 3),
+            scale: round(scale, 3),
             void: ratio > REFERENCE.calibration.void_ratio,
         },
-        ...results,
+        ...judgeHookCost(scale),
+        ...judgeEventLoop(scale),
+        ...others,
     };
 }
 
 function git() {
+    // The commit the report measured: on a pull request, its head (GITHUB_SHA is then a
+    // merge commit nobody can check out later); FABRIC_SOURCE_SHA is set by the CI job.
+    if (process.env.FABRIC_SOURCE_SHA) return process.env.FABRIC_SOURCE_SHA;
     if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
-    const done = spawnSync("git", ["rev-parse", "HEAD"], { cwd: REPO, encoding: "utf8" });
+    const done = spawnSync("git", ["rev-parse", "HEAD"], {
+        cwd: REPO,
+        encoding: "utf8",
+    });
     return done.status === 0 ? done.stdout.trim() : null;
 }
 
