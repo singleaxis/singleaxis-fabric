@@ -104,7 +104,7 @@
       "fields": ["C41"],
       "capture_points": [
         {"id": "host.ebpf", "runtime": "any", "built": true, "switch": "sensor", "fix": "fabric init --sensor auto, then fabric up", "evidence": "eBPF sensor"},
-        {"id": "host.auditd", "runtime": "any", "built": true, "switch": "sensor", "fix": "fabric init --sensor auditd, then fabric up"}
+        {"id": "host.auditd", "runtime": "any", "built": true, "switch": "sensor", "fix": "fabric init --sensor auditd, then fabric up", "evidence": "auditd sensor"}
       ],
       "invisible": [
         {"runtime": "*", "reason": "unsupported_runtime", "text": "the host sensor cannot load here"}

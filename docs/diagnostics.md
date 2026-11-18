@@ -955,6 +955,51 @@ Fix: grant the sensor's service account get on runtimeclasses.node.k8s.io (the c
 does: run helm upgrade; for deploy/kubernetes/host-emitter-daemonset.yaml apply its current
 ClusterRole), and check that each RuntimeClass the pods name exists.
 
+### FC-157
+
+`plan_ready`, info: this machine and the agent were read; nothing was changed, started or contacted.
+
+Fix: follow the next command the plan prints; each fix row names the command that closes its gap.
+
+### FC-158
+
+`plan_sdk_missing`, info: the agent's interpreter does not have the Fabric SDK yet, so nothing is
+recorded until it does.
+
+Fix: install it in the agent's own environment with the command in the detail (the plan's next line
+starts with it).
+
+### FC-159
+
+`plan_packages_unread`, warning: the agent's installed packages could not be listed, so rows that
+depend on a library assume it is present.
+
+Fix: name the agent's interpreter, for example fabric plan -- .venv/bin/python app.py, and check
+that it starts.
+
+### FC-160
+
+`plan_runtime_unknown`, warning: the agent's runtime could not be told: no command was given and the
+directory has no project manifest.
+
+Fix: give the agent command after --, for example fabric plan -- python app.py.
+
+### FC-161
+
+`plan_mcp_config_unreadable`, error: an --mcp-config file is not a JSON object whose mcpServers
+entries have a command or a url.
+
+Fix: pass the MCP client's configuration file: an mcpServers object whose entries have a command (a
+stdio server) or a url (an HTTP server).
+
+### FC-162
+
+`coverage_prediction_mismatch`, warning: fabric.yaml turns on a capture point that the run's capture
+manifest reports off.
+
+Fix: run fabric doctor for the SDK's reason, and start the agent with fabric run in this project so
+it gets the setting.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001
@@ -1124,3 +1169,524 @@ Fix: point FABRIC_WIRE_STATUS_FILE at a writable path in a directory that exists
 
 Fix: headers are k=v pairs separated by commas, timeouts are numbers, compression is gzip, deflate
 or none, and a client key and certificate are set together.
+
+## Reasons in reader verdicts
+
+`fabric verify`, `fabric show` and the reader name each reason a run or one of its chains is not
+complete. Each entry says what it means and how to fix it; a chain that gives a reason its own
+meaning is listed under it.
+
+### sequence_gap
+
+Records are missing between two that arrived: a process was killed before its spool drained, or
+delivery is still in progress.
+
+Fix: let the agent exit normally and run fabric verify again; python -m fabric.wire drain
+--until-empty delivers a spool left behind.
+
+On the `controls` chain: records of a control decision or permission are missing between two that
+arrived, so a decision may be absent. Fix: let the agent exit normally and run fabric verify again;
+python -m fabric.wire drain --until-empty delivers a spool left behind.
+
+### loss
+
+The SDK reported records it could not keep (a full spool or queue, or a client it does not hook).
+
+Fix: give the spool more room (FABRIC_WIRE_SPOOL_MAX_BYTES), keep the Node running, and send model
+calls through httpx or aiohttp.
+
+### tail_unverified
+
+The run's last records cannot be proven complete: no final heartbeat arrived (the process was
+killed, or is still running).
+
+Fix: let the agent exit normally and run fabric verify after it exits; a batch worker can raise
+FABRIC_WIRE_DRAIN_ON_EXIT_S.
+
+### missing_object
+
+A request or response body is not in the content store.
+
+Fix: content may still be on its way: run fabric verify again; check that the agent's
+FABRIC_WIRE_STORE is the project's store (fabric doctor).
+
+### digest_mismatch
+
+A stored body does not match the digest its record carries, so the body was changed after capture.
+
+Fix: keep the content store writable by the agent and the Node only, and investigate who changed it.
+
+### truncated
+
+A body was larger than the capture limit and only its first part was kept.
+
+Fix: raise the body limit (max_retain_bytes) in the capture policy if you need whole bodies.
+
+### unparsed_exchange
+
+A model exchange was recorded but could not be parsed in its dialect.
+
+Fix: check the endpoint's dialect: an Anthropic Messages API host needs fabric init --provider
+anthropic=URL.
+
+### prefix_break
+
+A model request does not repeat the conversation the previous one ended with, so the two cannot be
+chained.
+
+Fix: nothing to fix when the agent rewrites its history on purpose (summarizing, trimming);
+otherwise check that one process sends one conversation.
+
+### unmatched_tool_call
+
+A tool call has no result fed back to the model.
+
+Fix: nothing to fix when the agent stopped early; otherwise the result went to the model through a
+client Fabric does not hook.
+
+### unresolved_previous_response
+
+A request names a previous response that is not in the record (provider-held conversation state).
+
+Fix: record the run that produced it too (same project), or send the full conversation instead of a
+previous response id.
+
+### source_unauthenticated
+
+Records are not authenticated by the Node: they did not arrive through a bound ingress.
+
+Fix: in production, send records through the Node's ingress with its source binding (fabric init
+--production, then fabric up).
+
+### segment_missing
+
+A part of the run that another part names as its predecessor is not in the record.
+
+Fix: deliver every process of the run to the same destination; run fabric verify again after all of
+them exit.
+
+### segment_conflict
+
+The parts of the run disagree about their order (two roots, a cycle or a replayed resume token).
+
+Fix: resume a run once per resume token, and keep one run label per run (fabric run --run NAME).
+
+### post_terminal_activity
+
+Records of the run arrived after it was declared ended.
+
+Fix: end a run once, after its last step; start a new run for later work.
+
+### run_unterminated
+
+A resumable run never recorded its end and its open-run deadline has passed.
+
+Fix: end the run in code (the run scope's exit), or let the agent process exit normally.
+
+### run_open
+
+The run had not ended when it was read.
+
+Fix: run fabric verify after the agent exits.
+
+### seal_mismatch
+
+The records delivered for part of the run do not reproduce the seal the agent wrote, so a record was
+changed or replaced.
+
+Fix: keep the destination append-only, and investigate who changed the records.
+
+### unsealed_segment
+
+Part of the run never wrote its closing seal (the process was killed, or is still running).
+
+Fix: let the agent exit normally and run fabric verify again.
+
+### unsealed_epoch
+
+An earlier process on the same spool never wrote its final records; the next process declared it.
+
+Fix: let agent processes exit normally; python -m fabric.wire drain --until-empty delivers what the
+earlier one left.
+
+### manifest_gap
+
+A capture manifest the run's records name is not in the record, so what was switched on cannot be
+shown.
+
+Fix: deliver every record of the run to the same destination and run fabric verify again.
+
+### clock_uncertain
+
+Record clocks disagree more than allowed, so time order cannot be trusted.
+
+Fix: keep the agent's, the Node's and the sensor's clocks synchronized (NTP).
+
+### not_instrumented
+
+The capture point that observes this was not installed or not active.
+
+Fix: fabric plan names the line that turns it on; fabric doctor says why an installed one is off.
+
+### hook_disabled
+
+The capture point is installed, but this field is switched off by default.
+
+Fix: turn the field on in the capture policy if you need it.
+
+### not_configured
+
+Nothing is configured to record this.
+
+Fix: fabric plan names the line that turns it on.
+
+On the `corroboration` chain: no host sensor is configured, so nothing independent of the agent
+confirms what it did. Fix: on Linux, fabric up starts the sensor (sensor.kind: auto); on Kubernetes
+use --set preset=production-host-sensor.
+
+### unsupported_api
+
+The reader does not know this API or item type, so it was kept but not parsed.
+
+Fix: nothing to fix for the run; tell the Fabric maintainers which API it was.
+
+### unsupported_runtime
+
+No capture point exists for this runtime or client library.
+
+Fix: fabric plan names what is recorded in this runtime and the alternative.
+
+### unsupported_version
+
+The runtime or library version is outside the qualified range.
+
+Fix: use a runtime and library version fabric plan lists as supported.
+
+### parse_failed
+
+A body was captured but could not be parsed.
+
+Fix: nothing to fix for the run; the body itself is kept in the content store.
+
+### body_cap
+
+A body was larger than the capture limit and was cut.
+
+Fix: raise max_retain_bytes in the capture policy if you need whole bodies.
+
+### part_cap
+
+A part of a body was larger than the limit: its digest and length are kept, its bytes are not.
+
+Fix: raise max_body_bytes in the capture policy if you need those parts.
+
+### inflight_budget
+
+Too many bytes were in flight at once, so some were not kept.
+
+Fix: raise max_inflight_bytes in the capture policy, or lower the agent's concurrency.
+
+### queue_full
+
+The capture queue was full, so records were dropped (the agent was not slowed).
+
+Fix: keep the Node running and reachable; give the spool more room (FABRIC_WIRE_SPOOL_MAX_BYTES).
+
+### disk_full
+
+The spool's disk was full, so records could not be kept.
+
+Fix: free disk space where the spool lives, or move it (FABRIC_WIRE_SPOOL_DIR).
+
+### shutdown
+
+The process stopped before some records were saved.
+
+Fix: let the agent exit normally; a batch worker can raise FABRIC_WIRE_DRAIN_ON_EXIT_S.
+
+### internal_error
+
+Fabric code failed and dropped records; the agent was not affected.
+
+Fix: run fabric doctor and report the error id it shows to the Fabric maintainers.
+
+### span_dropped
+
+The Node or an exporter refused or sampled out records.
+
+Fix: turn off sampling for Fabric records and check the Node's log (fabric doctor).
+
+### store_failed
+
+The content store did not accept a body after retries.
+
+Fix: check the store's credentials and free space (fabric doctor), then run the agent again.
+
+### destination_rejected
+
+The Node refused a content record (unknown role, bad descriptor or a tenant it does not allow).
+
+Fix: check that the agent's tenant (FABRIC_TENANT_ID) is one the Node allows (fabric doctor).
+
+### transport_incomplete
+
+The client did not read or send the whole body.
+
+Fix: nothing to fix when the agent cancelled the call; otherwise the agent read a body only in part.
+
+### stream_closed_early
+
+The agent closed a streamed response before its end.
+
+Fix: nothing to fix when the agent stopped reading on purpose; otherwise read the stream to its end.
+
+### privacy_policy
+
+Your capture policy withholds this content (omit, metadata only, redact or tokenize).
+
+Fix: nothing to fix if intended; retain the role in the capture policy if you need it.
+
+### protection_failed
+
+The privacy step could not transform this content, so it was withheld, never stored raw.
+
+Fix: check the capture policy's transformation for this role (fabric doctor).
+
+### missing_capture_policy
+
+Content capture needs a capture policy in production and none is configured.
+
+Fix: set FABRIC_CAPTURE_POLICY to your deployment policy file (fabric init --production writes one).
+
+### missing_id_key
+
+A keyed pseudonym was needed and no id key was set.
+
+Fix: start the agent with fabric run (it passes the generated id key), or set
+FABRIC_WIRE_ID_KEY_FILE.
+
+### missing_spool_key
+
+Production needs an encrypted spool and no spool key is set, so content capture is off.
+
+Fix: set FABRIC_WIRE_SPOOL_KEY_FILE (fabric init --production generates one).
+
+### provider_redacted
+
+The model provider returned a redaction marker instead of the content.
+
+Fix: nothing to fix: Fabric records what the provider sent.
+
+### provider_encrypted
+
+The model provider returned the content only encrypted or opaque.
+
+Fix: nothing to fix: Fabric records what the provider sent.
+
+### provider_summarised
+
+The model provider returned a summary instead of the original.
+
+Fix: nothing to fix: Fabric records what the provider sent.
+
+### provider_not_returned
+
+The model provider did not return this content.
+
+Fix: nothing to fix: Fabric records what the provider sent.
+
+### provider_held
+
+The content lives in the provider's stored conversation and was not in the observed bytes.
+
+Fix: send the full conversation in each request if you need it in the record.
+
+### caller_omitted
+
+The agent's code called a reporting API without this argument.
+
+Fix: pass the argument in the API call if you need it recorded.
+
+### deferred_to_explicit
+
+The explicit API recorded this exchange, so wire capture left it to that record.
+
+Fix: nothing to fix: the explicit record is the one to read.
+
+### explicit_withheld
+
+The explicit API withheld these bytes under its privacy setting.
+
+Fix: nothing to fix if intended; change the explicit API's privacy setting if you need them.
+
+### not_exposed
+
+This fact never crosses a boundary Fabric can observe.
+
+Fix: record it from the agent's code with the explicit APIs if you need it.
+
+### source_lost
+
+A whole process's records are missing from the record.
+
+Fix: deliver every process to the same destination; python -m fabric.wire drain --until-empty sends
+a spool left behind.
+
+### uninstrumented_client
+
+Model calls went through a client Fabric does not hook (requests, urllib3, boto3 or gRPC).
+
+Fix: send model calls through httpx or aiohttp (the provider SDKs do), or record them with
+CallRecorder.
+
+### sampling
+
+A sampler dropped records.
+
+Fix: turn off sampling for Fabric records.
+
+### retention_expired
+
+A body existed and was removed by the store's retention.
+
+Fix: verify runs before their retention ends, or lengthen the store's retention.
+
+### deleted
+
+A body existed and was deleted on request.
+
+Fix: nothing to fix if the deletion was intended.
+
+### unattributed_effect
+
+A command ran that no tool call explains (often one the agent's code runs on its own).
+
+Fix: nothing to fix if intended; record the decision with control_check if your code decided it.
+
+### ambiguous_attribution
+
+An effect falls inside two or more tool calls running at once and its output does not tell which one
+ran it; under a redact policy commands are withheld, so they cannot be matched.
+
+Fix: retain terminal.argv as a digest in the capture policy to allow matching, or run tool calls one
+at a time.
+
+On the `controls` chain: a control decision matches more than one pending request, so it is not
+linked to one. Fix: record the gated call's id with the decision (control_check takes it).
+
+### tool_result_missing
+
+A tool call the model asked for has no result in a later model request.
+
+Fix: nothing to fix when the agent stopped early; otherwise the result went to the model through a
+client Fabric does not hook.
+
+### exchange_gap
+
+A model exchange the tool chain needs is missing or could not be parsed.
+
+Fix: run fabric verify again after the agent exits; see the decisions chain's reasons for the
+missing exchange.
+
+### source_gap
+
+The host sensor was not observing for the whole run (a gap in its records, or its last heartbeat is
+older than the run's end).
+
+Fix: keep the sensor running for the whole run and run fabric verify again once its next heartbeat
+arrives.
+
+### anchor_missing
+
+A command the agent ran has no matching process event from the host sensor.
+
+Fix: start the agent with fabric run so it joins the sensor's cgroup (on Kubernetes the injector
+does it), and keep the sensor running.
+
+### unexplained_host_event
+
+The host sensor saw a process or connection in the agent's scope that no recorded step explains.
+
+Fix: start other programs outside the agent's cgroup, or turn on the exec hook (fabric init --exec)
+so the agent's commands explain their processes.
+
+### channel_disabled
+
+No effect of a tool call was observed because the capture point that would see it is off.
+
+Fix: fabric init --exec records commands; fabric init --http-host HOST records HTTP calls.
+
+### no_effect_channel
+
+The tool runs inside the agent process, where no hook observes it.
+
+Fix: nothing to fix: the call and its result are in the model bodies.
+
+### none_in_window
+
+Capture points were on, but no effect happened while the tool call ran.
+
+Fix: nothing to fix when the tool changed nothing outside the process.
+
+### remote_sandbox
+
+The run called a remote sandbox host, and what ran there is not observed.
+
+Fix: for E2B set FABRIC_WIRE_REMOTE_SANDBOX=e2b; for another provider run the host sensor inside the
+sandbox.
+
+### control_unmatched
+
+A control or hook record names a call, step or action that is not in the run.
+
+Fix: record the decision in the same process as the call it gates, with the call's id.
+
+### control_pending_at_end
+
+A control was asked to decide and its decision was never recorded before the run ended.
+
+Fix: record the decision (control_check records both the request and its outcome).
+
+### grant_not_recorded
+
+A declared-permission capture point is on but no permission snapshot was recorded.
+
+Fix: call fabric.records.record_grant(...) when the agent starts, or turn that capture point off.
+
+### body_not_retained
+
+An MCP or control host is listed, but its message bodies are not retained, so decisions in them
+cannot be read.
+
+Fix: retain the role of those messages in the capture policy.
+
+### invariant_conflict
+
+A control record claims Fabric enforced a decision, which Fabric never does, so it is not trusted.
+
+Fix: record decisions only through fabric.records (enforced_by_fabric is always false).
+
+### other_process
+
+A host event came from a process that is not one of the run's.
+
+Fix: nothing to fix: it is listed, not attributed.
+
+### out_of_scope
+
+A host event came from outside the agent's configured scope.
+
+Fix: nothing to fix: it is listed, not attributed.
+
+### no_run
+
+A host event fell in no run's time window.
+
+Fix: nothing to fix: it is listed, not attributed.
+
+### startup_effects
+
+Commands ran before the agent's first model call (often a client library probing the platform, such
+as uname -p); they are listed, not linked to a tool call, and do not make the run partial.
+
+Nothing to fix: they are reported as facts.

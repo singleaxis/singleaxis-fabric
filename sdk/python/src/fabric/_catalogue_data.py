@@ -1344,5 +1344,58 @@ CATALOGUE: dict[str, Any] = {
             "deploy/kubernetes/host-emitter-daemonset.yaml apply its current "
             "ClusterRole), and check that each RuntimeClass the pods name exists",
         },
+        {
+            "id": "FC-157",
+            "name": "plan_ready",
+            "severity": "info",
+            "text": "this machine and the agent were read; nothing was changed, started or "
+            "contacted",
+            "fix": "follow the next command the plan prints; each fix row names the command "
+            "that closes its gap",
+        },
+        {
+            "id": "FC-158",
+            "name": "plan_sdk_missing",
+            "severity": "info",
+            "text": "the agent's interpreter does not have the Fabric SDK yet, so nothing "
+            "is recorded until it does",
+            "fix": "install it in the agent's own environment with the command in the "
+            "detail (the plan's next line starts with it)",
+        },
+        {
+            "id": "FC-159",
+            "name": "plan_packages_unread",
+            "severity": "warning",
+            "text": "the agent's installed packages could not be listed, so rows that "
+            "depend on a library assume it is present",
+            "fix": "name the agent's interpreter, for example fabric plan -- "
+            ".venv/bin/python app.py, and check that it starts",
+        },
+        {
+            "id": "FC-160",
+            "name": "plan_runtime_unknown",
+            "severity": "warning",
+            "text": "the agent's runtime could not be told: no command was given and the "
+            "directory has no project manifest",
+            "fix": "give the agent command after --, for example fabric plan -- python app.py",
+        },
+        {
+            "id": "FC-161",
+            "name": "plan_mcp_config_unreadable",
+            "severity": "error",
+            "text": "an --mcp-config file is not a JSON object whose mcpServers entries "
+            "have a command or a url",
+            "fix": "pass the MCP client's configuration file: an mcpServers object whose "
+            "entries have a command (a stdio server) or a url (an HTTP server)",
+        },
+        {
+            "id": "FC-162",
+            "name": "coverage_prediction_mismatch",
+            "severity": "warning",
+            "text": "fabric.yaml turns on a capture point that the run's capture manifest "
+            "reports off",
+            "fix": "run fabric doctor for the SDK's reason, and start the agent with fabric "
+            "run in this project so it gets the setting",
+        },
     ],
 }
