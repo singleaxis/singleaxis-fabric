@@ -180,6 +180,26 @@ Each stable release is published to npm as `latest`; release candidates go to
 the `next` dist-tag. The SDK's maturity is still beta (see its connector
 manifest): the dist-tag says which release you get, not how stable the API is.
 
+## The `fabric` launcher
+
+The package also installs a `fabric` command with two subcommands, for
+machines without Python:
+
+- `npx fabric run -- node agent.js` starts the agent with the project's
+  tenant, agent id and a run label (`FABRIC_TENANT_ID`, `FABRIC_AGENT_ID`,
+  `FABRIC_RUN_ID`), which the explicit API above reads. It never changes the
+  agent's arguments, input, output or exit code, never sets an `OTEL_*`
+  variable, and starts the agent unchanged if anything is wrong. A Python
+  agent started this way gets the same zero-code capture as with the Python
+  CLI.
+- `npx fabric doctor` checks the project and names each problem with its fix.
+
+Both read `.fabric/compiled.env`, which `fabric init` (or `fabric up`) writes
+beside `fabric.yaml`. Those commands, and `verify` and `show`, are in the full
+CLI: `pipx install "singleaxis-fabric[cli]"`, or the container image
+`ghcr.io/singleaxis/fabric-cli`. Zero-code capture of a Node.js agent's model
+calls is not built yet; record them with the API above.
+
 ## Capture options
 
 Tool payload setters record hashes, not the raw payload — **by default**. The

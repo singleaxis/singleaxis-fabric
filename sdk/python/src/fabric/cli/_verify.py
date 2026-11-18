@@ -30,7 +30,7 @@ from urllib.parse import urlsplit
 
 from ..reconstruct._inputs import ACCEPTED_INPUTS, ReconstructInputError
 from ..reconstruct._report import COMPLETE_VERDICTS, EXIT_RUN_STATES
-from . import _config, _project, _read, _run, _runstate, _secrets, _up
+from . import _args, _config, _project, _read, _run, _runstate, _secrets, _up
 from ._report import EXIT_FINDINGS, EXIT_OK, CliError, Finding, Report
 
 CANARY_TIMEOUT_S = 90.0
@@ -210,14 +210,13 @@ def _canary(
         findings.append(Finding("FC-074", dest.reason))
         lines.append(f"canary: recorded and delivered to the Node ({dest.reason}: not read back)")
         return label, data
-    run, error = _poll_canary(dest, label, started, options.wait, sleep)
+    wait = _args.DEFAULT_WAIT_S if options.wait is None else options.wait
+    run, error = _poll_canary(dest, label, started, wait, sleep)
     if run is None:
         findings.append(
             Finding("FC-073", error)
             if error
-            else Finding(
-                "FC-063", f"none of its records in {dest.spans_dir} after {options.wait:g} s"
-            )
+            else Finding("FC-063", f"none of its records in {dest.spans_dir} after {wait:g} s")
         )
         lines.append("canary: delivered to the Node, not found in the destination")
         return label, data
@@ -447,9 +446,12 @@ def run(
     """``fabric verify``."""
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
-    for name in ("production", "kubernetes"):
-        if getattr(options, name):
-            raise CliError([Finding("FC-011", f"--{name}")])
+    if options.production:
+        raise CliError([Finding("FC-011", "--production")])
+    if options.kubernetes:
+        from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
+
+        return _kubecmd.run_verify(options, environ)
     located = _config.discover(options.config, environ, cwd)
     project = _project.load(located, {}, environ)
     if options.project and options.project != project.name:

@@ -349,8 +349,6 @@ def test_a_referenced_secret_file_that_is_missing_is_named_not_compiled_silently
 
 @pytest.mark.parametrize(("args", "detail"), [
     (["--profile", "production"], "--profile production"),
-    (["--kubernetes"], "--kubernetes"),
-    (["--render", "out"], "--render"),
     (["--destination", "s3"], "--destination s3"),
     (["--from-env-file", "node.env"], "--from-env-file"),
     (["--from-values", "values.yaml"], "--from-values"),

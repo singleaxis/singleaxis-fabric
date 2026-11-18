@@ -88,6 +88,12 @@ items:
       - apiGroups: [""]
         resources: ["pods"]
         verbs: ["get", "list", "watch"]
+      # The handler of a matching pod's RuntimeClass, read by name: a gVisor
+      # or Kata pod is reported unsupported_runtime, never silently unscoped
+      # (spec 058 section 10.5). RuntimeClasses hold no secret.
+      - apiGroups: ["node.k8s.io"]
+        resources: ["runtimeclasses"]
+        verbs: ["get"]
   - apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:

@@ -1,0 +1,5 @@
+# What `preset: production-host-sensor` adds to the two profile files (spec
+# 058 section 10.5): the chart's own host sensor DaemonSet. Applied only when
+# the operator gave no host.ebpf ingress group of their own.
+hostSensor:
+  enabled: true
