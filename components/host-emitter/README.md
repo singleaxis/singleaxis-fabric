@@ -242,9 +242,13 @@ scoped or counted with one reason. The health line carries `pods_selected=`,
 A change of these counters is logged at once (`pod scope pods_selected=...`),
 and while any pod is unscoped a `WARN pod scope` line names each reason, its
 count and its fix. It never names a pod. The RuntimeClass handler is read
-with `get` on `runtimeclasses` (`node.k8s.io`); without that permission the
-read fails once a minute, is counted, and such a pod is reported
-`cgroup_not_found` when its cgroup never appears. `pod_selector_matched=` and
+with `get` on `runtimeclasses` (`node.k8s.io`); without that permission (or
+for a class that does not exist) the read is retried at most once a minute,
+at the pod's next change, the pod is counted in `pods_runtime_unknown=` and a
+`WARN pod scope` line names the missing permission: until the class is read
+such a pod is scoped or unscoped like any other, so a gVisor or Kata pod among
+them may be counted as scoped. A root installed before its class read as
+gVisor or Kata is removed. `pod_selector_matched=` and
 `pod_cgroups_found=` keep their meaning. These counter names are shared with
 the process-exit and syscall-result classes of the same health line (every
 counter is `snake_case=<integer>`, a reason is a suffix, never a label).

@@ -120,7 +120,7 @@ func TestUnsupportedRuntimeIsReportedNotScoped(t *testing.T) {
 	if c.selected != 3 || c.scoped != 1 || c.unscoped[unscopedUnsupportedRuntime] != 2 || c.unscoped[unscopedCgroupNotFound] != 0 {
 		t.Fatalf("counts = %+v", c)
 	}
-	want := "pods_selected=3 pods_scoped=1 pods_unscoped=2 pods_unscoped_cgroup_not_found=0 pods_unscoped_unsupported_runtime=2 pods_unscoped_node_not_supported=0 pods_unscoped_pod_limit=0"
+	want := "pods_selected=3 pods_scoped=1 pods_unscoped=2 pods_unscoped_cgroup_not_found=0 pods_unscoped_unsupported_runtime=2 pods_unscoped_node_not_supported=0 pods_unscoped_pod_limit=0 pods_runtime_unknown=0"
 	if got := c.fields(); got != want {
 		t.Fatalf("health fields\n got %s\nwant %s", got, want)
 	}
@@ -218,6 +218,59 @@ func TestRuntimeClassUnreadable(t *testing.T) {
 	scope.upsert(&podInfo{uid: uidA, containers: map[string]bool{}, runtimeClass: "unknown"})
 	if c := scope.counts(); c.unscoped[unscopedCgroupNotFound] != 1 {
 		t.Fatalf("an unreadable class must count as cgroup_not_found: %+v", c)
+	}
+}
+
+// TestRuntimeClassUnreadableIsReported: a pod whose RuntimeClass cannot be
+// read is counted (pods_runtime_unknown) with a WARN that names the fix, never
+// silently scoped; when a later read shows a gVisor handler, the root that was
+// installed meanwhile is removed and the pod counts unsupported_runtime.
+func TestRuntimeClassUnreadableIsReported(t *testing.T) {
+	cgroot := t.TempDir()
+	api := newRuntimeAPIServer(t)
+	api.denied = true
+	api.classes["sandboxed"] = "runsc"
+	api.pods = []map[string]any{classPod(uidA, "sandboxed")}
+	mkdirs(t, filepath.Join(cgroot, "kubepods/besteffort/pod"+uidA))
+	roots, ids := newFakeRoots(), &fakeIDs{}
+	scope := newPodScope(cgroot, roots, ids.id, nil, nil)
+	k := api.client(t)
+	now := time.Unix(1_800_000_000, 0)
+	k.now = func() time.Time { return now }
+	pods, _, err := k.list(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope.replace(pods)
+	c := scope.counts()
+	if c.runtimeUnknown != 1 || c.scoped != 1 || !strings.Contains(c.fields(), "pods_runtime_unknown=1") {
+		t.Fatalf("counts = %+v (%s)", c, c.fields())
+	}
+	warn := runtimeUnknownWarning(c)
+	for _, part := range []string{"WARN", "pods_runtime_unknown", "runtimeclasses.node.k8s.io", "unsupported_runtime"} {
+		if !strings.Contains(warn, part) {
+			t.Fatalf("warning lacks %q: %s", part, warn)
+		}
+	}
+	if strings.Contains(warn, uidA) || strings.Contains(warn, "sandboxed") {
+		t.Fatal("the warning names a pod or a class")
+	}
+	// The permission is granted; the pod's next change reads the class again.
+	now = now.Add(runtimeClassRetry + time.Second)
+	api.mu.Lock()
+	api.denied = false
+	api.mu.Unlock()
+	pods, _, err = k.list(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope.upsert(pods[0])
+	c = scope.counts()
+	if roots.count() != 0 || c.scoped != 0 || c.runtimeUnknown != 0 || c.unscoped[unscopedUnsupportedRuntime] != 1 {
+		t.Fatalf("after the read: roots=%v counts=%+v", roots.log, c)
+	}
+	if runtimeUnknownWarning(c) != "" {
+		t.Fatal("a warning with every class read")
 	}
 }
 

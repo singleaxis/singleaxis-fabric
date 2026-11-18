@@ -324,6 +324,9 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 					// An unsupported runtime never resolves by waiting: say so at once.
 					log.Print(msg)
 				}
+				if msg := runtimeUnknownWarning(counts); msg != "" {
+					log.Print(msg)
+				}
 			}
 		case <-statusTick.C:
 			partialBatches, partialRejected := prod.status()
@@ -339,6 +342,9 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 					pods.installedCount(), pods.rootsInstalled.Load(), pods.rootsRemoved.Load(), pods.rootsLate.Load(), pods.apiErrors.Load(), matched, found, counts.fields())
 				log.Print(line)
 				if msg := podsUnscopedWarning(counts, pods.kubepodsDirs()); msg != "" {
+					log.Print(msg)
+				}
+				if msg := runtimeUnknownWarning(counts); msg != "" {
 					log.Print(msg)
 				}
 			} else {

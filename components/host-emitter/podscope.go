@@ -43,6 +43,10 @@ type podInfo struct {
 	// the pod names none or the class could not be read).
 	runtimeClass   string
 	runtimeHandler string
+	// runtimeUnknown: the pod names a RuntimeClass whose handler could not be
+	// read (RBAC or the API server), so a gVisor or Kata pod cannot be told
+	// apart from any other. Counted and warned about, never silent.
+	runtimeUnknown bool
 }
 
 // Reasons a pod the selector matched is not scoped (spec 058 §10.5). They are
@@ -214,18 +218,34 @@ type podCounts struct {
 	selected int
 	scoped   int
 	unscoped map[string]int
+	// runtimeUnknown counts selected pods whose RuntimeClass handler could not
+	// be read: not a reason (such a pod is scoped or unscoped as any other),
+	// but a gap in what the reasons can say.
+	runtimeUnknown int
 }
 
 func (c podCounts) unscopedTotal() int { return c.selected - c.scoped }
 
 // fields renders the counters for the health line, reasons in a fixed order.
 func (c podCounts) fields() string {
-	return fmt.Sprintf("pods_selected=%d pods_scoped=%d pods_unscoped=%d pods_unscoped_%s=%d pods_unscoped_%s=%d pods_unscoped_%s=%d pods_unscoped_%s=%d",
+	return fmt.Sprintf("pods_selected=%d pods_scoped=%d pods_unscoped=%d pods_unscoped_%s=%d pods_unscoped_%s=%d pods_unscoped_%s=%d pods_unscoped_%s=%d pods_runtime_unknown=%d",
 		c.selected, c.scoped, c.unscopedTotal(),
 		unscopedCgroupNotFound, c.unscoped[unscopedCgroupNotFound],
 		unscopedUnsupportedRuntime, c.unscoped[unscopedUnsupportedRuntime],
 		unscopedNodeNotSupported, c.unscoped[unscopedNodeNotSupported],
-		unscopedPodLimit, c.unscoped[unscopedPodLimit])
+		unscopedPodLimit, c.unscoped[unscopedPodLimit],
+		c.runtimeUnknown)
+}
+
+// runtimeUnknownWarning is the WARN when the RuntimeClass of a selected pod
+// could not be read (empty when every class was read). It names the count and
+// the fix, never a pod or a class.
+func runtimeUnknownWarning(c podCounts) string {
+	if c.runtimeUnknown == 0 {
+		return ""
+	}
+	return fmt.Sprintf("fabric-host-emitter: WARN pod scope: the RuntimeClass of %d selected pods could not be read (pods_runtime_unknown), so a gVisor or Kata pod among them cannot be reported %s and may be counted as scoped: grant this sensor's service account get on runtimeclasses.node.k8s.io (the chart's ClusterRole and deploy/kubernetes/host-emitter-daemonset.yaml do); the read is retried at the pod's next change",
+		c.runtimeUnknown, unscopedUnsupportedRuntime)
 }
 
 // counts classifies every selected pod.
@@ -234,6 +254,9 @@ func (s *podScope) counts() podCounts {
 	defer s.mu.Unlock()
 	c := podCounts{selected: len(s.pods), unscoped: map[string]int{}}
 	for uid, pod := range s.pods {
+		if pod.runtimeUnknown {
+			c.runtimeUnknown++
+		}
 		switch {
 		case s.installed[uid].path != "":
 			c.scoped++
@@ -297,6 +320,11 @@ func (s *podScope) replace(pods []*podInfo) {
 func (s *podScope) upsert(p *podInfo) {
 	s.mu.Lock()
 	s.pods[p.uid] = p
+	if unsupportedRuntimeHandler(p.runtimeHandler) {
+		// Installed while its RuntimeClass could not be read: the cgroup holds
+		// the sandbox, not the agent's system calls. Stop recording it.
+		s.uninstallLocked(p.uid)
+	}
 	s.mu.Unlock()
 	s.resync()
 }
@@ -307,6 +335,11 @@ func (s *podScope) remove(uid string) {
 	defer s.mu.Unlock()
 	delete(s.pods, uid)
 	delete(s.refused, uid)
+	s.uninstallLocked(uid)
+}
+
+// uninstallLocked removes a pod's root, if it has one. s.mu is held.
+func (s *podScope) uninstallLocked(uid string) {
 	root, ok := s.installed[uid]
 	if !ok {
 		return
@@ -618,14 +651,24 @@ type apiRuntimeClass struct {
 // the pod is then treated like any other, and reported cgroup_not_found if its
 // cgroup never appears.
 func (k *kubeClient) runtimeHandler(ctx context.Context, class string) string {
-	if class == "" || len(class) > 253 || !dnsSubdomain.MatchString(class) {
-		return ""
+	handler, _ := k.resolveRuntime(ctx, class)
+	return handler
+}
+
+// resolveRuntime is runtimeHandler, and whether the class was read: false for a
+// class named but unreadable (an invalid name included), true for no class.
+func (k *kubeClient) resolveRuntime(ctx context.Context, class string) (string, bool) {
+	if class == "" {
+		return "", true
+	}
+	if len(class) > 253 || !dnsSubdomain.MatchString(class) {
+		return "", false
 	}
 	k.handlersMu.Lock()
 	entry, cached := k.handlers[class]
 	k.handlersMu.Unlock()
 	if cached && (entry.ok || k.now().Sub(entry.at) < runtimeClassRetry) {
-		return entry.handler
+		return entry.handler, entry.ok
 	}
 	entry = runtimeClassEntry{at: k.now()}
 	resp, err := k.get(ctx, k.base+"/apis/node.k8s.io/v1/runtimeclasses/"+url.PathEscape(class))
@@ -643,13 +686,14 @@ func (k *kubeClient) runtimeHandler(ctx context.Context, class string) string {
 	k.handlersMu.Lock()
 	k.handlers[class] = entry
 	k.handlersMu.Unlock()
-	return entry.handler
+	return entry.handler, entry.ok
 }
 
 // podInfoOf is toPodInfo with the pod's RuntimeClass handler resolved.
 func (k *kubeClient) podInfoOf(ctx context.Context, p *apiPod) *podInfo {
 	info := toPodInfo(p)
-	info.runtimeHandler = k.runtimeHandler(ctx, info.runtimeClass)
+	handler, known := k.resolveRuntime(ctx, info.runtimeClass)
+	info.runtimeHandler, info.runtimeUnknown = handler, !known
 	return info
 }
 
