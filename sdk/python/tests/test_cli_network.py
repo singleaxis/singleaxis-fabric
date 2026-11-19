@@ -37,7 +37,8 @@ def _assert_only_configured_endpoints(outcome: dict[str, Any]) -> None:
     assert outcome["codes"] == {"plan": 0, "init": 0, "init --kubernetes --render": 0, "up": 0,
                                 "up again": 0, "run": 0,
                                 "verify --canary-only": 0, "show --list": 0, "doctor": 0,
-                                "down": 0, "down --purge": 0}  # fmt: skip
+                                "down": 0, "down --purge": 0, "init --production": 0,
+                                "init --rotate all": 0}  # fmt: skip
     attempts = outcome["attempts"]
     # The only connection any command opens is the health probe of the project's own Node.
     assert attempts["connect"], "the Node probe did not run"

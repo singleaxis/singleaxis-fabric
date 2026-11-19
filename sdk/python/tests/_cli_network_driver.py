@@ -1,7 +1,7 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 """Driver of the I4 (no phone-home) tests for every local command: ``plan``, ``init``,
-``up``, ``run``, ``verify``, ``show``, ``doctor`` and ``down``.
+``up``, ``run``, ``verify``, ``show``, ``doctor`` and ``down``, and ``init --production``.
 
 Runs the commands in this process with every socket use recorded by an audit hook,
 against a fake ``docker`` command and a fake Fabric Node (a loopback TLS server with the
@@ -175,6 +175,13 @@ def main(argv: list[str]) -> int:  # noqa: PLR0915 - one statement per command i
     codes["doctor"] = fabric(["doctor", "--quiet"])
     codes["down"] = fabric(["down", "--quiet"])
     codes["down --purge"] = fabric(["down", "--purge", "--quiet"])
+    # Spec 058 WP8-22: a production project's secrets, policy and Node settings are made
+    # on this machine; nothing is fetched or sent.
+    production = work / "production"
+    production.mkdir()
+    os.chdir(production)
+    codes["init --production"] = fabric(["init", "--production", "--quiet"])
+    codes["init --rotate all"] = fabric(["init", "--rotate", "all", "--quiet"])
     server.shutdown()
     interfaces = _interfaces_up() if netns else []
     commands = [json.loads(line) for line in docker_log.read_text().splitlines()]

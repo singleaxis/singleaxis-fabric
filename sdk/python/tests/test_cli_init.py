@@ -348,8 +348,6 @@ def test_a_referenced_secret_file_that_is_missing_is_named_not_compiled_silently
 
 
 @pytest.mark.parametrize(("args", "detail"), [
-    (["--profile", "production"], "--profile production"),
-    (["--destination", "s3"], "--destination s3"),
     (["--from-env-file", "node.env"], "--from-env-file"),
     (["--from-values", "values.yaml"], "--from-values"),
     (["--shape", "kubernetes"], "--shape kubernetes"),
@@ -372,15 +370,27 @@ def test_usage_errors_exit_2_with_a_fix(project: Path, capsys: pytest.CaptureFix
     assert list(project.iterdir()) == []
 
 
+def test_a_production_destination_on_the_local_profile_is_refused_and_nothing_is_written(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = _json(["init", "--destination", "s3", "--bucket", "b-1", "--region", "eu-west-1"],
+                   capsys)  # fmt: skip
+    assert (report["exit_code"], report["findings"][0]["id"]) == (2, "FC-004")
+    assert "fabric init --production" in report["findings"][0]["detail"]
+    assert list(project.iterdir()) == []
+
+
 def test_an_existing_production_fabric_yaml_is_refused_before_anything_is_generated(
     project: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """A production fabric.yaml written by hand without a capture policy: FC-166 names
+    the fix, and no secret is generated for a project that cannot compile."""
     (project / "fabric.yaml").write_text(
         "schema: fabric.config/v1\nprofile: production\n"
         "destination:\n  preset: otlp\n  otlp_endpoint: https://otel.example.com\n"
     )
     report = _json(["init"], capsys)
-    assert (report["exit_code"], report["findings"][0]["id"]) == (2, "FC-011")
+    assert (report["exit_code"], report["findings"][0]["id"]) == (2, "FC-166")
     assert not (tmp_path / "xdg").exists() and not (project / ".fabric").exists()
 
 
@@ -753,7 +763,6 @@ def test_a_data_directory_that_is_the_project_directory_is_not_ignored(
 @pytest.mark.parametrize(
     ("line", "named"),
     [
-        ("node:\n  queue_size: 1073741824\n", "node.queue_size"),
         ("capture:\n  security_context: ./security-context.yaml\n", "capture.security_context"),
     ],
 )
@@ -772,9 +781,9 @@ def test_a_setting_this_release_would_ignore_is_refused_not_dropped(
 @pytest.mark.parametrize(
     ("line", "flags", "finding_id"),
     [
-        ("node:\n  queue_size: 1073741824\n", ["--exec"], "FC-011"),
+        ("capture:\n  security_context: ./sc.yaml\n", ["--exec"], "FC-011"),
         ("profile: production\ndestination:\n  preset: otlp\n"
-         "  otlp_endpoint: https://otel.example.com\n", ["--exec"], "FC-011"),
+         "  otlp_endpoint: https://otel.example.com\n", ["--exec"], "FC-166"),
         ("secrets:\n  ca_file: ./ca.pem\n", ["--http-host", "api.github.com"], "FC-004"),
     ],
 )  # fmt: skip
