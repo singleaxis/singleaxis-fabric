@@ -232,7 +232,9 @@ def run(
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
     if options.kubernetes:
-        raise CliError([Finding("FC-011", "--kubernetes")])
+        from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
+
+        return _kubecmd.run_doctor(options, environ)
     findings: list[Finding] = []
     lines: list[str] = []
     _path_check(lambda name: which(name, path=environ.get("PATH", os.defpath)), findings)

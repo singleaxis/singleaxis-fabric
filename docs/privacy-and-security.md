@@ -272,8 +272,10 @@ In the production profile every agent batch is bound to one source:
   from the Node's export or destination.
 
 A stamp proves which ingress credential delivered a record, not that the
-credential is held only by that agent; protect the token accordingly. One
-production Node serves one agent source.
+credential is held only by that agent; protect the token accordingly. With
+the single workload credential a production Node serves one agent source;
+with ingress groups it serves one source per group, each with its own
+token ([host sensors](host-sensors.md#production-mode)).
 
 ## Delivery and the Node
 

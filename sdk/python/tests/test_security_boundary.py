@@ -292,8 +292,10 @@ def _imports(tree: ast.Module, relative: str) -> set[str]:
 #: They are the only modules outside ``fabric/reconstruct`` that may import it. Nothing the
 #: agent's process loads imports them (the tests below pin that).
 READER_COMMAND_MODULES = frozenset(
-    {"cli/_read.py", "cli/_show.py", "cli/_transcript.py", "cli/_verify.py"}
-)
+    {"cli/_read.py", "cli/_show.py", "cli/_transcript.py", "cli/_verify.py",
+     # `verify --kubernetes` reads the run back on the operator's workstation.
+     "cli/_kubecmd.py"}
+)  # fmt: skip
 
 
 def _imports_reader(imported: set[str]) -> bool:

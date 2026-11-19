@@ -517,6 +517,489 @@ one with the SDK (`fabric doctor` names the one it checked).
 
 Fix: nothing to do.
 
+### FC-098
+
+`launcher_command_unavailable`, error: the npm launcher has the `run` and `doctor` commands only;
+this command is in the Python CLI and the fabric-cli container image.
+
+Fix: install the full CLI with pipx install "singleaxis-fabric[cli]" (or uv tool install), or run
+the image: docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:$PWD" -w "$PWD"
+ghcr.io/singleaxis/fabric-cli:VERSION COMMAND.
+
+### FC-099
+
+`doctor_no_python`, info: no Python interpreter was found, so the Python SDK check was skipped.
+
+Fix: nothing to do for a Node.js agent, which records through the explicit API; for a Python agent,
+put its interpreter on PATH or create the project's .venv and run `fabric doctor` again.
+
+### FC-100
+
+`kubectl_missing`, error: kubectl is not installed or not on PATH, so the Secrets cannot be written
+to the cluster.
+
+Fix: install kubectl and select the cluster's context (kubectl config use-context NAME), or write
+the Secrets as manifests with `fabric init --kubernetes --render DIR` and apply them with your own
+tooling.
+
+### FC-101
+
+`kube_namespace_missing`, error: a namespace the Secrets belong in does not exist.
+
+Fix: create it (kubectl create namespace NAME) and run the command again; neither the chart's
+secrets Job nor `fabric init --kubernetes` creates a namespace.
+
+### FC-102
+
+`kube_forbidden`, error: the Kubernetes API refused the request: the identity may not read or create
+Secrets there.
+
+Fix: use a kube context that may get and create Secrets in the release namespace and every agent
+namespace; for the chart's secrets Job, check that every agent namespace is listed in
+agentNamespaces (its Role is created there).
+
+### FC-103
+
+`kube_api_unreachable`, error: the Kubernetes API server could not be reached.
+
+Fix: check the kube context (kubectl cluster-info); in the chart's secrets Job, check that a
+NetworkPolicy lets the Job reach the API server (set secretsJob.apiServer.to and .ports when the
+chart cannot read them).
+
+### FC-104
+
+`kube_secret_incomplete`, warning: an existing Secret lacks keys this setup needs; it is kept
+unchanged.
+
+Fix: delete the Secret the message names and run the command again to generate it (a new id key
+changes the namespace's pseudonyms), or add the missing keys it lists yourself.
+
+### FC-105
+
+`kube_ingress_secret_orphaned`, error: an agent namespace's ingress Secret exists in the release
+namespace but its agent Secret does not, so a new token and source id would not match it.
+
+Fix: delete the ingress Secret the message names (kubectl delete secret -n RELEASE-NAMESPACE NAME)
+and run the command again; both are then generated together.
+
+### FC-106
+
+`kube_option_needs_kubernetes`, error: this option belongs to `fabric init --kubernetes`.
+
+Fix: add --kubernetes, or remove the option.
+
+### FC-107
+
+`injector_ca_bundle`, info: the injector's webhook needs the CA certificate as its caBundle.
+
+Fix: the chart's secrets Job sets it; with secretsJob.enabled=false, set injector.caBundle to the
+ca.crt entry of the CA Secret's data, which is base64 already (kubectl get secret fabric-ca -n
+RELEASE-NAMESPACE -o yaml).
+
+### FC-108
+
+`kube_webhook_missing`, error: the injector's webhook configuration was not found, so its caBundle
+cannot be set.
+
+Fix: install or upgrade the chart with injector.enabled=true first; the post-install hook then sets
+the caBundle.
+
+### FC-109
+
+`kube_name_invalid`, error: a namespace, release, source or Secret name is not valid for Kubernetes.
+
+Fix: use lowercase letters, digits and '-' (at most 63 characters for a namespace); a source label
+may also use '.', '_' and ':'.
+
+### FC-110
+
+`kube_agent_secret_unusable`, error: an agent namespace's existing Secret holds no ingest credential
+or id key this setup can read, so the namespace's ingress Secret cannot be made and the Node, which
+reads it, would not start.
+
+Fix: delete the agent Secret the message names (kubectl delete secret -n AGENT-NAMESPACE NAME) and
+run the command again, or run helm upgrade again; the agent Secret and its ingress Secret are then
+generated together (a new id key changes the namespace's pseudonyms; restart its agents).
+
+### FC-111
+
+`kube_certificate_expiring`, warning: a certificate in a Secret expires within 14 days; Secrets are
+never overwritten, so it is not renewed by itself.
+
+Fix: delete the Node's or the injector's Secret the message names and run the command again (helm
+upgrade runs the secrets Job): a new certificate is issued from the same CA; then restart the Node
+if it was its own. For an agent Secret or the CA Secret follow 'Certificate renewal' in
+docs/deployment.md.
+
+### FC-112
+
+`kube_certificate_expired`, error: a certificate in a Secret has expired, so the connections it
+secures fail: agents cannot deliver to the Node, or the injector's webhook is skipped and pods start
+without capture.
+
+Fix: delete the Node's or the injector's Secret the message names and run the command again (helm
+upgrade runs the secrets Job): a new certificate is issued from the same CA; then restart the Node
+if it was its own. For an agent Secret or the CA Secret follow 'Certificate renewal' in
+docs/deployment.md.
+
+### FC-113
+
+`kube_host_sensor_needs_production`, error: the host sensor's Secrets need a production Node: each
+node's sensor is an authenticated source with its own ingress group.
+
+Fix: add --profile production (the chart: preset=production-host-sensor), or leave --host-sensor
+out.
+
+### FC-114
+
+`kube_host_source_id_stale`, error: a node's host sensor Secret holds a source id made with another
+id key, so the Node would refuse that sensor's records.
+
+Fix: delete the node's Secret the message names (kubectl delete secret -n RELEASE-NAMESPACE NAME)
+and run the command again (or helm upgrade): it is made again from the current id key; then restart
+the Node.
+
+### FC-115
+
+`kube_agent_id_key_differs`, warning: an agent namespace's Secret holds an id key of its own, not
+the release's shared one, so host sensor records do not join that namespace's runs.
+
+Fix: delete the agent Secret and its ingress Secret the message names and run the command again (or
+helm upgrade): both are made again with the shared id key; then restart that namespace's agents.
+
+### FC-120
+
+`kubectl_missing_for_read`, error: kubectl is not installed or not on PATH; --kubernetes reads the
+cluster of the current kube context through it.
+
+Fix: install kubectl and select the cluster's context (kubectl config use-context NAME), or point
+KUBECONFIG at its file.
+
+### FC-121
+
+`helm_missing`, error: helm is not installed or not on PATH; `fabric up --kubernetes` installs the
+chart with it.
+
+Fix: install Helm 3.14 or later, or write the values and Secrets for your own pipeline with fabric
+up --kubernetes --render DIR.
+
+### FC-122
+
+`kube_release_not_found`, error: no Fabric release installed with a preset was found in the cluster
+of the current kube context.
+
+Fix: install it (fabric up --kubernetes, or helm install with --set preset=...); name its namespace
+with --namespace when it is not fabric-system; check the context with kubectl config
+current-context.
+
+### FC-123
+
+`helm_failed`, error: Helm could not install or remove the Fabric release.
+
+Fix: read the detail (Helm's own last lines); a chart error names the value and its fix, and `fabric
+doctor --kubernetes` shows the state of what is installed.
+
+### FC-124
+
+`kube_release_applied`, info: the Fabric release was installed or upgraded with Helm; no workload
+other than Fabric's own was restarted.
+
+Fix: nothing to do; agent pods get capture at their next start, by your own rollout.
+
+### FC-125
+
+`kube_secret_missing`, error: a Secret the release needs is missing or lacks a key, so the pods that
+mount it do not start or cannot authenticate.
+
+Fix: run helm upgrade (the secrets Job makes each missing Secret) or fabric init --kubernetes with
+the same namespaces; an incomplete Secret is never changed: delete it first.
+
+### FC-126
+
+`kube_node_not_ready`, error: the Fabric Node has no ready pod, so no record is accepted.
+
+Fix: the detail holds the pod's state and last log line; kubectl describe pod and kubectl logs in
+the release namespace show more.
+
+### FC-127
+
+`kube_node_ready`, info: the Fabric Node's pods are ready and its health endpoint answers.
+
+Fix: nothing to do.
+
+### FC-128
+
+`kube_port_forward_failed`, error: kubectl could not forward a local port to the Fabric Node.
+
+Fix: check that the Node's pods run and that your identity may create pods/portforward in the
+release namespace.
+
+### FC-129
+
+`kube_injector_unavailable`, error: the pod injector has no ready pod: annotated pods are admitted
+unchanged after the 2 second webhook timeout and run without capture.
+
+Fix: restore it (kubectl describe deployment in the release namespace shows why it is down), then
+recreate the affected pods with your own rollout; Fabric never restarts a workload.
+
+### FC-130
+
+`kube_pod_not_injected`, warning: a pod asks for injection with the fabric.singleaxis.ai/inject
+annotation but was not injected, so it runs without capture.
+
+Fix: the detail says why; fix that, then recreate the pod with your own rollout: injection happens
+only when a pod is created.
+
+### FC-131
+
+`kube_pods_injected`, info: annotated pods in the agent namespaces carry the injected annotation.
+
+Fix: nothing to do.
+
+### FC-132
+
+`kube_namespace_not_labelled`, warning: an agent namespace lacks the label
+fabric.singleaxis.ai/injection=enabled, so the injector never sees its pods.
+
+Fix: kubectl label namespace NAME fabric.singleaxis.ai/injection=enabled, then recreate its
+annotated pods with your own rollout.
+
+### FC-133
+
+`kube_sensor_not_running`, error: the host sensor is not running on a node it was installed for, so
+no host evidence is recorded there.
+
+Fix: the detail holds the pod's state and last log line; a node without Linux 5.8 and BTF cannot run
+it: keep it off such nodes with hostSensor.nodeSelector.
+
+### FC-134
+
+`kube_pods_unscoped`, warning: the host sensor selected pods it cannot observe; the detail gives the
+node, the count and the reason.
+
+Fix: cgroup_not_found: set EMIT_AGENT_CGROUP_ROOTS through hostSensor.env; unsupported_runtime
+(gVisor, Kata): rely on wire capture for that pod or use the default runtime; pod_limit: narrow
+hostSensor.agentPodSelector.
+
+### FC-135
+
+`kube_sensor_export_failing`, error: a host sensor cannot deliver its records to the Fabric Node;
+the detail holds the gRPC status code.
+
+Fix: Unavailable: the Node is down or a NetworkPolicy blocks the sensor (keep
+networkPolicy.hostSensorEgress on); Unauthenticated or PermissionDenied: run helm upgrade so the
+node's Secret and ingress group agree.
+
+### FC-136
+
+`kube_sensor_scoped`, info: the host sensor runs and reports the agent pods it observes on each
+node.
+
+Fix: nothing to do.
+
+### FC-137
+
+`kube_network_policy_blocks`, warning: a NetworkPolicy selects Fabric's pods and no rule of the
+chart allows the traffic the detail names.
+
+Fix: keep the chart's own policies on (otel-collector.networkPolicy.enabled, hostSensorEgress); for
+a policy of your own add an allow rule from the pods named to the Node's ingress port.
+
+### FC-138
+
+`kube_runtime_class_unsupported`, warning: a RuntimeClass of this cluster uses gVisor or Kata: the
+host sensor cannot observe pods that run under it.
+
+Fix: nothing to change for pods on the default runtime; for a pod under that RuntimeClass rely on
+wire capture in the agent (the injector), and expect no host evidence.
+
+### FC-139
+
+`kube_node_without_sensor`, warning: a node cannot run the host sensor or is not in the release's
+node list, so pods on it have no host evidence.
+
+Fix: a serverless, virtual or non-Linux node cannot run it: rely on wire capture there; for a node
+added after the install run helm upgrade so it gets its Secret and ingress group.
+
+### FC-140
+
+`kube_spool_emptydir_one_shot`, warning: a pod that runs once (a Job, or restartPolicy Never) has an
+emptyDir spool: records not delivered when it exits are lost with the pod.
+
+Fix: raise FABRIC_WIRE_DRAIN_ON_EXIT_S for it (injector.env), or give it a persistent spool with the
+annotation fabric.singleaxis.ai/spool: pvc.
+
+### FC-141
+
+`kube_run_not_corroborated`, warning: the host sensor is installed but no host record joined this
+run, so nothing independent of the agent corroborates it.
+
+Fix: check that the pod carries the sensor's pod label (the injector adds it) and FABRIC_HOST_LABEL,
+and that `fabric doctor --kubernetes` shows the pod scoped on its node.
+
+### FC-142
+
+`kube_canary_needs_binding`, info: the canary was not sent: on a production Node every source has
+its own ingress binding, and this release generates none for the canary.
+
+Fix: nothing to do; the run's own records are read instead (pass --spans PATH with your
+destination's export).
+
+### FC-143
+
+`kube_rendered`, info: the Helm values and the Secret manifests were written for your own pipeline;
+nothing was installed.
+
+Fix: apply the Secrets first (kubectl create -f DIR/secrets --recursive), then helm upgrade
+--install with the values file; encrypt the manifests before they reach a repository.
+
+### FC-144
+
+`kube_purged`, info: the release was removed and the Secrets Fabric generated for it were deleted.
+
+Fix: nothing to do; an agent pod that still runs keeps the files it mounted until it stops.
+
+### FC-145
+
+`kube_webhook_ca_missing`, error: the injector's webhook has no caBundle, so the API server cannot
+verify it and admits annotated pods unchanged.
+
+Fix: run helm upgrade (its post-upgrade Job sets the caBundle from the generated CA), or set
+injector.caBundle to the base64 of the CA certificate.
+
+### FC-146
+
+`kube_no_agent_namespace`, warning: the release serves no agent namespace, so no agent pod can
+deliver records to this Node.
+
+Fix: name the namespaces of your agents: helm upgrade with --set agentNamespaces=NS (or fabric up
+--kubernetes --agent-namespace NS).
+
+### FC-147
+
+`kube_api_forbidden_read`, warning: the identity of the kube context may not read something this
+check needs, so that part was skipped.
+
+Fix: the detail names what; ask for get and list on it, or run the command with an identity that may
+read the release namespace and the nodes.
+
+### FC-148
+
+`kube_plan_ready`, info: the cluster was read; nothing was changed.
+
+Fix: follow the next command the plan prints.
+
+### FC-149
+
+`kube_released_secrets_kept`, info: the release was removed; the Secrets Fabric generated are kept,
+so a new install keeps every key and id.
+
+Fix: nothing to do; fabric down --kubernetes --purge deletes them too.
+
+### FC-150
+
+`kube_host_nodes_needed`, error: the host sensor needs the names of the nodes it runs on, and they
+could not be read from the cluster of the current kube context.
+
+Fix: pass --host-node NAME for each node that runs the sensor, oldest first (kubectl get nodes
+--sort-by=.metadata.creationTimestamp).
+
+### FC-151
+
+`kube_option_invalid`, error: an option given with --kubernetes cannot be used as given; nothing was
+installed or changed.
+
+Fix: the detail names the option and what it takes; `fabric help up` lists the options.
+
+### FC-152
+
+`chart_override`, warning: FABRIC_CHART replaces the chart of this CLI release, so the chart
+installed is not the one this release pins.
+
+Fix: unset FABRIC_CHART to install this release's own chart; keep it only to test a chart under
+development.
+
+### FC-153
+
+`content_reader_missing`, error: the release delivers model bodies to an S3 content store, and
+reading them back needs boto3, which this CLI install lacks.
+
+Fix: pip install "singleaxis-fabric[cli,s3]" on this workstation, then run fabric verify
+--kubernetes again.
+
+### FC-154
+
+`content_not_readable`, warning: the release keeps no model bodies where this workstation can read
+them, so the agent's model decisions cannot be verified and verify cannot pass.
+
+Fix: deliver content to an S3 or S3-compatible store: otel-collector.content.enabled=true and
+content.backend=s3 in your values (docs/get-started/kubernetes.md); this workstation reads it with
+your AWS configuration.
+
+### FC-155
+
+`no_capture_policy`, warning: the injector gives agents no capture policy, so on this production
+Node they record metadata only: the model bodies the agent's decisions are verified against are
+never kept and verify cannot pass.
+
+Fix: set injector.capturePolicy to your fabric.deployment-policy/v1 document in your values
+(docs/get-started/kubernetes.md), run fabric up --kubernetes again, then roll out your agents.
+
+### FC-156
+
+`sensor_runtime_class_unread`, warning: the host sensor could not read the RuntimeClass of some
+selected pods, so a gVisor or Kata pod among them cannot be reported unsupported_runtime and may be
+counted as scoped.
+
+Fix: grant the sensor's service account get on runtimeclasses.node.k8s.io (the chart's ClusterRole
+does: run helm upgrade; for deploy/kubernetes/host-emitter-daemonset.yaml apply its current
+ClusterRole), and check that each RuntimeClass the pods name exists.
+
+### FC-157
+
+`plan_ready`, info: this machine and the agent were read; nothing was changed, started or contacted.
+
+Fix: follow the next command the plan prints; each fix row names the command that closes its gap.
+
+### FC-158
+
+`plan_sdk_missing`, info: the agent's interpreter does not have the Fabric SDK yet, so nothing is
+recorded until it does.
+
+Fix: install it in the agent's own environment with the command in the detail (the plan's next line
+starts with it).
+
+### FC-159
+
+`plan_packages_unread`, warning: the agent's installed packages could not be listed, so rows that
+depend on a library assume it is present.
+
+Fix: name the agent's interpreter, for example fabric plan -- .venv/bin/python app.py, and check
+that it starts.
+
+### FC-160
+
+`plan_runtime_unknown`, warning: the agent's runtime could not be told: no command was given and the
+directory has no project manifest.
+
+Fix: give the agent command after --, for example fabric plan -- python app.py.
+
+### FC-161
+
+`plan_mcp_config_unreadable`, error: an --mcp-config file is not a JSON object whose mcpServers
+entries have a command or a url.
+
+Fix: pass the MCP client's configuration file: an mcpServers object whose entries have a command (a
+stdio server) or a url (an HTTP server).
+
+### FC-162
+
+`coverage_prediction_mismatch`, warning: fabric.yaml turns on a capture point that the run's capture
+manifest reports off.
+
+Fix: run fabric doctor for the SDK's reason, and start the agent with fabric run in this project so
+it gets the setting.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001
@@ -686,3 +1169,524 @@ Fix: point FABRIC_WIRE_STATUS_FILE at a writable path in a directory that exists
 
 Fix: headers are k=v pairs separated by commas, timeouts are numbers, compression is gzip, deflate
 or none, and a client key and certificate are set together.
+
+## Reasons in reader verdicts
+
+`fabric verify`, `fabric show` and the reader name each reason a run or one of its chains is not
+complete. Each entry says what it means and how to fix it; a chain that gives a reason its own
+meaning is listed under it.
+
+### sequence_gap
+
+Records are missing between two that arrived: a process was killed before its spool drained, or
+delivery is still in progress.
+
+Fix: let the agent exit normally and run fabric verify again; python -m fabric.wire drain
+--until-empty delivers a spool left behind.
+
+On the `controls` chain: records of a control decision or permission are missing between two that
+arrived, so a decision may be absent. Fix: let the agent exit normally and run fabric verify again;
+python -m fabric.wire drain --until-empty delivers a spool left behind.
+
+### loss
+
+The SDK reported records it could not keep (a full spool or queue, or a client it does not hook).
+
+Fix: give the spool more room (FABRIC_WIRE_SPOOL_MAX_BYTES), keep the Node running, and send model
+calls through httpx or aiohttp.
+
+### tail_unverified
+
+The run's last records cannot be proven complete: no final heartbeat arrived (the process was
+killed, or is still running).
+
+Fix: let the agent exit normally and run fabric verify after it exits; a batch worker can raise
+FABRIC_WIRE_DRAIN_ON_EXIT_S.
+
+### missing_object
+
+A request or response body is not in the content store.
+
+Fix: content may still be on its way: run fabric verify again; check that the agent's
+FABRIC_WIRE_STORE is the project's store (fabric doctor).
+
+### digest_mismatch
+
+A stored body does not match the digest its record carries, so the body was changed after capture.
+
+Fix: keep the content store writable by the agent and the Node only, and investigate who changed it.
+
+### truncated
+
+A body was larger than the capture limit and only its first part was kept.
+
+Fix: raise the body limit (max_retain_bytes) in the capture policy if you need whole bodies.
+
+### unparsed_exchange
+
+A model exchange was recorded but could not be parsed in its dialect.
+
+Fix: check the endpoint's dialect: an Anthropic Messages API host needs fabric init --provider
+anthropic=URL.
+
+### prefix_break
+
+A model request does not repeat the conversation the previous one ended with, so the two cannot be
+chained.
+
+Fix: nothing to fix when the agent rewrites its history on purpose (summarizing, trimming);
+otherwise check that one process sends one conversation.
+
+### unmatched_tool_call
+
+A tool call has no result fed back to the model.
+
+Fix: nothing to fix when the agent stopped early; otherwise the result went to the model through a
+client Fabric does not hook.
+
+### unresolved_previous_response
+
+A request names a previous response that is not in the record (provider-held conversation state).
+
+Fix: record the run that produced it too (same project), or send the full conversation instead of a
+previous response id.
+
+### source_unauthenticated
+
+Records are not authenticated by the Node: they did not arrive through a bound ingress.
+
+Fix: in production, send records through the Node's ingress with its source binding (fabric init
+--production, then fabric up).
+
+### segment_missing
+
+A part of the run that another part names as its predecessor is not in the record.
+
+Fix: deliver every process of the run to the same destination; run fabric verify again after all of
+them exit.
+
+### segment_conflict
+
+The parts of the run disagree about their order (two roots, a cycle or a replayed resume token).
+
+Fix: resume a run once per resume token, and keep one run label per run (fabric run --run NAME).
+
+### post_terminal_activity
+
+Records of the run arrived after it was declared ended.
+
+Fix: end a run once, after its last step; start a new run for later work.
+
+### run_unterminated
+
+A resumable run never recorded its end and its open-run deadline has passed.
+
+Fix: end the run in code (the run scope's exit), or let the agent process exit normally.
+
+### run_open
+
+The run had not ended when it was read.
+
+Fix: run fabric verify after the agent exits.
+
+### seal_mismatch
+
+The records delivered for part of the run do not reproduce the seal the agent wrote, so a record was
+changed or replaced.
+
+Fix: keep the destination append-only, and investigate who changed the records.
+
+### unsealed_segment
+
+Part of the run never wrote its closing seal (the process was killed, or is still running).
+
+Fix: let the agent exit normally and run fabric verify again.
+
+### unsealed_epoch
+
+An earlier process on the same spool never wrote its final records; the next process declared it.
+
+Fix: let agent processes exit normally; python -m fabric.wire drain --until-empty delivers what the
+earlier one left.
+
+### manifest_gap
+
+A capture manifest the run's records name is not in the record, so what was switched on cannot be
+shown.
+
+Fix: deliver every record of the run to the same destination and run fabric verify again.
+
+### clock_uncertain
+
+Record clocks disagree more than allowed, so time order cannot be trusted.
+
+Fix: keep the agent's, the Node's and the sensor's clocks synchronized (NTP).
+
+### not_instrumented
+
+The capture point that observes this was not installed or not active.
+
+Fix: fabric plan names the line that turns it on; fabric doctor says why an installed one is off.
+
+### hook_disabled
+
+The capture point is installed, but this field is switched off by default.
+
+Fix: turn the field on in the capture policy if you need it.
+
+### not_configured
+
+Nothing is configured to record this.
+
+Fix: fabric plan names the line that turns it on.
+
+On the `corroboration` chain: no host sensor is configured, so nothing independent of the agent
+confirms what it did. Fix: on Linux, fabric up starts the sensor (sensor.kind: auto); on Kubernetes
+use --set preset=production-host-sensor.
+
+### unsupported_api
+
+The reader does not know this API or item type, so it was kept but not parsed.
+
+Fix: nothing to fix for the run; tell the Fabric maintainers which API it was.
+
+### unsupported_runtime
+
+No capture point exists for this runtime or client library.
+
+Fix: fabric plan names what is recorded in this runtime and the alternative.
+
+### unsupported_version
+
+The runtime or library version is outside the qualified range.
+
+Fix: use a runtime and library version fabric plan lists as supported.
+
+### parse_failed
+
+A body was captured but could not be parsed.
+
+Fix: nothing to fix for the run; the body itself is kept in the content store.
+
+### body_cap
+
+A body was larger than the capture limit and was cut.
+
+Fix: raise max_retain_bytes in the capture policy if you need whole bodies.
+
+### part_cap
+
+A part of a body was larger than the limit: its digest and length are kept, its bytes are not.
+
+Fix: raise max_body_bytes in the capture policy if you need those parts.
+
+### inflight_budget
+
+Too many bytes were in flight at once, so some were not kept.
+
+Fix: raise max_inflight_bytes in the capture policy, or lower the agent's concurrency.
+
+### queue_full
+
+The capture queue was full, so records were dropped (the agent was not slowed).
+
+Fix: keep the Node running and reachable; give the spool more room (FABRIC_WIRE_SPOOL_MAX_BYTES).
+
+### disk_full
+
+The spool's disk was full, so records could not be kept.
+
+Fix: free disk space where the spool lives, or move it (FABRIC_WIRE_SPOOL_DIR).
+
+### shutdown
+
+The process stopped before some records were saved.
+
+Fix: let the agent exit normally; a batch worker can raise FABRIC_WIRE_DRAIN_ON_EXIT_S.
+
+### internal_error
+
+Fabric code failed and dropped records; the agent was not affected.
+
+Fix: run fabric doctor and report the error id it shows to the Fabric maintainers.
+
+### span_dropped
+
+The Node or an exporter refused or sampled out records.
+
+Fix: turn off sampling for Fabric records and check the Node's log (fabric doctor).
+
+### store_failed
+
+The content store did not accept a body after retries.
+
+Fix: check the store's credentials and free space (fabric doctor), then run the agent again.
+
+### destination_rejected
+
+The Node refused a content record (unknown role, bad descriptor or a tenant it does not allow).
+
+Fix: check that the agent's tenant (FABRIC_TENANT_ID) is one the Node allows (fabric doctor).
+
+### transport_incomplete
+
+The client did not read or send the whole body.
+
+Fix: nothing to fix when the agent cancelled the call; otherwise the agent read a body only in part.
+
+### stream_closed_early
+
+The agent closed a streamed response before its end.
+
+Fix: nothing to fix when the agent stopped reading on purpose; otherwise read the stream to its end.
+
+### privacy_policy
+
+Your capture policy withholds this content (omit, metadata only, redact or tokenize).
+
+Fix: nothing to fix if intended; retain the role in the capture policy if you need it.
+
+### protection_failed
+
+The privacy step could not transform this content, so it was withheld, never stored raw.
+
+Fix: check the capture policy's transformation for this role (fabric doctor).
+
+### missing_capture_policy
+
+Content capture needs a capture policy in production and none is configured.
+
+Fix: set FABRIC_CAPTURE_POLICY to your deployment policy file (fabric init --production writes one).
+
+### missing_id_key
+
+A keyed pseudonym was needed and no id key was set.
+
+Fix: start the agent with fabric run (it passes the generated id key), or set
+FABRIC_WIRE_ID_KEY_FILE.
+
+### missing_spool_key
+
+Production needs an encrypted spool and no spool key is set, so content capture is off.
+
+Fix: set FABRIC_WIRE_SPOOL_KEY_FILE (fabric init --production generates one).
+
+### provider_redacted
+
+The model provider returned a redaction marker instead of the content.
+
+Fix: nothing to fix: Fabric records what the provider sent.
+
+### provider_encrypted
+
+The model provider returned the content only encrypted or opaque.
+
+Fix: nothing to fix: Fabric records what the provider sent.
+
+### provider_summarised
+
+The model provider returned a summary instead of the original.
+
+Fix: nothing to fix: Fabric records what the provider sent.
+
+### provider_not_returned
+
+The model provider did not return this content.
+
+Fix: nothing to fix: Fabric records what the provider sent.
+
+### provider_held
+
+The content lives in the provider's stored conversation and was not in the observed bytes.
+
+Fix: send the full conversation in each request if you need it in the record.
+
+### caller_omitted
+
+The agent's code called a reporting API without this argument.
+
+Fix: pass the argument in the API call if you need it recorded.
+
+### deferred_to_explicit
+
+The explicit API recorded this exchange, so wire capture left it to that record.
+
+Fix: nothing to fix: the explicit record is the one to read.
+
+### explicit_withheld
+
+The explicit API withheld these bytes under its privacy setting.
+
+Fix: nothing to fix if intended; change the explicit API's privacy setting if you need them.
+
+### not_exposed
+
+This fact never crosses a boundary Fabric can observe.
+
+Fix: record it from the agent's code with the explicit APIs if you need it.
+
+### source_lost
+
+A whole process's records are missing from the record.
+
+Fix: deliver every process to the same destination; python -m fabric.wire drain --until-empty sends
+a spool left behind.
+
+### uninstrumented_client
+
+Model calls went through a client Fabric does not hook (requests, urllib3, boto3 or gRPC).
+
+Fix: send model calls through httpx or aiohttp (the provider SDKs do), or record them with
+CallRecorder.
+
+### sampling
+
+A sampler dropped records.
+
+Fix: turn off sampling for Fabric records.
+
+### retention_expired
+
+A body existed and was removed by the store's retention.
+
+Fix: verify runs before their retention ends, or lengthen the store's retention.
+
+### deleted
+
+A body existed and was deleted on request.
+
+Fix: nothing to fix if the deletion was intended.
+
+### unattributed_effect
+
+A command ran that no tool call explains (often one the agent's code runs on its own).
+
+Fix: nothing to fix if intended; record the decision with control_check if your code decided it.
+
+### ambiguous_attribution
+
+An effect falls inside two or more tool calls running at once and its output does not tell which one
+ran it; under a redact policy commands are withheld, so they cannot be matched.
+
+Fix: retain terminal.argv as a digest in the capture policy to allow matching, or run tool calls one
+at a time.
+
+On the `controls` chain: a control decision matches more than one pending request, so it is not
+linked to one. Fix: record the gated call's id with the decision (control_check takes it).
+
+### tool_result_missing
+
+A tool call the model asked for has no result in a later model request.
+
+Fix: nothing to fix when the agent stopped early; otherwise the result went to the model through a
+client Fabric does not hook.
+
+### exchange_gap
+
+A model exchange the tool chain needs is missing or could not be parsed.
+
+Fix: run fabric verify again after the agent exits; see the decisions chain's reasons for the
+missing exchange.
+
+### source_gap
+
+The host sensor was not observing for the whole run (a gap in its records, or its last heartbeat is
+older than the run's end).
+
+Fix: keep the sensor running for the whole run and run fabric verify again once its next heartbeat
+arrives.
+
+### anchor_missing
+
+A command the agent ran has no matching process event from the host sensor.
+
+Fix: start the agent with fabric run so it joins the sensor's cgroup (on Kubernetes the injector
+does it), and keep the sensor running.
+
+### unexplained_host_event
+
+The host sensor saw a process or connection in the agent's scope that no recorded step explains.
+
+Fix: start other programs outside the agent's cgroup, or turn on the exec hook (fabric init --exec)
+so the agent's commands explain their processes.
+
+### channel_disabled
+
+No effect of a tool call was observed because the capture point that would see it is off.
+
+Fix: fabric init --exec records commands; fabric init --http-host HOST records HTTP calls.
+
+### no_effect_channel
+
+The tool runs inside the agent process, where no hook observes it.
+
+Fix: nothing to fix: the call and its result are in the model bodies.
+
+### none_in_window
+
+Capture points were on, but no effect happened while the tool call ran.
+
+Fix: nothing to fix when the tool changed nothing outside the process.
+
+### remote_sandbox
+
+The run called a remote sandbox host, and what ran there is not observed.
+
+Fix: for E2B set FABRIC_WIRE_REMOTE_SANDBOX=e2b; for another provider run the host sensor inside the
+sandbox.
+
+### control_unmatched
+
+A control or hook record names a call, step or action that is not in the run.
+
+Fix: record the decision in the same process as the call it gates, with the call's id.
+
+### control_pending_at_end
+
+A control was asked to decide and its decision was never recorded before the run ended.
+
+Fix: record the decision (control_check records both the request and its outcome).
+
+### grant_not_recorded
+
+A declared-permission capture point is on but no permission snapshot was recorded.
+
+Fix: call fabric.records.record_grant(...) when the agent starts, or turn that capture point off.
+
+### body_not_retained
+
+An MCP or control host is listed, but its message bodies are not retained, so decisions in them
+cannot be read.
+
+Fix: retain the role of those messages in the capture policy.
+
+### invariant_conflict
+
+A control record claims Fabric enforced a decision, which Fabric never does, so it is not trusted.
+
+Fix: record decisions only through fabric.records (enforced_by_fabric is always false).
+
+### other_process
+
+A host event came from a process that is not one of the run's.
+
+Fix: nothing to fix: it is listed, not attributed.
+
+### out_of_scope
+
+A host event came from outside the agent's configured scope.
+
+Fix: nothing to fix: it is listed, not attributed.
+
+### no_run
+
+A host event fell in no run's time window.
+
+Fix: nothing to fix: it is listed, not attributed.
+
+### startup_effects
+
+Commands ran before the agent's first model call (often a client library probing the platform, such
+as uname -p); they are listed, not linked to a tool call, and do not make the run partial.
+
+Nothing to fix: they are reported as facts.

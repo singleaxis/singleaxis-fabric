@@ -33,10 +33,12 @@ def test_the_release_publishes_exactly_the_allowlist() -> None:
     assert POLICY["ghcr_packages"] == [
         "fabric-otelcol",
         "fabric-host-emitter",
+        "fabric-cli",
         "charts/fabric",
     ]
     assert ghcr.check(ROOT, POLICY) == [
         "charts/fabric",
+        "fabric-cli",
         "fabric-host-emitter",
         "fabric-otelcol",
     ]

@@ -5,5 +5,13 @@ emitter (`FE-`), the reader (`FR-`) and the Node (`FN-`) emit (spec 058 §13.1):
 and a docs anchor (the lowercase id on `docs/diagnostics.md`). Shipped in the Python SDK as
 the generated module `sdk/python/src/fabric/_catalogue_data.py` (`sdk/python/scripts/sync_contract_data.py`).
 
-Tests (`sdk/python/tests/test_diagnostics_catalogue.py`): every id the code emits is in the catalogue with a
-non-empty fix, the catalogue has no id the code never emits, and the docs page lists every entry.
+`reasons-v1.json` (`fabric.reason-words/v1`, schema `schema/reasons-v1.schema.json`; added in 1.1.0 by spec 058
+WP8-18) puts every reason a reader verdict can carry in plain words with its fix: every value of the
+run-reconstruction `chainReason`, controls chain and unattributed host event enums. `chains` gives a reason the
+meaning one chain gives it; `notes` words facts that are not reasons (`startup_effects`). Shipped in the CLI as
+`sdk/python/src/fabric/cli/_reasons_data.py`; `fabric verify`, `fabric show` and the coverage report print these
+words, and `docs/diagnostics.md` lists each one.
+
+Tests (`sdk/python/tests/test_diagnostics_catalogue.py`, `test_reason_words.py`): every id the code emits is in
+the catalogue with a non-empty fix, the catalogue has no id the code never emits, every reader reason has words
+and a fix, and the docs page lists every entry.

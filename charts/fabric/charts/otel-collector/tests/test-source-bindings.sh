@@ -254,6 +254,17 @@ fi
 if render --values "$(mutate 'groups[1]["kind"] = "host.other"')" >/dev/null 2>&1; then
   fail "an unknown group kind rendered"
 fi
+# sourceIdSecret (spec 058 §10.3): the id read from a Secret key at start, given once.
+reject 'sets both sourceId and sourceIdSecret' \
+  --values "$(mutate 'groups[0]["sourceIdSecret"] = {"name": "fabric-ingress-agents", "key": "source-id"}')"
+reject 'sourceIdSecret requires the name and key' \
+  --values "$(mutate 'groups[0]["sourceId"] = ""; groups[0]["sourceIdSecret"] = {"name": "Bad_Name", "key": "source-id"}')"
+render --values "$(mutate 'groups[0]["sourceId"] = ""; groups[0]["sourceIdSecret"] = {"name": "fabric-ingress-agents", "key": "source-id"}')" \
+  >"${tmp}/source-id-secret.yaml"
+grep -Fq 'source_id: "${env:FABRIC_GROUP_SOURCE_ID_AGENT}"' "${tmp}/source-id-secret.yaml" \
+  || fail "sourceIdSecret does not reach the agent group's binding"
+grep -Fq 'name: FABRIC_GROUP_SOURCE_ID_AGENT' "${tmp}/source-id-secret.yaml" \
+  || fail "sourceIdSecret is not read into the Node's environment"
 # The profile alone (sourceIds still to fill in) never renders.
 reject 'receiver.sourceBindings[0]' --set 'otel-collector.content.enabled=false'
 

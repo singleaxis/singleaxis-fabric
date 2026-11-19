@@ -25,7 +25,11 @@
       }
     }
   },
+  "bin": {
+    "fabric": "bin/fabric.mjs"
+  },
   "files": [
+    "bin",
     "dist",
     "README.md",
     "LICENSE"
@@ -52,12 +56,13 @@
     "node": ">=22.18.0"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsup",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --check .",
     "test": "vitest run",
     "test:package": "node --test test/package-artifact.node.mjs",
+    "test:cli": "node --test test/cli-launcher.node.mjs",
     "test:fresh-install": "node scripts/fresh-install.mjs",
     "package:qualified": "node scripts/package-qualified.mjs"
   },

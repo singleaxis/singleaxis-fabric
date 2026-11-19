@@ -31,6 +31,8 @@ export default [
         URL: "readonly",
         setTimeout: "readonly",
         clearTimeout: "readonly",
+        // The Node.js type namespace (NodeJS.ErrnoException) in the npm launcher.
+        NodeJS: "readonly",
       },
     },
     plugins: {

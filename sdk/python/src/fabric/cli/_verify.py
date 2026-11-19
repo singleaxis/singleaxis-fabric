@@ -30,7 +30,7 @@ from urllib.parse import urlsplit
 
 from ..reconstruct._inputs import ACCEPTED_INPUTS, ReconstructInputError
 from ..reconstruct._report import COMPLETE_VERDICTS, EXIT_RUN_STATES
-from . import _config, _project, _read, _run, _runstate, _secrets, _up
+from . import _args, _config, _project, _read, _run, _runstate, _secrets, _up
 from ._report import EXIT_FINDINGS, EXIT_OK, CliError, Finding, Report
 
 CANARY_TIMEOUT_S = 90.0
@@ -210,20 +210,19 @@ def _canary(
         findings.append(Finding("FC-074", dest.reason))
         lines.append(f"canary: recorded and delivered to the Node ({dest.reason}: not read back)")
         return label, data
-    run, error = _poll_canary(dest, label, started, options.wait, sleep)
+    wait = _args.DEFAULT_WAIT_S if options.wait is None else options.wait
+    run, error = _poll_canary(dest, label, started, wait, sleep)
     if run is None:
         findings.append(
             Finding("FC-073", error)
             if error
-            else Finding(
-                "FC-063", f"none of its records in {dest.spans_dir} after {options.wait:g} s"
-            )
+            else Finding("FC-063", f"none of its records in {dest.spans_dir} after {wait:g} s")
         )
         lines.append("canary: delivered to the Node, not found in the destination")
         return label, data
     data.update(verdict=run["verdict"], exchanges=run["counts"]["exchanges"])
     if run["verdict"] not in COMPLETE_VERDICTS:
-        reasons = "; ".join(_read.words(r) for r in _read.run_reasons(run)) or run["verdict"]
+        reasons = "; ".join(_read.explain_run(run)) or run["verdict"]
         findings.append(Finding("FC-064", reasons))
         lines.append(f"canary: read back {run['verdict']}")
         return label, data
@@ -290,7 +289,7 @@ def _judge(runs: Sequence[Mapping[str, Any]], record: _runstate.RunRecord) -> li
     for run in runs:
         state = run.get("run_state")
         if run["verdict"] not in COMPLETE_VERDICTS or state not in EXIT_RUN_STATES:
-            reasons = "; ".join(_read.words(r) for r in _read.run_reasons(run))
+            reasons = "; ".join(_read.explain_run(run))
             problems.append(
                 f"{run['run_id']}: {run['verdict']}"
                 + (f" ({state})" if state not in EXIT_RUN_STATES else "")
@@ -424,7 +423,8 @@ def _user_run(
     elif record.runtime == "python":
         findings.extend(_judge(runs, record))
     effective = _config.resolve(project.document, {}, environ, project.directory)
-    rows = _read.coverage(effective, record, runs, status, _read.http_requests(reader, runs))
+    observed = _read.observations(reader, runs)
+    rows = _read.coverage(effective, record, runs, status, observed=observed, findings=findings)
     data["coverage"] = [row.to_json() for row in rows]
     lines.append("coverage (observed):")
     lines.extend(row.line() for row in rows)
@@ -447,9 +447,12 @@ def run(
     """``fabric verify``."""
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
-    for name in ("production", "kubernetes"):
-        if getattr(options, name):
-            raise CliError([Finding("FC-011", f"--{name}")])
+    if options.production:
+        raise CliError([Finding("FC-011", "--production")])
+    if options.kubernetes:
+        from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
+
+        return _kubecmd.run_verify(options, environ)
     located = _config.discover(options.config, environ, cwd)
     project = _project.load(located, {}, environ)
     if options.project and options.project != project.name:

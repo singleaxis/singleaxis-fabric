@@ -24,6 +24,7 @@ PRIMARY_DOCS = (
     "specs/027-recorder-v1.md",
     "docs/README.md",
     "docs/quickstart.md",
+    "docs/get-started/python.md",
     "docs/architecture.md",
     "docs/deployment.md",
     "docs/privacy-and-security.md",

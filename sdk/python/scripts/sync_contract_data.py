@@ -3,11 +3,13 @@
 """Regenerate the Python modules that carry contract data inside the SDK.
 
 The wheel ships Python code only (spec 057 B8: no data file in the package), so the
-built-in endpoint table (spec 058 §8.1) and the diagnostics catalogue (§13.1) ship as
-generated modules. Their values must equal the contracts; tests check that:
+built-in endpoint table (spec 058 §8.1), the diagnostics catalogue (§13.1), the reasons
+in words (WP8-18) and the coverage report's rows (§12.1) ship as generated modules. Their
+values must equal the contracts; tests check that:
 
     python scripts/sync_contract_data.py && ruff format src/fabric/_catalogue_data.py \\
-        src/fabric/wire/_endpoint_table.py
+        src/fabric/wire/_endpoint_table.py src/fabric/cli/_reasons_data.py \\
+        src/fabric/cli/_rows_data.py
 """
 
 from __future__ import annotations
@@ -23,6 +25,10 @@ TARGETS = (
      "TABLE", "The built-in model endpoint table (spec 058 §8.1)"),
     ("contracts/diagnostics/v1/messages-v1.json", SRC / "_catalogue_data.py",
      "CATALOGUE", "The diagnostics catalogue (spec 058 §13.1)"),
+    ("contracts/diagnostics/v1/reasons-v1.json", SRC / "cli" / "_reasons_data.py",
+     "REASONS", "The reader's reasons in words (spec 058 WP8-18)"),
+    ("contracts/coverage/v1/registry/integration-rows-v1.json", SRC / "cli" / "_rows_data.py",
+     "ROWS", "The coverage report's rows (spec 058 §12.1)"),
 )  # fmt: skip
 HEADER = '''# Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0

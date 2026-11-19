@@ -30,7 +30,7 @@ never approve, block, delay or change what the agent does. Reference pages:
   content. With ingress groups the Node stores content in S3 only. To try
   the recipe without a bucket, use the
   [local S3 store for testing](#a-local-s3-store-for-testing).
-- Python 3.10 or later with `pip install "singleaxis-fabric[s3]"` where you
+- Python 3.11 or later with `pip install "singleaxis-fabric[s3]"` where you
   read runs ([step 6](#6-read-a-run)). Agents never need the `s3` extra.
 
 Pick names first. They appear in several places and must match:
@@ -252,10 +252,12 @@ Preflight refuses a plain-HTTP content endpoint, so the local trial's
 runs the same store over HTTPS, with a certificate signed by the CA from
 [step 2](#2-keys-tokens-and-certificates). The Node trusts that CA for S3
 (`AWS_CA_BUNDLE`) and reads its keys from a credentials file mounted as a
-Compose secret (`AWS_SHARED_CREDENTIALS_FILE`); preflight checks the
-endpoint, bucket, region and SSE as it would for a real store. In the env file,
-use `FABRIC_CONTENT_S3_BUCKET=fabric-content` and
-`FABRIC_CONTENT_S3_REGION=us-east-1` in the env file, then:
+Compose secret (`AWS_SHARED_CREDENTIALS_FILE`). Preflight checks this
+store's settings as it checks a real store's (the endpoint is an `https` URL
+with no path, the bucket name's syntax, a region is set, the SSE value); it
+does not contact the store. In the env file, use
+`FABRIC_CONTENT_S3_BUCKET=fabric-content` and
+`FABRIC_CONTENT_S3_REGION=us-east-1`, then:
 
 ```bash
 cd "$M" && umask 077 && mkdir -p s3-tls
