@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""``docs/production-setup.md`` names only what the shipped deployment defines.
+"""``docs/reference/manual-setup/production-setup.md`` names only what the shipped deployment defines.
 
 A user follows that page by copy and paste, so a wrong name fails at their
 first command. These checks derive every name from the shipped files instead
@@ -43,7 +43,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-DOC = ROOT / "docs" / "production-setup.md"
+DOC = ROOT / "docs" / "reference" / "manual-setup" / "production-setup.md"
 COMPOSE_DIR = ROOT / "deploy" / "compose"
 MAKEFILE = COMPOSE_DIR / "Makefile"
 PREFLIGHT = COMPOSE_DIR / "preflight-prod.sh"
@@ -554,8 +554,8 @@ def test_the_masking_recipe_uses_public_api_only() -> None:
         assert "._" not in block and "import _" not in block, block
         assert "install_from_env(transformations=" in block
     for doc in (
-        ROOT / "docs/privacy-and-security.md",
-        ROOT / "docs/production-setup.md",
+        ROOT / "docs/reference/privacy-and-security.md",
+        ROOT / "docs/reference/manual-setup/production-setup.md",
     ):
         assert "fabric.wire._config" not in doc.read_text(encoding="utf-8"), doc
 

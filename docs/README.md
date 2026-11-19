@@ -12,59 +12,61 @@ not yet in a release; each page says which. A capability that is not described h
 deleted rather than archived (unlike superseded specs); their history lives
 in git.
 
-## Use Fabric
+## Get started
 
-| Page | What it covers |
+One path each, the commands and nothing else:
+
+| Page | What you get |
 |---|---|
-| [Get started: Python](get-started/python.md) | Your own Python agent recorded and verified on this machine: one install, three commands |
-| [Quickstart](quickstart.md) | Offline example and zero-code capture through a local Node |
-| [Architecture](architecture.md) | Components, data flow, what ships |
-| [Deployment](deployment.md) | Compose and Helm, local and production profiles, required keys and policy, upgrade notes |
-| [Production setup](production-setup.md) | One copy-pasteable recipe: agent, production Node with ingress groups and content, eBPF emitter in production mode, reading a run; Docker Desktop differences |
-| [Privacy and security](privacy-and-security.md) | Protection modes, pseudonyms, encryption at rest, source authentication, threat model |
-| [Operations](operations/README.md) | Spool, queues, health, metrics, troubleshooting, upgrades; [recovery runbook](operations/dr.md) |
-| [Reconstruct and verdicts](reconstruct.md) | The offline verifier, gaps and verdicts |
-| [The P1 run record](run-record.md) | Shared allocator, records input, segments, seals, manifests, step projection (v0.10.0) |
-| [Agent action reconstruction](action-reconstruction.md) | The subprocess hook, a host sensor, effects linked to tool calls and host events, `python -m fabric.reconstruct actions`, the production profile, what is not covered yet (v0.10.0, v0.11.0) |
-| [Explicit APIs](explicit-apis.md) | `decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters (Python and TypeScript) |
-| [Qualified-run mode](qualified-run-mode.md) | Opt-in receipt- and witness-backed verification |
-| [Host sensors](host-sensors.md) | auditd receiver and eBPF host emitter, local and production mode |
-| [Limitations and roadmap](limitations-and-roadmap.md) | What is not captured, known defects, the roadmap |
+| [Python](get-started/python.md) | Your own Python agent recorded and verified on this machine: one install, three commands |
+| [Node.js](get-started/node.md) | Your Node.js agent's reported model and tool calls, delivered and shown; no Python needed |
+| [Other languages](get-started/other-languages.md) | Go, Rust, Java and others: what the host sensor records |
+| [Kubernetes](get-started/kubernetes.md) | The agents of one namespace recorded and corroborated per node, one install |
+
+## Choose your deployment shape
+
+What Fabric can record depends on where your agent runs; `fabric plan`
+answers it for your own agent. [Choose your shape](shapes/choose.md) has the
+decision table and five common agents; then
+[laptop](shapes/laptop.md), [Linux host](shapes/linux-host.md),
+[containers](shapes/containers.md), [Kubernetes](shapes/kubernetes.md),
+[serverless and sandboxes](shapes/serverless-and-sandboxes.md),
+[macOS and Windows](shapes/macos-and-windows.md).
+
+## Go to production
+
+[The production path](production/index.md), step by step:
+[Linux host](production/linux-host.md), [Kubernetes](production/kubernetes.md),
+[destinations](production/destinations.md),
+[secrets and rotation](production/secrets-and-rotation.md),
+[sizing](production/sizing.md), [upgrade](production/upgrade.md);
+[operations](operations/README.md) and the [recovery runbook](operations/dr.md).
 
 ## Reference
 
-- [Glossary](glossary.md): every term, rule label and decision code the
-  specs use.
-- [GenAI semantic conventions](genai-semantic-conventions.md): span and
-  attribute names emitted by the decision API.
-- [Diagnostics](diagnostics.md): every message id (`FC-`, `FW-`), what it
-  means and its fix.
-- [API stability](api-stability.md): compatibility commitments.
-- [Verify a release](verify-release.md): signatures, provenance and release
-  qualification.
-- SDKs: [Python](../sdk/python/README.md), [TypeScript](../sdk/typescript/README.md);
-  [Fabric Node](../components/otel-collector-fabric/README.md);
-  [Compose](../deploy/compose/README.md).
-- Specifications: [specs/](../specs/README.md).
-  - Current work: [056](../specs/056-agent-action-reconstruction.md),
-    agent action reconstruction — linking model decisions, the tool calls
-    they asked for, the commands and effects those caused, and host-sensor
-    corroboration into one record of what an agent did in a run.
-  - The capture contract is
-    [049](../specs/049-four-layer-capture-coverage.md), with
-    [047](../specs/047-llm-wire-capture-and-reconstruction.md) (wire capture
-    and reconstruction) and
-    [048](../specs/048-node-content-delivery-and-agent-spool.md) (Node
-    content delivery and the agent spool).
-  - Phase build specs for 049: [050](../specs/050-run-structure-and-records-p1.md)
-    (P1), [051](../specs/051-context-and-lifecycle-p2.md) (P2),
-    [052](../specs/052-decisions-and-effects-p3.md) (P3),
-    [053](../specs/053-execution-channels-p4.md) (P4),
-    [054](../specs/054-specialised-runtimes-p5.md) (P5) and
-    [055](../specs/055-typescript-wire-capture.md) (TS-1, TypeScript wire
-    capture). All are drafts. Waves 0–2 of 050 (P1) and the parts of 053
-    that 056 milestone M1 needs are released in v0.10.0, and the parts 056
-    milestone M2 needs in v0.11.0; the rest is not built ([map](#map)).
+| Page | What it covers |
+|---|---|
+| [CLI](reference/cli.md) | Every `fabric` command and option (generated) |
+| [fabric.yaml](reference/fabric-yaml.md) | Every setting, its default and the variable that overrides it (generated) |
+| [Environment variables](reference/env-vars.md) | Every `FABRIC_*` variable the SDKs and the CLI read (generated) |
+| [Diagnostics](reference/diagnostics.md) | Every message id (`FC-`, `FW-`), what it means and its fix |
+| [Reconstruct and verdicts](reference/reconstruct.md) | The offline verifier, gaps and verdicts |
+| [Agent action reconstruction](reference/action-reconstruction.md) | Effects linked to tool calls and host events; `python -m fabric.reconstruct actions` |
+| [The run record](reference/run-record.md) | Shared allocator, records input, segments, seals, manifests, step projection |
+| [Explicit APIs](reference/explicit-apis.md) | `decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters (Python and TypeScript) |
+| [Host sensors](reference/host-sensors.md) | auditd receiver and eBPF host emitter, local and production mode |
+| [Privacy and security](reference/privacy-and-security.md) | Protection modes, pseudonyms, encryption at rest, source authentication, threat model |
+| [Glossary](reference/glossary.md) | Every term, rule label and decision code |
+| [API stability](reference/api-stability.md) | Compatibility commitments |
+| [Qualified-run mode](reference/qualified-run-mode.md) | Opt-in receipt- and witness-backed verification |
+| Manual setup | The routes the CLI automates, by hand: [quickstart](reference/manual-setup/quickstart.md), [production setup](reference/manual-setup/production-setup.md), [deployment](reference/manual-setup/deployment.md) |
+
+Also: [architecture](architecture.md), [limitations and roadmap](limitations-and-roadmap.md),
+[GenAI semantic conventions](genai-semantic-conventions.md),
+[verify a release](verify-release.md), [wire capture deployment](wire-capture-deployment.md);
+the SDKs ([Python](../sdk/python/README.md), [TypeScript](../sdk/typescript/README.md)), the
+[Fabric Node](../components/otel-collector-fabric/README.md), [Compose](../deploy/compose/README.md)
+and the [specifications](../specs/README.md).
 
 ## Map
 
@@ -80,15 +82,15 @@ it. That needs four chains of evidence:
 | Decisions | What did the model see and return? | Wire capture of model calls | Released (v0.8.0) |
 | Actions | Which tools did the model ask for, with which arguments, and what result did the agent feed back? | Parsed offline from the captured model bodies | Pairing by id released (v0.8.0); per-chain verdict released (v0.10.0, 056 WP6-04) |
 | Effects | What did the agent's process actually run? | Opt-in hooks: subprocesses, E2B remote sandboxes, non-model HTTP | Subprocess hook and attribution to tool calls released (v0.10.0, 056 WP6-03, WP6-04); container ids, the E2B and non-model HTTP hooks released (v0.11.0, 056 M2) |
-| Corroboration | What did the operating system see? | Host sensors (auditd, eBPF) | Sensors released for the local profile; the join to effects released (v0.10.0, 056 WP6-05), read with `python -m fabric.reconstruct actions --host-records` ([agent action reconstruction](action-reconstruction.md)); local-profile anchors are `tentative`. Production host ingress and `certain` anchors released (v0.11.0, 056 M2) |
+| Corroboration | What did the operating system see? | Host sensors (auditd, eBPF) | Sensors released for the local profile; the join to effects released (v0.10.0, 056 WP6-05), read with `python -m fabric.reconstruct actions --host-records` ([agent action reconstruction](reference/action-reconstruction.md)); local-profile anchors are `tentative`. Production host ingress and `certain` anchors released (v0.11.0, 056 M2) |
 
 ### Where things stand
 
 | | What it contains |
 |---|---|
 | **Released (v0.8.0, unchanged in v0.9.x)** | Python wire capture (httpx, httpx2, aiohttp); the PROTECT stage, production profile gate, encryption at rest and source authentication (049 phases P0 and P0-A); the agent spool and sender; the Fabric Node; `fabric.reconstruct` with integrity verdicts; the explicit APIs in Python and TypeScript; qualified-run mode; host sensors in the local profile; Helm chart and Compose files. |
-| **Released (v0.10.0)** | Most of 049 phase P1 ([spec 050](../specs/050-run-structure-and-records-p1.md)): one allocator for both inputs, the records input, random epochs with registration, segments, seals, resume tokens, capture manifests, the segment graph and the step projection. See [the P1 run record](run-record.md). Also spec 056 milestone M1: the contracts and rule fixtures (WP6-01), the hooks foundation and `exec.subprocess` hook (WP6-02, WP6-03), effect-to-tool-call attribution, chain verdicts and the `actions` view (WP6-04), the process-tree join of host events and the `--host-records` option (WP6-05, WP6-06), and the AR-1 harness (WP6-06). See [agent action reconstruction](action-reconstruction.md). |
-| **Released (v0.11.0)** | Spec 056 milestone M2, the production profile: the M2 contracts (WP6-11); the host-records library (WP4-07a); auditd and eBPF production modes (WP4-07b, WP4-07c); per-source ingress groups in `fabric-gate` and fabricguard host admission (WP4-08a, WP4-08b); chart, Compose and Kubernetes per-node bindings (WP4-09); start time, pid namespace and container ids on exec records (WP6-08); the non-model HTTP hook (WP6-09a) and the E2B remote-sandbox hook (WP6-09b); production-profile reconstruction (WP6-12); AR-1 production (WP6-10). See [agent action reconstruction](action-reconstruction.md#production-profile-m2) and [host sensors](host-sensors.md#production-mode). |
+| **Released (v0.10.0)** | Most of 049 phase P1 ([spec 050](../specs/050-run-structure-and-records-p1.md)): one allocator for both inputs, the records input, random epochs with registration, segments, seals, resume tokens, capture manifests, the segment graph and the step projection. See [the P1 run record](reference/run-record.md). Also spec 056 milestone M1: the contracts and rule fixtures (WP6-01), the hooks foundation and `exec.subprocess` hook (WP6-02, WP6-03), effect-to-tool-call attribution, chain verdicts and the `actions` view (WP6-04), the process-tree join of host events and the `--host-records` option (WP6-05, WP6-06), and the AR-1 harness (WP6-06). See [agent action reconstruction](reference/action-reconstruction.md). |
+| **Released (v0.11.0)** | Spec 056 milestone M2, the production profile: the M2 contracts (WP6-11); the host-records library (WP4-07a); auditd and eBPF production modes (WP4-07b, WP4-07c); per-source ingress groups in `fabric-gate` and fabricguard host admission (WP4-08a, WP4-08b); chart, Compose and Kubernetes per-node bindings (WP4-09); start time, pid namespace and container ids on exec records (WP6-08); the non-model HTTP hook (WP6-09a) and the E2B remote-sandbox hook (WP6-09b); production-profile reconstruction (WP6-12); AR-1 production (WP6-10). See [agent action reconstruction](reference/action-reconstruction.md#production-profile-m2) and [host sensors](reference/host-sensors.md#production-mode). |
 | **Acceptance** | Spec 056 milestone M1: [AR-1](../qualification/action-record/README.md) passes in CI in hermetic mode (real agent, hook, Node and verifier; recorded host-sensor events) on macOS and Linux, and in live mode with the real eBPF sensor on Linux. Milestone M2: AR-1 production passes in CI against a production-profile Node, in replay on macOS and Linux, live on Linux with the eBPF emitter in production mode, and with the auditd sensor collector. |
 | **Specified only** | 050 P1-A and the `decision()` move onto the records input; specs [051](../specs/051-context-and-lifecycle-p2.md) (P2), [052](../specs/052-decisions-and-effects-p3.md) (P3), [053](../specs/053-execution-channels-p4.md) (P4, except the part 056 moves forward), [054](../specs/054-specialised-runtimes-p5.md) (P5), [055](../specs/055-typescript-wire-capture.md) (TypeScript wire capture). |
 
@@ -121,16 +123,16 @@ not do.
 For a first reading:
 
 1. [Architecture](architecture.md): components and data flow.
-2. [Quickstart](quickstart.md): run the offline example, then break the
+2. [Quickstart](reference/manual-setup/quickstart.md): run the offline example, then break the
    record and watch the verdict change.
-3. [Reconstruct and verdicts](reconstruct.md) and
-   [privacy and security](privacy-and-security.md): what a verdict means
+3. [Reconstruct and verdicts](reference/reconstruct.md) and
+   [privacy and security](reference/privacy-and-security.md): what a verdict means
    and how the record is protected.
-4. [Glossary](glossary.md): keep it open while reading the specs.
+4. [Glossary](reference/glossary.md): keep it open while reading the specs.
 5. [Spec 049](../specs/049-four-layer-capture-coverage.md) §1–§2 and §6:
    the record model (four layers, coverage statuses, verdicts). Sections 3
    and 4 are reference tables.
-6. [The P1 run record](run-record.md) and
+6. [The P1 run record](reference/run-record.md) and
    [spec 050](../specs/050-run-structure-and-records-p1.md) §3: what P1
    adds.
 7. [Spec 056](../specs/056-agent-action-reconstruction.md): the current

@@ -2,16 +2,16 @@
 
 > **Status:** describes built code. Local mode is released in v0.8.0;
 > [production mode](#production-mode) (a production Node's host ingress,
-> [spec 053](../specs/053-execution-channels-p4.md) §6.2, built for spec 056
+> [spec 053](../../specs/053-execution-channels-p4.md) §6.2, built for spec 056
 > milestone M2) is released in v0.11.0. Implementation:
-> [`auditreceiver/`](../components/otel-collector-fabric/receiver/auditreceiver/),
-> [`components/host-emitter/`](../components/host-emitter/) and the
+> [`auditreceiver/`](../../components/otel-collector-fabric/receiver/auditreceiver/),
+> [`components/host-emitter/`](../../components/host-emitter/) and the
 > host-records library
-> [`hostrecords/`](../components/otel-collector-fabric/hostrecords/). The
+> [`hostrecords/`](../../components/otel-collector-fabric/hostrecords/). The
 > join of host events to agent effects
-> ([spec 056](../specs/056-agent-action-reconstruction.md) §4.3) is released
+> ([spec 056](../../specs/056-agent-action-reconstruction.md) §4.3) is released
 > in v0.10.0, for the local profile
-> ([`reconstruct/_host.py`](../sdk/python/src/fabric/reconstruct/_host.py))
+> ([`reconstruct/_host.py`](../../sdk/python/src/fabric/reconstruct/_host.py))
 > and read with `python -m fabric.reconstruct actions --host-records`; see
 > [agent action reconstruction](action-reconstruction.md).
 
@@ -26,7 +26,7 @@ happened near an agent's activity, not that it belongs to it.
 | Ships as | The `audit` receiver compiled into the Fabric Node image (`components/otel-collector-fabric/receiver/auditreceiver`) | A separate image, `ghcr.io/singleaxis/fabric-host-emitter` (`components/host-emitter`) |
 | Source | Linux audit subsystem: netlink multicast (live) or `audit.log` (tailed, with a durable cursor) | CO-RE eBPF tracepoints: `sched_process_exec`, and the raw syscall tracepoints `sys_enter` and `sys_exit` for connect, openat and execve |
 | Output | `event_class=audit` OTLP log records inside the Node | Local mode: `event_class=audit` OTLP/gRPC log records sent to a Node, through a local fsync'd disk spool. Production mode: spans on the sensor's own ingress group, which reach the destination's trace export ([production mode](#production-mode)) |
-| Spec | [030](../specs/030-auditd-host-connector.md), status implemented, not enterprise-qualified | [031](../specs/031-ebpf-host-emitter.md), status implemented, not enterprise-qualified |
+| Spec | [030](../../specs/030-auditd-host-connector.md), status implemented, not enterprise-qualified | [031](../../specs/031-ebpf-host-emitter.md), status implemented, not enterprise-qualified |
 | Platform | Linux, native amd64/arm64 syscall numbers (no 32-bit compat ABIs) | Linux ≥ 5.8 with BTF |
 
 Prefer the auditd receiver on hosts that already run auditd; it needs fewer
@@ -59,7 +59,7 @@ and time), not causal.
 ## auditd receiver
 
 Configure it as a receiver in a Node's collector configuration
-([`deploy/auditd/README.md`](../deploy/auditd/README.md) has full examples
+([`deploy/auditd/README.md`](../../deploy/auditd/README.md) has full examples
 and the supplied `fabric.rules`):
 
 ```yaml
@@ -87,21 +87,21 @@ receivers:
 ## eBPF host emitter
 
 Configured entirely by environment variables
-([`components/host-emitter/README.md`](../components/host-emitter/README.md)):
+([`components/host-emitter/README.md`](../../components/host-emitter/README.md)):
 `EMIT_ENDPOINT` (Node OTLP/gRPC, default `localhost:4317`, TLS by default),
 `EMIT_CGROUP_PATH` or `EMIT_ALL_HOST=true` (it refuses to start with
 neither), `EMIT_EXEC`/`EMIT_CONNECT` (on), `EMIT_FILE_ACCESS` (off; about
 six file events per exec: lossless to about 400 exec/s on the measured
 setup, against about 7,000 exec/s without it, with any loss counted in
 `fabric.sensor.upstream_lost` as `ring_buffer_full`; see the
-[sizing note](../components/host-emitter/README.md#configuration-env)),
+[sizing note](../../components/host-emitter/README.md#configuration-env)),
 `EMIT_SPOOL_DIR` and `EMIT_SPOOL_MAX_BYTES` (1 GiB; a full spool stops the
 emitter visibly), `EMIT_BEARER_TOKEN_FILE`, and TLS/mTLS file variables.
 
 It runs as root with all capabilities dropped except `BPF`, `PERFMON`,
 `SYS_RESOURCE` and `DAC_READ_SEARCH`, with `hostPID: true` and read-only
 mounts of BTF, tracefs, debugfs and cgroupfs.
-[`deploy/kubernetes/host-emitter-daemonset.yaml`](../deploy/kubernetes/host-emitter-daemonset.yaml)
+[`deploy/kubernetes/host-emitter-daemonset.yaml`](../../deploy/kubernetes/host-emitter-daemonset.yaml)
 is a template for production mode: its image is the zero digest (it cannot
 pull) and its tenant is empty. `deploy/kubernetes/host-bindings.py
 --emitter-image <repository>@sha256:<digest>` writes the filled copy
@@ -109,7 +109,7 @@ pull) and its tenant is empty. `deploy/kubernetes/host-bindings.py
 
 ## Production mode
 
-[Production setup](production-setup.md) is a complete recipe for the eBPF
+[Production setup](manual-setup/production-setup.md) is a complete recipe for the eBPF
 emitter in production mode beside an agent and a Node, including its
 `docker run` flags and the cgroup scope on either Docker cgroup driver.
 
@@ -170,7 +170,7 @@ staged batch.
   searched hierarchies when a matching pod has no cgroup. cgroup v1-only
   nodes are not supported (a hybrid node's v2 hierarchy is used).
 
-[AR-1 production](../qualification/action-record/README.md#ar-1-production-m2)
+[AR-1 production](../../qualification/action-record/README.md#ar-1-production-m2)
 exercises this path in CI.
 
 Known limits of production mode:
@@ -207,9 +207,9 @@ Known limits of production mode:
   identity that `fabric.reconstruct` reads; reconstruct ignores them in
   `--spans`. Joining host events to the agent's subprocess effects through
   pid and parent pid is specified in
-  [spec 056](../specs/056-agent-action-reconstruction.md) §4.3 and released
+  [spec 056](../../specs/056-agent-action-reconstruction.md) §4.3 and released
   in v0.10.0 for the local profile
-  ([`reconstruct/_host.py`](../sdk/python/src/fabric/reconstruct/_host.py)):
+  ([`reconstruct/_host.py`](../../sdk/python/src/fabric/reconstruct/_host.py)):
   pass the records with `--host-records`
   ([agent action reconstruction](action-reconstruction.md)). The
   auditd logfile mode carries `audit.source_id` and `audit.source_generation`;
@@ -217,7 +217,7 @@ Known limits of production mode:
 - **Not enterprise-qualified.** The outage and restart and host-truth tests
   listed in specs 030 and 031 have not been run as a qualification. CI builds
   and unit-tests both sensors, and the AR-1 live run
-  ([qualification/action-record](../qualification/action-record/README.md))
+  ([qualification/action-record](../../qualification/action-record/README.md))
   loads the eBPF emitter on a CI Linux kernel; the auditd receiver is not run
   against a live kernel in CI.
 - `fabric.event_count` on a `dedupe_collapsed` record counts all events in

@@ -12,11 +12,11 @@ verifiable record to storage you own.
 [![PyPI](https://img.shields.io/pypi/v/singleaxis-fabric.svg)](https://pypi.org/project/singleaxis-fabric/)
 
 [Get started](docs/get-started/python.md) ·
-[Quickstart](docs/quickstart.md) ·
+[Quickstart](docs/reference/manual-setup/quickstart.md) ·
 [Architecture](docs/architecture.md) ·
-[Deployment](docs/deployment.md) ·
-[Production setup](docs/production-setup.md) ·
-[Privacy and security](docs/privacy-and-security.md) ·
+[Deployment](docs/reference/manual-setup/deployment.md) ·
+[Production setup](docs/reference/manual-setup/production-setup.md) ·
+[Privacy and security](docs/reference/privacy-and-security.md) ·
 [Specs](specs/README.md) ·
 [All docs](docs/README.md)
 
@@ -73,13 +73,13 @@ is [spec 056](specs/056-agent-action-reconstruction.md).
 - **Agent action reconstruction.** An opt-in subprocess hook records what
   the agent ran; `python -m fabric.reconstruct actions` links each command
   to the tool call that caused it and to host-sensor events, with a verdict
-  per chain ([action reconstruction](docs/action-reconstruction.md)).
+  per chain ([action reconstruction](docs/reference/action-reconstruction.md)).
   Since v0.11, host sensors report to a production Node as authenticated
   sources of their own, so a command can be tied to its exec event with
   certainty in production, and opt-in hooks also record containers the
   agent starts, E2B remote-sandbox commands and non-model HTTP calls
-  ([host sensors](docs/host-sensors.md); agent, Node and emitter end to end
-  in [production setup](docs/production-setup.md)).
+  ([host sensors](docs/reference/host-sensors.md); agent, Node and emitter end to end
+  in [production setup](docs/reference/manual-setup/production-setup.md)).
 - **Fabric Node.** An OpenTelemetry Collector distribution with a
   default-deny export allowlist, source authentication, a configuration gate
   that refuses unsafe setups, and delivery to a file directory or S3 with
@@ -108,7 +108,7 @@ install line. Its records are not read by the verifier
 
 The Fabric Node installs with the Helm chart
 `oci://ghcr.io/singleaxis/charts/fabric` and a `shadow-dev` or
-`shadow-production` profile ([deployment](docs/deployment.md)), or with
+`shadow-production` profile ([deployment](docs/reference/manual-setup/deployment.md)), or with
 Docker Compose (`deploy/compose`).
 
 The images and the chart are signed with cosign, the images carry SBOM and
@@ -168,8 +168,8 @@ running process counts the second and names the host and the
 [Get started](docs/get-started/python.md) records your own Python agent with
 one install and three commands (`fabric up`, `fabric run -- python agent.py`,
 `fabric verify`), with nothing to write by hand.
-The [quickstart](docs/quickstart.md) runs an unmodified OpenAI SDK program
-through a local Fabric Node. [Deployment](docs/deployment.md) covers the
+The [quickstart](docs/reference/manual-setup/quickstart.md) runs an unmodified OpenAI SDK program
+through a local Fabric Node. [Deployment](docs/reference/manual-setup/deployment.md) covers the
 production profile.
 
 ## How it works
@@ -217,7 +217,7 @@ More: [architecture](docs/architecture.md).
   `make up-prod`), a production Node serves one agent source. Ingress
   groups (`shadow-production-host-ingress`, `make up-prod-groups`) give
   each agent and each host sensor its own source, token and listener on one
-  Node ([host sensors](docs/host-sensors.md#production-mode)).
+  Node ([host sensors](docs/reference/host-sensors.md#production-mode)).
 
 The full list, with measurements: [limitations](docs/limitations-and-roadmap.md).
 
@@ -246,7 +246,7 @@ against 18 agent frameworks and patterns (OpenAI Agents SDK, LangGraph,
 LlamaIndex, PydanticAI, smolagents, AutoGen, AG2, CrewAI, DSPy and others)
 with a fake model on a developer machine; that harness is not part of this
 repository or CI. Before relying on a verdict in your environment, run the
-checks in [deployment](docs/deployment.md).
+checks in [deployment](docs/reference/manual-setup/deployment.md).
 
 Security reports: [SECURITY.md](SECURITY.md). Support: [SUPPORT.md](SUPPORT.md).
 Apache-2.0. Contributions require DCO sign-off ([CONTRIBUTING.md](CONTRIBUTING.md)).

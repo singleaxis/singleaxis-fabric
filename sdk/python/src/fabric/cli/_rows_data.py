@@ -56,7 +56,7 @@ ROWS: dict[str, Any] = {
                     "runtime": "python",
                     "built": True,
                     "switch": "code",
-                    "code": "record the call with CallRecorder (docs/explicit-apis.md)",
+                    "code": "record the call with CallRecorder (docs/reference/explicit-apis.md)",
                 },
             ],
             "invisible": [
@@ -165,7 +165,7 @@ ROWS: dict[str, Any] = {
                     "built": True,
                     "switch": "code",
                     "code": "record the command's output with the explicit APIs "
-                    "(docs/explicit-apis.md)",
+                    "(docs/reference/explicit-apis.md)",
                 },
             ],
             "invisible": [
@@ -311,8 +311,8 @@ ROWS: dict[str, Any] = {
                     "runtime": "any",
                     "built": True,
                     "switch": "manual",
-                    "fix": "follow docs/host-sensors.md to run the auditd sensor "
-                    "(fabric up does not start it in this release)",
+                    "fix": "follow docs/reference/host-sensors.md to run the auditd "
+                    "sensor (fabric up does not start it in this release)",
                     "evidence": "auditd sensor",
                 },
             ],

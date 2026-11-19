@@ -6,7 +6,7 @@ Fabric OSS recorder (CAPTURE -> PROTECT -> DELIVER).
 fabricctl writes and validates a reviewable recorder declaration
 (`contracts/recorder/v1`). In v0.8 neither the SDK nor the Node reads it:
 the agent is configured by `FABRIC_CAPTURE_POLICY` (deployment-policy/v1, see
-[deployment](../../docs/deployment.md)) and the Node by Helm values or
+[deployment](../../docs/reference/manual-setup/deployment.md)) and the Node by Helm values or
 Compose.
 
 The default binary exposes only four command paths:

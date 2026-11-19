@@ -11,7 +11,7 @@ from typing import Any
 
 CATALOGUE: dict[str, Any] = {
     "schema": "fabric.diagnostics/v1",
-    "docs": "docs/diagnostics.md",
+    "docs": "docs/reference/diagnostics.md",
     "comment": "Spec 058 section 13.1. Every diagnostic the fabric CLI (FC-), the SDKs (FW-), the "
     "host emitter (FE-), the reader (FR-) and the Node (FN-) emit, with a stable id, a "
     "fixed text, a fix and a docs anchor. Texts and fixes carry no interpolated value: "
@@ -288,7 +288,7 @@ CATALOGUE: dict[str, Any] = {
             "name": "command_not_built",
             "severity": "error",
             "text": "this command is not part of this release yet",
-            "fix": "upgrade the CLI; until then follow docs/quickstart.md",
+            "fix": "upgrade the CLI; until then follow docs/reference/manual-setup/quickstart.md",
         },
         {
             "id": "FC-011",
@@ -296,8 +296,8 @@ CATALOGUE: dict[str, Any] = {
             "severity": "error",
             "text": "this option is not part of this release yet",
             "fix": "use the local profile's defaults; production, Kubernetes and the other "
-            "destinations follow docs/production-setup.md and docs/deployment.md "
-            "until the CLI builds them",
+            "destinations follow docs/reference/manual-setup/production-setup.md and "
+            "docs/reference/manual-setup/deployment.md until the CLI builds them",
         },
         {
             "id": "FC-012",
@@ -525,8 +525,8 @@ CATALOGUE: dict[str, Any] = {
             "name": "sensor_auditd_available",
             "severity": "info",
             "text": "eBPF cannot load here but auditd is present on this host",
-            "fix": "follow docs/host-sensors.md to run the auditd sensor collector; the CLI "
-            "does not start it in this release",
+            "fix": "follow docs/reference/host-sensors.md to run the auditd sensor "
+            "collector; the CLI does not start it in this release",
         },
         {
             "id": "FC-047",
@@ -952,11 +952,11 @@ CATALOGUE: dict[str, Any] = {
             "severity": "warning",
             "text": "a certificate in a Secret expires within 14 days; Secrets are never "
             "overwritten, so it is not renewed by itself",
-            "fix": "delete the Node's or the injector's Secret the message names and run "
-            "the command again (helm upgrade runs the secrets Job): a new "
-            "certificate is issued from the same CA; then restart the Node if it was "
-            "its own. For an agent Secret or the CA Secret follow 'Certificate "
-            "renewal' in docs/deployment.md",
+            "fix": "delete the Node's or injector's Secret the message names and rerun the "
+            "command (helm upgrade runs the secrets Job): a new certificate comes "
+            "from the same CA; restart the Node if it was its own. For an agent or "
+            "CA Secret see 'Certificate renewal' in "
+            "docs/reference/manual-setup/deployment.md",
         },
         {
             "id": "FC-112",
@@ -965,11 +965,11 @@ CATALOGUE: dict[str, Any] = {
             "text": "a certificate in a Secret has expired, so the connections it secures "
             "fail: agents cannot deliver to the Node, or the injector's webhook is "
             "skipped and pods start without capture",
-            "fix": "delete the Node's or the injector's Secret the message names and run "
-            "the command again (helm upgrade runs the secrets Job): a new "
-            "certificate is issued from the same CA; then restart the Node if it was "
-            "its own. For an agent Secret or the CA Secret follow 'Certificate "
-            "renewal' in docs/deployment.md",
+            "fix": "delete the Node's or injector's Secret the message names and rerun the "
+            "command (helm upgrade runs the secrets Job): a new certificate comes "
+            "from the same CA; restart the Node if it was its own. For an agent or "
+            "CA Secret see 'Certificate renewal' in "
+            "docs/reference/manual-setup/deployment.md",
         },
         {
             "id": "FC-113",

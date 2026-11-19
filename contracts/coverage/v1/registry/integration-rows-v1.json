@@ -13,7 +13,7 @@
         {"id": "wire.py.httpx", "runtime": "python", "libraries": ["httpx", "httpx2"], "built": true, "switch": "always", "evidence": "httpx"},
         {"id": "wire.py.aiohttp", "runtime": "python", "libraries": ["aiohttp"], "built": true, "switch": "always", "evidence": "aiohttp"},
         {"id": "wire.ts.undici", "runtime": "node", "built": false, "switch": "always"},
-        {"id": "explicit.call_recorder", "runtime": "python", "built": true, "switch": "code", "code": "record the call with CallRecorder (docs/explicit-apis.md)"}
+        {"id": "explicit.call_recorder", "runtime": "python", "built": true, "switch": "code", "code": "record the call with CallRecorder (docs/reference/explicit-apis.md)"}
       ],
       "invisible": [
         {"runtime": "node", "reason": "unsupported_runtime", "text": "zero-code capture is Python-only in this release; the TypeScript SDK's explicit API records are reported, never verified", "alternative": "the host sensor records the process's connections to the model host"},
@@ -44,7 +44,7 @@
       "capture_points": [
         {"id": "exec.subprocess", "runtime": "python", "built": true, "switch": "capture.exec", "fix": "fabric init --exec", "evidence": "exec hook (subprocess and asyncio)"},
         {"id": "exec.audit", "runtime": "python", "built": false, "switch": "capture.exec"},
-        {"id": "explicit.subprocess_artifact", "runtime": "python", "built": true, "switch": "code", "code": "record the command's output with the explicit APIs (docs/explicit-apis.md)"}
+        {"id": "explicit.subprocess_artifact", "runtime": "python", "built": true, "switch": "code", "code": "record the command's output with the explicit APIs (docs/reference/explicit-apis.md)"}
       ],
       "invisible": [
         {"runtime": "*", "reason": "unsupported_runtime", "text": "the exec hook runs in Python agents only", "alternative": "the host sensor records every process the agent starts (host evidence row)"}
@@ -104,7 +104,7 @@
       "fields": ["C41"],
       "capture_points": [
         {"id": "host.ebpf", "runtime": "any", "built": true, "switch": "sensor", "fix": "fabric init --sensor auto, then fabric up", "evidence": "eBPF sensor"},
-        {"id": "host.auditd", "runtime": "any", "built": true, "switch": "manual", "fix": "follow docs/host-sensors.md to run the auditd sensor (fabric up does not start it in this release)", "evidence": "auditd sensor"}
+        {"id": "host.auditd", "runtime": "any", "built": true, "switch": "manual", "fix": "follow docs/reference/host-sensors.md to run the auditd sensor (fabric up does not start it in this release)", "evidence": "auditd sensor"}
       ],
       "invisible": [
         {"runtime": "*", "reason": "unsupported_runtime", "text": "the host sensor cannot load here"}

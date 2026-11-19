@@ -1,7 +1,7 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Renders docs/diagnostics.md from the catalogue (spec 058 §13.1). The page is generated:
-`python -m tests._diagnostics_doc > ../../docs/diagnostics.md` from sdk/python."""
+"""Renders docs/reference/diagnostics.md from the catalogue (spec 058 §13.1). The page is generated:
+`python -m tests._diagnostics_doc > ../../docs/reference/diagnostics.md` from sdk/python."""
 
 from __future__ import annotations
 

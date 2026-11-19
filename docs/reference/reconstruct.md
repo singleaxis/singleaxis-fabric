@@ -1,7 +1,7 @@
 # Reconstruct and verdicts
 
 > **Status:** describes built code, released in v0.8.0. Implementation:
-> [`fabric/reconstruct/`](../sdk/python/src/fabric/reconstruct/). The
+> [`fabric/reconstruct/`](../../sdk/python/src/fabric/reconstruct/). The
 > options added in v0.10.0 (`--projection` and the run-state options) are
 > in [the P1 run record](run-record.md#using-it), and the `actions` view in
 > [agent action reconstruction](action-reconstruction.md); its production
@@ -18,7 +18,7 @@ judges the agent's behaviour.
 The verifier checks integrity and pairs tool calls with their results.
 Since v0.10.0, `python -m fabric.reconstruct actions` also links those
 calls to the subprocess effects they caused and to host-sensor evidence
-([spec 056](../specs/056-agent-action-reconstruction.md) milestone M1,
+([spec 056](../../specs/056-agent-action-reconstruction.md) milestone M1,
 local profile). Since v0.11.0 (milestone M2) it also reads production host
 sources from a Node's export; see
 [agent action reconstruction](action-reconstruction.md).
@@ -155,7 +155,7 @@ silent: it is an `uninstrumented_client` loss and the run is `partial`. A
 complete verdict says nothing about calls through other clients (`boto3`,
 gRPC), other processes, unlisted endpoints, tool execution or effects, and
 nothing about whether the agent behaved correctly. See
-[limitations](limitations-and-roadmap.md).
+[limitations](../limitations-and-roadmap.md).
 
 Without `fabric.wire.run()`, each process epoch is its own run, named
 `source:<source-id>:<epoch>`.

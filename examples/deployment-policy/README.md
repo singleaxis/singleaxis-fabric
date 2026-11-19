@@ -11,6 +11,6 @@ Python and TypeScript SDK tests and the contract tests load it from this
 path, so keep the path stable.
 
 Copy it as a starting point for your own policy and see
-[deployment](../../docs/deployment.md) and
-[privacy and security](../../docs/privacy-and-security.md) for the
+[deployment](../../docs/reference/manual-setup/deployment.md) and
+[privacy and security](../../docs/reference/privacy-and-security.md) for the
 `production` profile requirements.

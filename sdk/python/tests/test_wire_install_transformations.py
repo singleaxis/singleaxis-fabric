@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""The documented masking recipe (docs/production-setup.md, docs/privacy-and-security.md):
+"""The documented masking recipe (docs/reference/manual-setup/production-setup.md, docs/reference/privacy-and-security.md):
 ``fabric.wire.install_from_env(transformations=...)`` names a customer transformation for
 the masking roles with no private import, and installs the hooks the environment asks for,
 so a subprocess's argv is stored masked instead of withheld."""

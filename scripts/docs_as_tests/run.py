@@ -73,7 +73,22 @@ TARGETS: Mapping[str, Target] = {
     # plan, verify and show state what is reported. G2 sets no command budget; this
     # bound (up, run, verify, show) keeps the page from growing.
     "laptop-node": Target(commands=4, flags=0, lines=110),
+    # Other languages, the shape pages: the install, then the read-only or offline
+    # commands they show (plan, init, --print-env, --render), executed by the docs-pages
+    # job of recorder CI. No budget of section 3.2 applies; these bounds keep them short.
+    "other-languages": Target(commands=1, flags=0, lines=80),
+    "shape-choose": Target(commands=1, flags=0, lines=170),
+    "shape-laptop": Target(commands=2, flags=3, lines=80),
+    "shape-linux-host": Target(commands=1, flags=0, lines=80),
+    "shape-containers": Target(commands=2, flags=2, lines=80),
+    "shape-kubernetes": Target(commands=1, flags=4, lines=60),
+    "shape-serverless": Target(commands=1, flags=0, lines=80),
+    "shape-macos-windows": Target(commands=1, flags=0, lines=60),
 }
+#: Where each path runs: the job that executes it, for the docs structure test.
+SMOKE_PATHS = ("other-languages", "shape-choose", "shape-laptop", "shape-linux-host",
+               "shape-containers", "shape-kubernetes", "shape-serverless",
+               "shape-macos-windows")  # fmt: skip
 #: Pages whose every command block is tested, and the internal ids they may not name.
 TESTED_DIRS = ("get-started", "shapes", "production")
 INTERNAL_IDS = re.compile(r"\bWP\d|\bP\d-[A-Z]\b|\bM\d\b|\bspec \d{3}\b", re.IGNORECASE)

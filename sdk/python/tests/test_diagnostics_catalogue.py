@@ -83,7 +83,7 @@ def test_catalogue_texts_carry_no_interpolated_values() -> None:
 def test_docs_page_is_generated_from_the_catalogue() -> None:
     page = REPO / str(_catalogue_document()["docs"])
     assert page.read_text("utf-8") == render(), (
-        "docs/diagnostics.md is stale: run `python -m tests._diagnostics_doc > "
+        "docs/reference/diagnostics.md is stale: run `python -m tests._diagnostics_doc > "
         "../../docs/diagnostics.md` from sdk/python"
     )
     for message_id in _catalogue.messages():

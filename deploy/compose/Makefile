@@ -49,7 +49,7 @@ endif
 # Your own Compose override files (space-separated paths relative to this
 # directory, or absolute), appended last to the production and ingress-group
 # file lists: a site change such as private-CA trust for the destination
-# (docs/production-setup.md) never edits a shipped file.
+# (docs/reference/manual-setup/production-setup.md) never edits a shipped file.
 FABRIC_COMPOSE_EXTRA ?= $(call env_value,FABRIC_COMPOSE_EXTRA)
 PROD_FILES += $(foreach file,$(FABRIC_COMPOSE_EXTRA),-f $(file))
 GROUP_FILES += $(foreach file,$(FABRIC_COMPOSE_EXTRA),-f $(file))

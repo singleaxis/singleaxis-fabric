@@ -59,7 +59,7 @@ On AWS S3 leave out `endpoint`, `usePathStyle` and `caSecret`. The capture
 policy is required: in production an agent keeps model bodies (which
 `verify` checks decisions against) only under one. This one keeps the model
 exchanges and only the metadata of commands and other traffic; roles left
-out are not kept ([production setup](../production-setup.md) lists them).
+out are not kept ([production setup](../reference/manual-setup/production-setup.md) lists them).
 
 ## 1. Install the CLI
 
@@ -114,7 +114,7 @@ with its fix.
 
 ## Next
 
-- Something wrong: `fabric doctor --kubernetes`, and the [diagnostics catalogue](../diagnostics.md).
+- Something wrong: `fabric doctor --kubernetes`, and the [diagnostics catalogue](../reference/diagnostics.md).
 - What Fabric can see in a cluster before you install: `fabric plan --kubernetes`.
 - A trial without a destination: `fabric up --kubernetes --agent-namespace agents --injector`.
 - Remove it with `fabric down --kubernetes`; the generated Secrets stay unless you add `--purge`.

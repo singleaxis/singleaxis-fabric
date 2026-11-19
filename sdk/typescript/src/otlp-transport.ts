@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * The span delivery rule shared with the Python SDK (docs/privacy-and-security.md,
+ * The span delivery rule shared with the Python SDK (docs/reference/privacy-and-security.md,
  * "Span delivery rule"): the OTLP traces endpoint the standard environment
  * selects must be verified TLS, or plaintext to a loopback host only, so the
  * ingress credential and the record never cross a network unencrypted.

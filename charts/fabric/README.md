@@ -34,7 +34,7 @@ repository. With the pulled chart, use `./fabric` and
 ## Presets, generated Secrets and opt-in injection
 
 Spec 058 section 10; details in
-[docs/deployment.md](../../docs/deployment.md#kubernetes-without-hand-work).
+[docs/reference/manual-setup/deployment.md](../../docs/reference/manual-setup/deployment.md#kubernetes-without-hand-work).
 
 - `preset=local|production|production-host-sensor` selects a profile as a
   chart value (the profile files below keep working with `-f`).
@@ -96,7 +96,7 @@ Fails closed at render time unless the recorder has:
   `otel-collector.content.s3.caSecret.name`: an operator-created Secret
   holding the PEM bundle (key `ca.crt`, or `caSecret.key`), mounted
   read-only and named by `AWS_CA_BUNDLE` for content-store requests only.
-  See [docs/deployment.md](../../docs/deployment.md#helm-shadow-production).
+  See [docs/reference/manual-setup/deployment.md](../../docs/reference/manual-setup/deployment.md#helm-shadow-production).
 - the spec 049 production profile (`otel-collector.fabric.profile:
   production`, pinned). Every batch on the workload ingress, spans and
   content alike, is bound to `workloadAuthentication.tenantId` and
@@ -219,7 +219,7 @@ shared workload credential, default StorageClass, or invented review is provided
 
 ### Ingress groups and host sensors (`shadow-production-host-ingress`)
 
-[`profiles/shadow-production-host-ingress.yaml`](./profiles/shadow-production-host-ingress.yaml)
+[`profiles/shadow-production-host-ingress.yaml`](profiles/shadow-production-host-ingress.yaml)
 layers on `shadow-production` and replaces the single workload credential
 with static dedicated ingress groups, `otel-collector.receiver.sourceBindings[]`
 (spec 053 §6.1). Each group binds exactly one `(tenantId, sourceId, kind)` to

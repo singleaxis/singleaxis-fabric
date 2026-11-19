@@ -1,8 +1,8 @@
 # Quickstart
 
 > **Status:** describes built code, released in v0.8.0. It runs
-> [`examples/wire-capture/`](../examples/wire-capture/) and the local Node
-> in [`deploy/compose/`](../deploy/compose/).
+> [`examples/wire-capture/`](../../../examples/wire-capture/) and the local Node
+> in [`deploy/compose/`](../../../deploy/compose/).
 
 Two short exercises, both offline with a fake model (no API key, nothing
 leaves your machine):
@@ -75,7 +75,7 @@ Then try:
   (`tail_unverified`).
 
 The exit code is `0` only when everything is complete. See
-[reconstruct and verdicts](reconstruct.md).
+[reconstruct and verdicts](../reconstruct.md).
 
 ## 4. Capture an unmodified program (zero code)
 
@@ -181,7 +181,7 @@ store (run `python app.py` again) delivers what is left, and
 `python -m fabric.wire status` says how many records an exit left there. The
 verifier never reads that directory. A worker that never runs again
 (serverless, batch, autoscaled) needs one of the options in
-[delivery rate and short-lived workers](wire-capture-deployment.md#delivery-rate-and-short-lived-workers).
+[delivery rate and short-lived workers](../../wire-capture-deployment.md#delivery-rate-and-short-lived-workers).
 
 Without `fabric.wire.run(...)` each process is one run, named after its
 source and epoch. A service that handles several sessions or users at once
@@ -197,12 +197,12 @@ model calls through `httpx`, `httpx2` or `aiohttp` is captured the same way,
 including the official OpenAI and Anthropic SDKs, LiteLLM and DSPy, and
 frameworks built on them. A model call through `requests` or `urllib3` is
 not captured; it is recorded as an `uninstrumented_client` loss, so its run
-is `partial`. See [limitations](limitations-and-roadmap.md).
+is `partial`. See [limitations](../../limitations-and-roadmap.md).
 
 ## 5. Record app-level activity (optional)
 
 Wire capture sees only model HTTP traffic. To record decisions, tool calls
-and other activity, report them with the [explicit APIs](explicit-apis.md).
+and other activity, report them with the [explicit APIs](../explicit-apis.md).
 Configure a tracer provider before opening a decision:
 
 ```python
@@ -219,12 +219,12 @@ with fabric.decision(session_id="session-1", request_id="request-1") as decision
 ```
 
 Without `FABRIC_WIRE_ID_KEY`, session and user ids are omitted from
-telemetry (one warning); see [privacy and security](privacy-and-security.md#pseudonyms-keyed-pseudonym-v2).
+telemetry (one warning); see [privacy and security](../privacy-and-security.md#pseudonyms-keyed-pseudonym-v2).
 
 ## Next
 
 - [Deployment](deployment.md): the production profile, Compose and Helm.
 - [Production setup](production-setup.md): agent, production Node and eBPF
   emitter end to end, for action reconstruction.
-- [Architecture](architecture.md) and [privacy and security](privacy-and-security.md).
-- [Limitations and roadmap](limitations-and-roadmap.md).
+- [Architecture](../../architecture.md) and [privacy and security](../privacy-and-security.md).
+- [Limitations and roadmap](../../limitations-and-roadmap.md).

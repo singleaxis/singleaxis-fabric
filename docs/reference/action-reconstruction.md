@@ -2,13 +2,13 @@
 
 > **Status:** released: milestone M1 (local profile) in v0.10.0, milestone
 > M2 (production profile, [below](#production-profile-m2)) in v0.11.0
-> ([spec 056](../specs/056-agent-action-reconstruction.md)). Implementation:
-> [`fabric/hooks/`](../sdk/python/src/fabric/hooks/) (the `exec.subprocess`
-> hook), [`reconstruct/_attribute.py`](../sdk/python/src/fabric/reconstruct/_attribute.py)
+> ([spec 056](../../specs/056-agent-action-reconstruction.md)). Implementation:
+> [`fabric/hooks/`](../../sdk/python/src/fabric/hooks/) (the `exec.subprocess`
+> hook), [`reconstruct/_attribute.py`](../../sdk/python/src/fabric/reconstruct/_attribute.py)
 > (attribution, chain verdicts, the `actions` view) and
-> [`reconstruct/_host.py`](../sdk/python/src/fabric/reconstruct/_host.py)
+> [`reconstruct/_host.py`](../../sdk/python/src/fabric/reconstruct/_host.py)
 > (host-sensor records and the process-tree join). The acceptance test,
-> [AR-1](../qualification/action-record/README.md), passes in CI in hermetic
+> [AR-1](../../qualification/action-record/README.md), passes in CI in hermetic
 > mode (macOS and Linux) and in live mode on Linux with the eBPF sensor.
 > Python agents only; on the local profile every host anchor is `tentative`.
 > AR-1 production passes in CI against a production-profile Node: replay on
@@ -93,7 +93,7 @@ The hook needs wire capture installed in the same process. With the
 `fabric` CLI, `fabric init --exec` turns it on and `fabric run` passes the
 generated id key; nothing below is needed.
 
-By hand, start from the [quickstart's](quickstart.md#4-capture-an-unmodified-program-zero-code)
+By hand, start from the [quickstart's](manual-setup/quickstart.md#4-capture-an-unmodified-program-zero-code)
 zero-code environment (its first five variables below) and add three: the
 id key, the hook switch and a host label. The id key is 32 random bytes,
 written once to a file only you can read:
@@ -621,12 +621,12 @@ What M2 adds to a run:
   are listed in `remote_sandbox_calls` and bound `effects` with
   `remote_sandbox`.
 
-[AR-1 production](../qualification/action-record/README.md#ar-1-production-m2)
+[AR-1 production](../../qualification/action-record/README.md#ar-1-production-m2)
 is the acceptance test: `run_ar1.py --profile production --mode replay` runs
 on macOS and Linux (the host side staged through the host-records library),
 `--mode live` on Linux with Docker on the systemd cgroup driver (the
 harness's choice; the emitter also works with the `cgroupfs` driver, see
-[production setup](production-setup.md)), the eBPF emitter in production
+[production setup](manual-setup/production-setup.md)), the eBPF emitter in production
 mode and the agent in a container.
 
 ## What is not covered yet
@@ -687,7 +687,7 @@ mode and the agent in a container.
   subprocess adapter (`BoundedTerminalAdapter`) opens a `terminal` scope,
   so the hook defers to it and the child is recorded once.
 
-See also: [spec 056](../specs/056-agent-action-reconstruction.md),
+See also: [spec 056](../../specs/056-agent-action-reconstruction.md),
 [host sensors](host-sensors.md),
 [reconstruct and verdicts](reconstruct.md),
-[AR-1](../qualification/action-record/README.md).
+[AR-1](../../qualification/action-record/README.md).

@@ -144,6 +144,6 @@ def test_explain_run_words_gaps_chains_and_startup_effects() -> None:
 
 
 def test_docs_page_lists_every_reason() -> None:
-    page = (REPO / "docs" / "diagnostics.md").read_text("utf-8")
+    page = (REPO / "docs" / "reference" / "diagnostics.md").read_text("utf-8")
     for reason in _coverage.known_reasons():
         assert f"\n### {reason}\n" in page

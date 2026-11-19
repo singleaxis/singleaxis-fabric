@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """The test-only TLS S3 store overlay (docker-compose.content-s3-local-tls.yml).
 
-docs/production-setup.md uses it to try the production Node without a cloud
+docs/reference/manual-setup/production-setup.md uses it to try the production Node without a cloud
 bucket. These checks pin what makes it safe to ship next to the production
 files:
 

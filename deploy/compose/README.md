@@ -35,7 +35,7 @@ routes content into a telemetry pipeline or to the OTLP destination.
 | local S3-compatible store (SeaweedFS), SSE-S3, path-style | `make up-s3-local` (local trial only, `docker-compose.s3-local.yml`) |
 | S3 / S3-compatible store, server-side encrypted | production: `FABRIC_CONTENT_BACKEND=s3` in `.env` (`docker-compose.content.yml` + `docker-compose.content-s3.yml`, merging `collector-config/collector-content.yaml` + `collector-content-s3.yaml`) |
 | `fabric-content` volume in production | `FABRIC_CONTENT_BACKEND=file` plus `FABRIC_CONTENT_REQUIRE_SSE=false` (no server-side encryption; preflight refuses it otherwise, as the Helm shadow-production profile does) |
-| local S3-compatible store over TLS, for testing the production Node | test only: `FABRIC_COMPOSE_EXTRA=docker-compose.content-s3-local-tls.yml` with `FABRIC_CONTENT_BACKEND=s3`; recipe in [production setup](../../docs/production-setup.md#a-local-s3-store-for-testing) |
+| local S3-compatible store over TLS, for testing the production Node | test only: `FABRIC_COMPOSE_EXTRA=docker-compose.content-s3-local-tls.yml` with `FABRIC_CONTENT_BACKEND=s3`; recipe in [production setup](../../docs/reference/manual-setup/production-setup.md#a-local-s3-store-for-testing) |
 
 The production content path is opt-in: without `FABRIC_CONTENT_BACKEND` the
 production overlay is telemetry only (no port 4319). It still needs
@@ -57,7 +57,7 @@ End to end, from a fresh stack to a verdict:
 ```bash
 cd deploy/compose
 make up-s3-local                       # prints the commands below with your ports
-# ... run the agent with capture on (docs/deployment.md) ...
+# ... run the agent with capture on (docs/reference/manual-setup/deployment.md) ...
 make export-spans OUT=/tmp/fabric-spans   # the sink's span requests, traces-*.otlp
 pip install "singleaxis-fabric[s3]"   # reader only: boto3; agents never need it
 AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret \
@@ -166,7 +166,7 @@ The env file need not live in the checkout: `FABRIC_ENV_FILE=/path/node.env`
 (exported, or on the `make` command line) makes the Makefile, Compose
 (`--env-file`), preflight and verify read that file instead of `.env`.
 `COMPOSE_PROJECT_NAME` and the `FABRIC_*_PORT` settings in it let two stacks
-share a host ([production setup](../../docs/production-setup.md#two-stacks-on-one-host)).
+share a host ([production setup](../../docs/reference/manual-setup/production-setup.md#two-stacks-on-one-host)).
 
 > **File ownership matters.** The image runs as distroless `nonroot`
 > (uid/gid 65532) and Compose bind-mounts the token secret and the TLS
@@ -252,7 +252,7 @@ no user info, query or fragment (the value is never printed).
 an authenticated upload reaches the store; after each deployment change run
 the content canary in
 [`docs/operations/README.md`](../../docs/operations/README.md#verify-a-deployment). See
-[`docs/deployment.md`](../../docs/deployment.md#minimal-iam-s3)
+[`docs/reference/manual-setup/deployment.md`](../../docs/reference/manual-setup/deployment.md#minimal-iam-s3)
 for the minimal Node-writer and reader IAM.
 
 > **Token file format matters.** Write one token with `printf %s` and no
@@ -313,7 +313,7 @@ verified release identity. Static Compose checks are not Docker execution.
   export. `fabric-gate` refuses an OTLP/HTTP exporter without it. Configure
   the destination's final `https://` URL; a redirecting URL stalls delivery
   (watch `otelcol_exporter_send_failed_*`). See
-  [privacy and security](../../docs/privacy-and-security.md#delivery-and-the-node).
+  [privacy and security](../../docs/reference/privacy-and-security.md#delivery-and-the-node).
 - The collector runs as nonroot with a read-only root filesystem, all
   capabilities dropped, and `no-new-privileges`.
 - This deployment configures a durable queue and retry to a client-selected

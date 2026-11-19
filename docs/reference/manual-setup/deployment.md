@@ -1,11 +1,11 @@
 # Deployment
 
 > **Status:** describes built code, released in v0.8.0. Implementation:
-> [`deploy/compose/`](../deploy/compose/),
-> [`charts/fabric/`](../charts/fabric/),
-> [`fabric-gate`](../components/otel-collector-fabric/gate/) and the agent
+> [`deploy/compose/`](../../../deploy/compose/),
+> [`charts/fabric/`](../../../charts/fabric/),
+> [`fabric-gate`](../../../components/otel-collector-fabric/gate/) and the agent
 > settings in
-> [`fabric/wire/_config.py`](../sdk/python/src/fabric/wire/_config.py).
+> [`fabric/wire/_config.py`](../../../sdk/python/src/fabric/wire/_config.py).
 
 A Fabric deployment has three parts you run and one you choose:
 
@@ -66,7 +66,7 @@ mode spools by default at `<store>/.fabric-wire-spool/<tenant>`: a captured
 call survives the process (a crash, SIGKILL or a terminated worker) and the
 next process capturing to the same store delivers it. A worker that never
 comes back (serverless, batch, autoscaled) needs one of the options in
-[delivery rate and short-lived workers](wire-capture-deployment.md#delivery-rate-and-short-lived-workers).
+[delivery rate and short-lived workers](../../wire-capture-deployment.md#delivery-rate-and-short-lived-workers).
 `FABRIC_WIRE_SPOOL_DIR=off` restores direct export.
 
 ```bash
@@ -107,7 +107,7 @@ The application is never blocked.
 |---|---|
 | `FABRIC_WIRE_AUTOLOAD=1` and `PYTHONPATH` | the autoload directory (`python -m fabric.wire --print-autoload-path`), prepended; or call `fabric.wire.install()` |
 | `FABRIC_WIRE_CONTENT_ENDPOINT` | `https://<node>:4319/v1/logs`. Setting it selects node mode. Verified HTTPS, or plain HTTP to a loopback host only. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) | `https://<node>:4318` (`/v1/traces` is appended to the general variable). Verified HTTPS, or plain HTTP to a loopback host only, in both SDKs ([span delivery rule](privacy-and-security.md#span-delivery-rule)). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) | `https://<node>:4318` (`/v1/traces` is appended to the general variable). Verified HTTPS, or plain HTTP to a loopback host only, in both SDKs ([span delivery rule](../privacy-and-security.md#span-delivery-rule)). |
 | `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Bearer%20<ingress token>` (covers spans and content) |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` | CA bundle of the Node's server certificate |
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` | agent client certificate (Helm `shadow-production` requires mTLS **and** the token) |
@@ -119,7 +119,7 @@ The application is never blocked.
 | `FABRIC_CAPTURE_POLICY` | path to a deployment-policy/v1 JSON file (below) |
 | `FABRIC_WIRE_ID_KEY` or `FABRIC_WIRE_ID_KEY_FILE` | secret of at least 16 bytes (used as given, not base64) for pseudonyms; the file holds the same bytes (one trailing newline is ignored) |
 | `FABRIC_TOKENIZATION_KEY` | only for `tokenize`: base64 of at least 32 bytes, distinct from the id key |
-| `FABRIC_REDACTION_ENDPOINT`, `FABRIC_REDACTION_TOKEN_FILE` | only for `redact`, `masked_only` and `original_plus_masked`: your [redaction service](privacy-and-security.md#redaction-service) (Unix socket or loopback port) and its optional `0600` token file |
+| `FABRIC_REDACTION_ENDPOINT`, `FABRIC_REDACTION_TOKEN_FILE` | only for `redact`, `masked_only` and `original_plus_masked`: your [redaction service](../privacy-and-security.md#redaction-service) (Unix socket or loopback port) and its optional `0600` token file |
 | `OTEL_SERVICE_NAME` | optional; emitted as an `svc-` pseudonym |
 
 Other settings: `FABRIC_WIRE_ENDPOINTS` (extra model hosts, a JSON array of
@@ -217,16 +217,16 @@ It is also the `fabric.source_id` on the agent's capture spans. Only with
 
 All ten top-level keys are required; `storage.backend` must be `local`.
 Modes are listed in
-[privacy and security](privacy-and-security.md#protection-modes-the-protect-stage).
+[privacy and security](../privacy-and-security.md#protection-modes-the-protect-stage).
 `redact`, `masked_only` and `original_plus_masked` need a
-[redaction service](privacy-and-security.md#redaction-service) you run
+[redaction service](../privacy-and-security.md#redaction-service) you run
 beside the agent (`FABRIC_REDACTION_ENDPOINT`) and a transformation named in
 code at `fabric.wire.install()`; zero-code autoload cannot name one and
 withholds those roles.
 
 **Running the redaction service.** Run it on the same host or in the same
 Pod, reachable only over a Unix socket on a shared volume or a loopback
-port. [`examples/redaction-service/`](../examples/redaction-service/README.md)
+port. [`examples/redaction-service/`](../../../examples/redaction-service/README.md)
 has a Dockerfile and Compose and Kubernetes sidecar snippets for its
 reference service; replace its sample rules with your own detection.
 
@@ -588,7 +588,7 @@ to see the dates, or read a certificate's dates yourself.
 
 ### Worked example: host sensors and content
 
-[`charts/fabric/examples/production-host-sensor-content.yaml`](../charts/fabric/examples/production-host-sensor-content.yaml)
+[`charts/fabric/examples/production-host-sensor-content.yaml`](../../../charts/fabric/examples/production-host-sensor-content.yaml)
 is a complete production values file with the host-sensor ingress groups,
 content delivery to an S3-compatible store behind a private CA
 (`content.s3.caSecret`), and one agent namespace; its header lists every
@@ -634,7 +634,7 @@ is never overwritten. `<prefix>` defaults to `fabric/content/`.
   user, request, decision and other caller-supplied ids on the explicit
   APIs are emitted as keyed pseudonyms, and omitted without
   `FABRIC_WIRE_ID_KEY` (see
-  [identifiers](explicit-apis.md#identifiers-pseudonym-v2)). For the
+  [identifiers](../explicit-apis.md#identifiers-pseudonym-v2)). For the
   previous clear output, set `FABRIC_IDENTITY_MODE=clear` in the SDK and
   `identity_mode: clear` on the Node's `fabricguard` processor (Helm
   `fabric.guard.identityMode: clear`), and only with ids that are not
@@ -643,7 +643,7 @@ is never overwritten. `<prefix>` defaults to `fabric/content/`.
   and callable transformations (Python `Transformation(..., ref)`,
   `BytePrivacyPolicy.transform`, `ContentProtector` `redactors`) and
   TypeScript worker redactors (`{ module, exportName }`) are removed and
-  raise at construction. Run a [redaction service](privacy-and-security.md#redaction-service),
+  raise at construction. Run a [redaction service](../privacy-and-security.md#redaction-service),
   set `FABRIC_REDACTION_ENDPOINT`, and name each transformation by id and
   version.
 - **`s-`-shaped source ids are now pseudonymised.** An agent
@@ -662,8 +662,8 @@ is never overwritten. `<prefix>` defaults to `fabric/content/`.
   `fabricguard` in every telemetry pipeline, and write receivers, pipelines
   and extensions literally. The shipped Compose and Helm configurations
   comply.
-- See the [changelog](../CHANGELOG.md) for removed modules and changed APIs.
+- See the [changelog](../../../CHANGELOG.md) for removed modules and changed APIs.
 
 Before a release reaches production, verify its artifacts as described in
-[verify a release](verify-release.md), and run the checks in
-[operations](operations/README.md).
+[verify a release](../../verify-release.md), and run the checks in
+[operations](../../operations/README.md).

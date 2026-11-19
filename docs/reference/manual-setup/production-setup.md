@@ -6,15 +6,15 @@ content, and the eBPF host emitter in production mode, so that
 `python -m fabric.reconstruct actions` can tie each command the agent ran to
 the operating system's own exec event. It is derived from the AR-1
 production live harness
-([`qualification/action-record/ar1/live.py`](../qualification/action-record/ar1/live.py))
+([`qualification/action-record/ar1/live.py`](../../../qualification/action-record/ar1/live.py))
 and the v0.11.0 and v0.11.1 user-acceptance runs. [Docker Desktop](#docker-desktop)
 lists what differs on macOS.
 
 Everything here is opt-in and passive: the hooks and the sensor observe, and
 never approve, block, delay or change what the agent does. Reference pages:
 [deployment](deployment.md) (every agent and Node variable),
-[host sensors](host-sensors.md) (every emitter variable) and
-[action reconstruction](action-reconstruction.md) (reading the result).
+[host sensors](../host-sensors.md) (every emitter variable) and
+[action reconstruction](../action-reconstruction.md) (reading the result).
 
 ## 1. What you need
 
@@ -132,7 +132,7 @@ EOF
 ```
 
 Roles you leave out are `omit`. Choose the modes your data allows
-([privacy and security](privacy-and-security.md#protection-modes-the-protect-stage)):
+([privacy and security](../privacy-and-security.md#protection-modes-the-protect-stage)):
 `terminal.argv` and `terminal.stdout` often hold secrets, and with the S3
 backend retained content is readable by anyone who can read the bucket
 prefix ([step 6](#who-can-read-content-in-s3)).
@@ -248,7 +248,7 @@ HTTP and is refused in production.
 
 Preflight refuses a plain-HTTP content endpoint, so the local trial's
 `make up-s3-local` store cannot stand in. The shipped overlay
-[`docker-compose.content-s3-local-tls.yml`](../deploy/compose/docker-compose.content-s3-local-tls.yml)
+[`docker-compose.content-s3-local-tls.yml`](../../../deploy/compose/docker-compose.content-s3-local-tls.yml)
 runs the same store over HTTPS, with a certificate signed by the CA from
 [step 2](#2-keys-tokens-and-certificates). The Node trusts that CA for S3
 (`AWS_CA_BUNDLE`) and reads its keys from a credentials file mounted as a
@@ -361,7 +361,7 @@ preflight again. It reads the same file.
   unavailable store in a shorter queue. Leave the content receiver's
   64 MiB limit as it is: an agent sends bodies up to 63 MiB.
 
-[Operations: queue volume sizing](operations/dr.md#queue-volume-sizing)
+[Operations: queue volume sizing](../../operations/dr.md#queue-volume-sizing)
 covers sizing for a production outage window.
 
 ### Two stacks on one host
@@ -566,7 +566,7 @@ docker run --rm --name support-agent --cgroup-parent=/fabric-agents \
   bodies. Requests through `requests`, `urllib3` or `aiohttp` are not seen.
   In a reconstruction these requests are listed as recorded, but not
   attributed to a tool call yet
-  ([action reconstruction](action-reconstruction.md#what-is-not-covered-yet)).
+  ([action reconstruction](../action-reconstruction.md#what-is-not-covered-yet)).
 - **Subprocesses** (`FABRIC_WIRE_EXEC=1`) and the host label make the
   process anchor of spec 056: the label must equal the emitter's
   `EMIT_HOST_LABEL`.
@@ -574,7 +574,7 @@ docker run --rm --name support-agent --cgroup-parent=/fabric-agents \
 ### Masked arguments and output
 
 To keep command lines and output masked rather than withheld, run the
-[example redaction service](../examples/redaction-service/README.md) (or
+[example redaction service](../../../examples/redaction-service/README.md) (or
 your own, `contracts/redaction/v1`) next to the agent on a Unix socket in a
 shared volume, set `FABRIC_REDACTION_ENDPOINT=unix:///run/fabric/redaction.sock`
 in `agent.env`, and install capture from the agent's own entry point
@@ -667,7 +667,7 @@ line (`drained`, `delivered`, `remaining`, `undecryptable`, `quarantined`,
 records remain on disk, for example while the Node is down. Run it again
 later in that case. Without `--until-empty` it runs as a sidecar until
 SIGTERM, then makes a final drain attempt of up to 10 s. Kubernetes patterns
-are in [wire capture deployment](wire-capture-deployment.md#draining-a-spool-with-no-agent-running).
+are in [wire capture deployment](../../wire-capture-deployment.md#draining-a-spool-with-no-agent-running).
 
 ## 6. Read a run
 
@@ -777,7 +777,7 @@ addresses you give it, as the agent's container saw them:
 
 A connection is never hidden by these flags: it is linked to the run
 (`process_anchor`) instead of listed under `unexplained host events`.
-[Action reconstruction](action-reconstruction.md#read-a-run-python--m-fabricreconstruct-actions)
+[Action reconstruction](../action-reconstruction.md#read-a-run-python--m-fabricreconstruct-actions)
 explains every row and verdict, including processes that made no model call
 and the non-model HTTP rows.
 
@@ -847,4 +847,4 @@ with these differences:
   smaller value (for example `FABRIC_CLOCK_UNCERTAINTY_MS=50` in
   `agent.env`) keeps host links from turning ambiguous.
 
-[short-lived]: wire-capture-deployment.md#delivery-rate-and-short-lived-workers
+[short-lived]: ../../wire-capture-deployment.md#delivery-rate-and-short-lived-workers

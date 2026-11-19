@@ -1,12 +1,12 @@
 # Explicit (app-reported) APIs
 
 > **Status:** describes built code, released in v0.8.0. Implementation:
-> [`fabric/decision.py`](../sdk/python/src/fabric/decision.py),
-> [`fabric/call_recorder.py`](../sdk/python/src/fabric/call_recorder.py),
-> [`fabric/byte_evidence.py`](../sdk/python/src/fabric/byte_evidence.py),
-> [`fabric/adapters/`](../sdk/python/src/fabric/adapters/); TypeScript
-> [`decision.ts`](../sdk/typescript/src/decision.ts) and
-> [`byte-evidence.ts`](../sdk/typescript/src/byte-evidence.ts).
+> [`fabric/decision.py`](../../sdk/python/src/fabric/decision.py),
+> [`fabric/call_recorder.py`](../../sdk/python/src/fabric/call_recorder.py),
+> [`fabric/byte_evidence.py`](../../sdk/python/src/fabric/byte_evidence.py),
+> [`fabric/adapters/`](../../sdk/python/src/fabric/adapters/); TypeScript
+> [`decision.ts`](../../sdk/typescript/src/decision.ts) and
+> [`byte-evidence.ts`](../../sdk/typescript/src/byte-evidence.ts).
 
 Wire capture records what crosses the model HTTP boundary without code
 changes. Everything else Fabric records, the application reports itself
@@ -82,7 +82,7 @@ hashed under the digest rule below. `InstrumentedMCPSession` records the
 `list_tools()` (and `list_resources()`, `list_prompts()`) results the
 application receives through it and never makes a request of its own. The
 emitted span names and GenAI attributes are listed in
-[GenAI semantic conventions](genai-semantic-conventions.md).
+[GenAI semantic conventions](../genai-semantic-conventions.md).
 
 TypeScript (`@singleaxis/fabric`) uses callbacks:
 `fabric.decision(ids, async (decision) => { await decision.llmCall(...); })`
@@ -91,7 +91,7 @@ and `toolCall`, `recordRetrieval`, `remember`, `recall`, `forget`,
 `recordMcpInventory`, `recordSkill`, `delegate`, `recordHook`,
 `recordFileAccess`, `recordInteraction`, `recordContext`. Register a provider
 and an `AsyncLocalStorageContextManager` first (see the
-[TypeScript SDK README](../sdk/typescript/README.md)).
+[TypeScript SDK README](../../sdk/typescript/README.md)).
 
 ### Identifiers (pseudonym v2)
 
@@ -168,7 +168,7 @@ for model request and response bytes. With
 `Fabric(content_capture=ContentCaptureConfig(...))` each recorder method
 writes the content it receives as a content-v1 object to a tenant-scoped
 store and stamps a reference on the span; each decision gets a transcript
-manifest (specs [028](../specs/028-governed-content-capture.md)–[034](../specs/034-transcript-export-and-qualification.md)).
+manifest (specs [028](../../specs/028-governed-content-capture.md)–[034](../../specs/034-transcript-export-and-qualification.md)).
 An authorized reader resolves the references and verifies the bytes with
 `fabric.resolver.ContentResolver`, which can also export a whole transcript
 (`export_transcript`, format `fabric.transcript-export/v1`). It is off by
@@ -185,9 +185,9 @@ default.
 The **legacy `content_store`** (memory and side-effect payloads written by
 `_legacy_store_writer.py`) is kept for compatibility; new code should use
 governed content capture or wire capture
-([032](../specs/032-passive-content-delivery.md)). The examples
-[`governed-content`](../examples/governed-content/README.md) and
-[`offline-transcript`](../examples/offline-transcript/README.md) use this
+([032](../../specs/032-passive-content-delivery.md)). The examples
+[`governed-content`](../../examples/governed-content/README.md) and
+[`offline-transcript`](../../examples/offline-transcript/README.md) use this
 line.
 
 ## Exact bytes: `ByteEvidenceRecorder`

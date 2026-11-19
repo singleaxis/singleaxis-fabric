@@ -5,9 +5,9 @@
 > [`fabric/reconstruct/`](../sdk/python/src/fabric/reconstruct/),
 > [`components/otel-collector-fabric/`](../components/otel-collector-fabric/),
 > [`components/host-emitter/`](../components/host-emitter/). The v0.10.0
-> additions are in [the P1 run record](run-record.md) and
-> [agent action reconstruction](action-reconstruction.md); the v0.11.0
-> production profile in [host sensors](host-sensors.md#production-mode).
+> additions are in [the P1 run record](reference/run-record.md) and
+> [agent action reconstruction](reference/action-reconstruction.md); the v0.11.0
+> production profile in [host sensors](reference/host-sensors.md#production-mode).
 
 Fabric is a passive recorder for AI systems that runs entirely in your
 infrastructure:
@@ -73,12 +73,12 @@ Two inputs exist in the Python SDK:
 - **Explicit records**: what the application reports through the SDK
   (Python and TypeScript): `decision()` and its `record_*` methods, and in
   Python `CallRecorder` and the byte-boundary adapters, which record exact
-  bytes the application passes. See [explicit APIs](explicit-apis.md).
+  bytes the application passes. See [explicit APIs](reference/explicit-apis.md).
 
 Inside a live explicit model call the wire tee defers, so a call is
 recorded once.
 
-Optional Linux [host sensors](host-sensors.md) (auditd receiver, eBPF host
+Optional Linux [host sensors](reference/host-sensors.md) (auditd receiver, eBPF host
 emitter) record process, connection and file metadata as corroboration.
 
 ### Protect
@@ -99,7 +99,7 @@ Protection happens in the agent, on the capture worker, **before** the spool:
 The production profile refuses to record content without a policy and
 keys. The Node then enforces an exact-key allowlist (`fabricguard`), binds
 every batch to one authenticated source, and seals its content queue and
-file store. Details: [privacy and security](privacy-and-security.md).
+file store. Details: [privacy and security](reference/privacy-and-security.md).
 
 ### Deliver
 
@@ -125,8 +125,8 @@ Verification is a property of the record, not a runtime service:
   stored bytes and states `complete_for_declared_scope`,
   `complete_for_observed_scopes`, `partial` or `unverified`. In the
   production profile it requires the Node's source-authentication stamp on
-  trusted readback. See [reconstruct](reconstruct.md).
-- [Qualified-run mode](qualified-run-mode.md) (opt-in, explicit line) adds
+  trusted readback. See [reconstruct](reference/reconstruct.md).
+- [Qualified-run mode](reference/qualified-run-mode.md) (opt-in, explicit line) adds
   independent witnesses and four signed receipt stages and is the only path
   to `verified_complete_for_declared_scope`.
 
@@ -134,7 +134,7 @@ Verification is a property of the record, not a runtime service:
 
 `local` (development; `file://` store or an unauthenticated loopback Node)
 and `production` (node mode; capture policy, id key and spool key required;
-authenticated, single-source Node). See [deployment](deployment.md).
+authenticated, single-source Node). See [deployment](reference/manual-setup/deployment.md).
 
 ## What ships
 
@@ -145,7 +145,7 @@ authenticated, single-source Node). See [deployment](deployment.md).
 | Fabric Node image `ghcr.io/singleaxis/fabric-otelcol` | `otelcol-fabric` with `fabric-gate`; components: `otlp` and `audit` receivers; `fabricguard`, `batch`, `memory_limiter` processors; `fabriccontent`, `otlphttp`, `debug` exporters; `health_check`, `file_storage`, patched `bearertokenauth`, `noredirect`, `fabricenvelope` extensions |
 | Host emitter image `ghcr.io/singleaxis/fabric-host-emitter` | eBPF host sensor |
 | Helm chart `fabric` | the Node, profiles `shadow-dev` and `shadow-production` |
-| `fabricctl` | `init`, `recorder validate`, `recorder digest`, `version`, `help` for a reviewable recorder declaration (`contracts/recorder/v1`). In v0.8 neither the SDK nor the Node reads it: the agent is configured by `FABRIC_CAPTURE_POLICY` (deployment-policy/v1, see [deployment](deployment.md)) and the Node by Helm values or Compose |
+| `fabricctl` | `init`, `recorder validate`, `recorder digest`, `version`, `help` for a reviewable recorder declaration (`contracts/recorder/v1`). In v0.8 neither the SDK nor the Node reads it: the agent is configured by `FABRIC_CAPTURE_POLICY` (deployment-policy/v1, see [deployment](reference/manual-setup/deployment.md)) and the Node by Helm values or Compose |
 | Public contracts | activity v2, connect v1, content v1, delivery v1, privacy v1, recorder v1 (published archive); capture v1, content v2, coverage v1, deployment-policy v1, evidence v1 and redaction v1 are in the repository as drafts |
 
 Compose files for the Node are in `deploy/compose` (not a separate

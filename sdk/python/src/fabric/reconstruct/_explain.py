@@ -28,7 +28,7 @@ from fabric.reconstruct._reported import DECISIONS_CHAIN, reported_runs_from
 # A Fabric span name (``fabric.decision``, ``fabric.tool_call``): safe to print.
 _FABRIC_NAME_RE = re.compile(r"^fabric\.[a-z][a-z0-9_.]{0,47}$")
 _MAX_NAMES = 8
-SCOPE_DOC = "docs/reconstruct.md#scope-of-the-verifier"
+SCOPE_DOC = "docs/reference/reconstruct.md#scope-of-the-verifier"
 
 
 def explain_no_runs(spans: Sequence[str], *, run_filter: bool) -> list[str]:

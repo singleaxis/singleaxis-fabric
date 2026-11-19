@@ -62,7 +62,7 @@ exit 1 with `fabric.reconstruct: no runs reconstructed`. There is no
 completeness or gap verdict, no action view and no corroboration with host
 sensors for a TypeScript agent today. The spans are ordinary OTLP: you can
 read them in the destination the Node delivers to, but Fabric does not
-verify them. See [the verifier's scope](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reconstruct.md#scope-of-the-verifier)
+verify them. See [the verifier's scope](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reference/reconstruct.md#scope-of-the-verifier)
 and [limitations](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/limitations-and-roadmap.md).
 
 ## Quick start
@@ -132,7 +132,7 @@ await provider.shutdown(); // flush before the process exits
 ```
 
 Run it against a Fabric Node (the local Node from the
-[quickstart](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/quickstart.md)
+[quickstart](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reference/manual-setup/quickstart.md)
 listens on loopback port 4318):
 
 ```bash
@@ -160,7 +160,7 @@ yourself through `@opentelemetry/api` is equivalent.
 
 The endpoint those variables select must be `https://`, or plain `http://`
 to a loopback host (`localhost`, `127.0.0.1`, `[::1]`), the same rule as the
-Python SDK ([span delivery rule](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/privacy-and-security.md#span-delivery-rule)).
+Python SDK ([span delivery rule](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reference/privacy-and-security.md#span-delivery-rule)).
 With `http://fabric-node:4318`, for example, the `Fabric` client turns
 capture off: your agent runs unchanged, nothing is thrown, and no Fabric span
 or content object is produced. Fabric does not print this on your agent's
@@ -438,4 +438,4 @@ The deployment-policy, privacy and byte path is shared. Python's wire capture,
 `CallRecorder`, byte-boundary adapters, source journal, encrypted durable byte
 spool, restartable metadata sender, governed local backend, metadata-only span
 export and qualified-run mode have no TypeScript equivalent. See
-[explicit APIs](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/explicit-apis.md).
+[explicit APIs](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reference/explicit-apis.md).

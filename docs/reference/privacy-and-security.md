@@ -1,25 +1,25 @@
 # Privacy and security
 
 > **Status:** describes built code, released in v0.8.0. Implementation:
-> [`fabric/wire/_protect.py`](../sdk/python/src/fabric/wire/_protect.py)
+> [`fabric/wire/_protect.py`](../../sdk/python/src/fabric/wire/_protect.py)
 > (PROTECT),
-> [`fabric/wire/_policy.py`](../sdk/python/src/fabric/wire/_policy.py)
+> [`fabric/wire/_policy.py`](../../sdk/python/src/fabric/wire/_policy.py)
 > (production gate),
-> [`fabric/redaction.py`](../sdk/python/src/fabric/redaction.py)
+> [`fabric/redaction.py`](../../sdk/python/src/fabric/redaction.py)
 > (redaction-service client),
-> [`fabric/_sequence.py`](../sdk/python/src/fabric/_sequence.py)
+> [`fabric/_sequence.py`](../../sdk/python/src/fabric/_sequence.py)
 > (pseudonyms),
-> [`fabric/wire/_spool.py`](../sdk/python/src/fabric/wire/_spool.py)
+> [`fabric/wire/_spool.py`](../../sdk/python/src/fabric/wire/_spool.py)
 > (encrypted spool) and the Node's
-> [`fabricguardprocessor/`](../components/otel-collector-fabric/processor/fabricguardprocessor/)
+> [`fabricguardprocessor/`](../../components/otel-collector-fabric/processor/fabricguardprocessor/)
 > and
-> [`fabricenvelopeextension/`](../components/otel-collector-fabric/extension/fabricenvelopeextension/).
+> [`fabricenvelopeextension/`](../../components/otel-collector-fabric/extension/fabricenvelopeextension/).
 
 Fabric's promise is to protect the record **before** it leaves the process
 that captured it, keep it encrypted wherever Fabric stores it, and deliver
 it only to a destination you choose. This page describes the controls that
 v0.8 implements and what they do not cover. Source of truth: spec
-[049](../specs/049-four-layer-capture-coverage.md) §7.
+[049](../../specs/049-four-layer-capture-coverage.md) §7.
 
 ## Where data goes
 
@@ -114,12 +114,12 @@ Fabric never runs your code: no imported module, callable, child process or
 worker thread. The masking for `redact`, `masked_only` and the review copy
 of `original_plus_masked` is done by a **redaction service you run** beside
 the application, and the recorder calls it. The protocol is
-[`contracts/redaction/v1`](../contracts/redaction/v1/README.md) (a draft in
+[`contracts/redaction/v1`](../../contracts/redaction/v1/README.md) (a draft in
 the repository, not in the published contracts archive): one
 `POST /v1/transform` per object, with the raw bytes as the body and the
 transformation id and version, role and mode as `X-Fabric-*` headers; a
 `200` answer carries the masked bytes.
-[`examples/redaction-service/`](../examples/redaction-service/README.md) is
+[`examples/redaction-service/`](../../examples/redaction-service/README.md) is
 a small standard-library reference service (regular-expression rules from a
 JSON file) with a Dockerfile and Compose and Kubernetes sidecar snippets. It
 is an example of the redaction interface, not a detector, and not part of any
@@ -355,8 +355,8 @@ Not covered:
   classification of data (it receives raw content; run it on the same host
   or Pod and restrict its socket);
   Fabric ships no PII detector and makes no de-identification claim;
-- traffic Fabric does not capture (see [limitations](limitations-and-roadmap.md));
+- traffic Fabric does not capture (see [limitations](../limitations-and-roadmap.md));
 - your destination's access control, retention, residency and legal
   obligations.
 
-Report vulnerabilities as described in [SECURITY.md](../SECURITY.md).
+Report vulnerabilities as described in [SECURITY.md](../../SECURITY.md).

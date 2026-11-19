@@ -220,7 +220,7 @@ Matched after lower-casing and removing ``-``/``_``/space, so
 entry. Warn only: these are syntactically valid identifiers and a
 determined operator could mean them.
 
-Deliberately absent: ``my-agent``. ``docs/quickstart.md`` ships it as a
+Deliberately absent: ``my-agent``. ``docs/reference/manual-setup/quickstart.md`` ships it as a
 worked example value, so warning on it would fire on this project's own
 documented happy path — and unlike ``my-tenant`` it is a plausible real
 name for a single-agent deployment. The asymmetry is intentional.

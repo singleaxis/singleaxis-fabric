@@ -397,11 +397,42 @@ jobs:
         run: >-
           python3 scripts/plan_scenarios/run.py --netns require
           --work "${RUNNER_TEMP}/f058-plan-scenarios" --out plan-scenarios.json
+      - name: The docs' coverage tables match this report (spec 058 §12.5)
+        run: python3 scripts/docs_coverage/render.py --check --plan-scenarios plan-scenarios.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: plan-scenarios
           path: plan-scenarios.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  docs-pages:
+    # Spec 058 §14.2: the Other languages page and every shape page, executed as written
+    # in a fresh directory and an empty virtualenv; the page's own pip install resolves
+    # the wheel under test. (The Get started paths run in the ttfr-* jobs.)
+    name: Docs pages executed as written
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Build the wheel under test
+        working-directory: sdk/python
+        run: |
+          ../../scripts/ci/install-python-locked.sh --only-group ci
+          python -m build --wheel --no-isolation
+      - name: Execute the pages
+        run: >-
+          python3 scripts/docs_as_tests/smoke.py --wheel-dir sdk/python/dist
+          --work "${RUNNER_TEMP}/f058-docs-pages" --out docs-pages.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: docs-pages
+          path: docs-pages.json
           if-no-files-found: warn
           retention-days: 30
 

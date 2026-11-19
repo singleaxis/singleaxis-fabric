@@ -640,9 +640,9 @@ def test_an_old_kernel_with_auditd_offers_the_auditd_sensor_as_a_manual_step(
     )
     row = rows(report)["host evidence (kernel sensor)"]
     assert row["state"] == "fix"
-    assert row["note"].startswith("follow docs/host-sensors.md")
+    assert row["note"].startswith("follow docs/reference/host-sensors.md")
     assert "fabric up does not start it" in row["note"]
-    assert (REPO / "docs/host-sensors.md").is_file()
+    assert (REPO / "docs/reference/host-sensors.md").is_file()
     (python_project(tmp_path / "a") / "fabric.yaml").write_text(
         "schema: fabric.config/v1\nsensor:\n  kind: auditd\n"
     )

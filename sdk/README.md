@@ -16,10 +16,10 @@ runs. Python's
 `install_default_provider` adds a metadata-only export projection;
 TypeScript does not sanitize spans from a provider you register. Do not
 assume every export path is metadata-only. Both SDKs apply one
-[span delivery rule](../docs/privacy-and-security.md#span-delivery-rule):
+[span delivery rule](../docs/reference/privacy-and-security.md#span-delivery-rule):
 verified HTTPS, or plain HTTP to a loopback host only. See
-[explicit APIs](../docs/explicit-apis.md) and
-[privacy and security](../docs/privacy-and-security.md).
+[explicit APIs](../docs/reference/explicit-apis.md) and
+[privacy and security](../docs/reference/privacy-and-security.md).
 
 ## Authoritative specs
 

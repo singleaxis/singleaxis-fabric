@@ -3,10 +3,10 @@
 > **Status:** reference page. It defines the terms that specs 047–056 use,
 > whether or not the code behind a term is built. Each entry says where the
 > term is defined and, where it matters, whether it is released (v0.8.0 or
-> v0.10.0) or only specified. For the code itself see the [map in docs/README.md](README.md).
+> v0.10.0) or only specified. For the code itself see the [map in docs/README.md](../README.md).
 
 Spec references look like "049 §2.4": spec number, then section. Specs live
-in [`specs/`](../specs/README.md). Where a term has a module, the path is
+in [`specs/`](../../specs/README.md). Where a term has a module, the path is
 relative to `sdk/python/src/fabric/` unless it starts with another top-level
 directory.
 
@@ -27,7 +27,7 @@ observable AI activity. Protect applies privacy rules to the record before
 it leaves the agent process or reaches disk. Deliver moves the record
 durably to destinations the customer chooses. "Verify" is a property of the
 record (sequence numbers, digests, seals, offline checks), not a fourth
-runtime stage. Defined in [AGENTS.md](../AGENTS.md) and [027].
+runtime stage. Defined in [AGENTS.md](../../AGENTS.md) and [027].
 
 **Passive.** Fabric never approves, blocks, delays, retries or modifies
 what the monitored agent does. Recording failures are swallowed; the
@@ -38,31 +38,31 @@ measured, not zero. 049 §7.1 and owner decision 2 ([049] §9).
 
 **Fabric Node (the Node).** Fabric's OpenTelemetry Collector distribution
 (image `ghcr.io/singleaxis/fabric-otelcol`, source
-[`components/otel-collector-fabric`](../components/otel-collector-fabric/)).
+[`components/otel-collector-fabric`](../../components/otel-collector-fabric/)).
 It receives spans and content from agents, filters and authenticates them,
 queues them durably, writes content to a store and forwards metadata to an
-OTLP destination. Built (v0.8.0). [048] §4; [deployment](deployment.md).
+OTLP destination. Built (v0.8.0). [048] §4; [deployment](manual-setup/deployment.md).
 
 **fabric-gate.** The Node's entry point
-([`gate/`](../components/otel-collector-fabric/gate/)). It validates the
+([`gate/`](../../components/otel-collector-fabric/gate/)). It validates the
 collector configuration at start and refuses unsafe ones, for example a
 host-sensor receiver on a production Node. Built. [048] §5.
 
 **fabricguard.** The Node's processor
-([`fabricguardprocessor`](../components/otel-collector-fabric/processor/fabricguardprocessor/)).
+([`fabricguardprocessor`](../../components/otel-collector-fabric/processor/fabricguardprocessor/)).
 It keeps only allowlisted telemetry keys, checks identifier forms, binds
 each batch to an authenticated source and stamps
 `fabric.source.authenticated=true` on admitted records. Built; the P1
 records class since v0.10.0. 049 §7.9, [050] §3.14.
 
 **fabriccontent.** The Node's content exporter
-([`fabriccontentexporter`](../components/otel-collector-fabric/exporter/fabriccontentexporter/)).
+([`fabriccontentexporter`](../../components/otel-collector-fabric/exporter/fabriccontentexporter/)).
 It checks each content descriptor against the content-role table and the
 source binding, then writes the object once to a file directory or an S3
 bucket. Built. [048] §4, 049 §4.3.
 
 **fabricenvelope, noredirect.** Node extensions
-([`extension/`](../components/otel-collector-fabric/extension/)).
+([`extension/`](../../components/otel-collector-fabric/extension/)).
 `fabricenvelope` encrypts the Node's content queue and file store with the
 Node content key (049 §7.8). `noredirect` makes the OTLP/HTTP exporter
 refuse HTTP redirects (048). Both built.
@@ -79,7 +79,7 @@ network connections and file opens as metadata: the auditd receiver
 mode spools every record to disk and sends it to a Node (required in the
 production profile). Local file mode writes content to a `file://` store
 itself. Direct mode exports telemetry with no Node. [048] §1;
-[deployment](deployment.md).
+[deployment](manual-setup/deployment.md).
 
 **Profile (`local`, `production`).** The deployment profile. `production`
 requires a capture policy, an id key and a spool key for content, and an
@@ -88,7 +88,7 @@ yields production-qualified verdicts. 049 §7.3. Not the same as a
 *coverage profile* (below).
 
 **Spool.** The agent's durable on-disk queue
-([`wire/_spool.py`](../sdk/python/src/fabric/wire/_spool.py)): fsync'd,
+([`wire/_spool.py`](../../sdk/python/src/fabric/wire/_spool.py)): fsync'd,
 encrypted with the spool key in production, shared by every process on the
 same directory through a file lock. Records leave it only when the Node has
 accepted them. Built. [048] §2, [050] §3.5. Spool *kinds* name what a spool
@@ -96,20 +96,20 @@ file holds: `exchange`, `record` (v0.10.0), `marker`, and loss entries.
 
 **Capture worker.** The one background thread per agent process that
 protects, digests and spools what was captured
-([`wire/_pipeline.py`](../sdk/python/src/fabric/wire/_pipeline.py)). The
+([`wire/_pipeline.py`](../../sdk/python/src/fabric/wire/_pipeline.py)). The
 application thread only allocates a sequence and hands the job over
 without waiting. [050] §3.1.
 
 **Sender.** The one thread that drains the spool to the Node: content
 first, then the span
-([`wire/_sender.py`](../sdk/python/src/fabric/wire/_sender.py)). Built.
+([`wire/_sender.py`](../../sdk/python/src/fabric/wire/_sender.py)). Built.
 
 **Redaction service.** A small local service the customer runs beside the
 agent (Unix socket or loopback HTTP) that performs `redact` and
 `masked_only`. Fabric posts bytes to it from the capture worker and never
 runs customer code itself. Contract
-[`contracts/redaction/v1`](../contracts/redaction/v1/README.md); reference
-service in [`examples/redaction-service`](../examples/redaction-service/).
+[`contracts/redaction/v1`](../../contracts/redaction/v1/README.md); reference
+service in [`examples/redaction-service`](../../examples/redaction-service/).
 Built. 049 §7.7, owner decision 21.
 
 **Content store, destination.** The content store is the directory or S3
@@ -121,7 +121,7 @@ endpoint that receives metadata. Both are chosen by the customer.
 **Wire capture (the wire input, the tee).** Automatic, in-process copying
 of model HTTP request and response bytes on the `httpx`, `httpx2` and
 `aiohttp` transports, enabled by `fabric.wire.install()` or the autoload.
-Python only. Built ([`wire/`](../sdk/python/src/fabric/wire/)). [047],
+Python only. Built ([`wire/`](../../sdk/python/src/fabric/wire/)). [047],
 [048], 049 §1.3. TypeScript wire capture is specified in [055], not built.
 
 **Exchange.** One model HTTP request and its response, captured at the
@@ -130,7 +130,7 @@ wire, identified by `fabric.wire.exchange_id`. [047].
 **Records input.** Fabric's second input: everything the application
 reports through the SDK, and everything an opt-in hook observes, as
 sequenced records on the same allocator and spool as the wire input.
-Released in v0.10.0 ([`_records.py`](../sdk/python/src/fabric/_records.py));
+Released in v0.10.0 ([`_records.py`](../../sdk/python/src/fabric/_records.py));
 the explicit producers (`CallRecorder` and the adapters) can use it there
 when a wire handle is installed; the `decision()` API does not yet (050
 WP-15 is not built). 049 §1.3, [050] §3.4.
@@ -145,7 +145,7 @@ records input.
 **Capture point.** A named, versioned place where Fabric gets data, written
 `id@version`: for example `wire.py.httpx`, `sdk.records`, `run.scope`,
 `exec.subprocess`, `reconstruct.infer`, `host.ebpf`. The registry
-[`capture-points-v1.json`](../contracts/coverage/v1/registry/capture-points-v1.json)
+[`capture-points-v1.json`](../../contracts/coverage/v1/registry/capture-points-v1.json)
 lists each with its state, what it can and cannot observe and which fields
 it supplies. 049 §2.8.
 
@@ -162,7 +162,7 @@ performs, such as starting a subprocess (`exec.subprocess`) or running a
 database statement (`db.dbapi`). Hooks emit on the records input with
 provenance `observed`. Specified in [053]. Only the hooks foundation and
 the subprocess hook are built, released in v0.10.0 for spec 056 M1
-([`fabric/hooks/`](../sdk/python/src/fabric/hooks/)); the other channels are
+([`fabric/hooks/`](../../sdk/python/src/fabric/hooks/)); the other channels are
 not built.
 
 **Run, run scope.** A run is one logical agent task. `fabric.wire.run()`
@@ -209,7 +209,7 @@ and pid. Every sequenced record carries `(source, epoch, sequence)`.
 registration file for its epoch in the spool directory. The next process
 can then tell that a writer was killed and declare its epoch
 `unsealed_epoch`.
-[`wire/_registration.py`](../sdk/python/src/fabric/wire/_registration.py),
+[`wire/_registration.py`](../../sdk/python/src/fabric/wire/_registration.py),
 [050] §3.2.
 
 **Sequence, sequence gap.** Positions 0, 1, 2, ... within one
@@ -218,7 +218,7 @@ can then tell that a writer was killed and declare its epoch
 
 **Shared allocator.** The single per-process sequence counter
 (`SourceAllocator`,
-[`_sequence.py`](../sdk/python/src/fabric/_sequence.py)) that gives
+[`_sequence.py`](../../sdk/python/src/fabric/_sequence.py)) that gives
 positions to wire exchanges and records alike, so record order within an
 epoch is exact. Allocation is one short lock with no I/O. Released in
 v0.10.0 (before, only the wire input was sequenced). 049 §2.4,
@@ -236,7 +236,7 @@ never identify them. 049 §2.3.
 **Segment.** A contiguous piece of one run recorded by one
 `(source, epoch)`, with an id `seg-` + 32 hex. A process has one open
 segment per run; a new one opens on a resume token, a fork or re-entry.
-Released in v0.10.0 ([`_segments.py`](../sdk/python/src/fabric/_segments.py)).
+Released in v0.10.0 ([`_segments.py`](../../sdk/python/src/fabric/_segments.py)).
 049 §2.10, [050] §3.6.
 
 **Seal (segment seal).** A digest over a segment's sequenced records (and
@@ -244,7 +244,7 @@ the positions of its losses), written as a `segment_seal` marker once every
 position has *settled*, that is, been spooled or recorded as lost. The
 verifier recomputes it; a difference is `partial(seal_mismatch)`, a missing
 seal leaves the segment `unsealed`. Released in v0.10.0
-([`_seal.py`](../sdk/python/src/fabric/_seal.py)). 049 §2.12, [050] §3.7.
+([`_seal.py`](../../sdk/python/src/fabric/_seal.py)). 049 §2.12, [050] §3.7.
 
 **Unsealed epoch.** A prior epoch on the same spool that never wrote its
 `final` heartbeat and seals, declared by the next epoch's first manifest.
@@ -262,7 +262,7 @@ its tokens. Released in v0.10.0. 049 §2.10, [050] §3.6.
 graph and applies rules G1–G10 in order. The run state is `terminated`,
 `open` (resumable, before its deadline), `unterminated` (after it),
 `conflicted`, `not_resumable_unclosed` or `deadline_uncertain`. Released
-in v0.10.0 ([`reconstruct/_graph.py`](../sdk/python/src/fabric/reconstruct/_graph.py)).
+in v0.10.0 ([`reconstruct/_graph.py`](../../sdk/python/src/fabric/reconstruct/_graph.py)).
 049 §2.10.
 
 **Capture manifest.** A `fabric.capture-manifest/v1` document per
@@ -271,7 +271,7 @@ identity mode, capture-policy reference, limits, every capture point with
 its state and supplied fields, and the classes it cannot capture. Manifests
 are numbered (`manifest_seq`) and chained by digest. They let the verifier
 tell "nothing happened" from "nothing was instrumented". Released in
-v0.10.0 ([`_manifest.py`](../sdk/python/src/fabric/_manifest.py)). 049 §2.4,
+v0.10.0 ([`_manifest.py`](../../sdk/python/src/fabric/_manifest.py)). 049 §2.4,
 §2.8; [050] §3.8. Not the same as the content-v1 *transcript manifest* of
 [029].
 
@@ -280,7 +280,7 @@ bounded container for structured metadata that has no single telemetry key
 (lists, indexes, correlations). A record has at most one evidence object
 (role `record.evidence`); its shape is one of the registered *evidence
 types* (for example `fabric.exec.observation/v1`). Released in v0.10.0
-([`_evidence.py`](../sdk/python/src/fabric/_evidence.py)). [050] §3.4a,
+([`_evidence.py`](../../sdk/python/src/fabric/_evidence.py)). [050] §3.4a,
 [053] §3.2.
 
 ## Fields, coverage and the projection
@@ -298,7 +298,7 @@ with stable field ids that are never renumbered or reused:
 
 Note that content is `N`, not `C`. The layers describe the record, not the
 product. Registry:
-[`field-registry-v1.json`](../contracts/coverage/v1/registry/field-registry-v1.json).
+[`field-registry-v1.json`](../../contracts/coverage/v1/registry/field-registry-v1.json).
 049 §1.2, §3.
 
 **Field wrapper.** How every field of a step is reported in the projection:
@@ -338,7 +338,7 @@ writes offline next to its report: one entry per attempt with its step
 kind, links, field wrappers in the four layers and per-layer verdicts.
 It is a verifier output, never produced in the agent or the Node. Released
 in v0.10.0, for model calls
-([`reconstruct/_project.py`](../sdk/python/src/fabric/reconstruct/_project.py);
+([`reconstruct/_project.py`](../../sdk/python/src/fabric/reconstruct/_project.py);
 `python -m fabric.reconstruct --projection FILE`). 049 §4.4, [050] §3.13.
 
 **Step kind.** What a step is: `model_call`, `tool_call`, `terminal`,
@@ -379,7 +379,7 @@ link. 049 §2.2.
 
 **Integrity verdict.** The verifier's statement about the record of each
 scope and run, in the `fabric.run-reconstruction/v1` report. Built
-([`reconstruct/`](../sdk/python/src/fabric/reconstruct/)). [047] §9, [048]
+([`reconstruct/`](../../sdk/python/src/fabric/reconstruct/)). [047] §9, [048]
 §6, [reconstruct](reconstruct.md).
 
 | Verdict | Meaning |
@@ -425,8 +425,8 @@ Version 1 covers run (`r-`), source (`s-`), service (`svc-`) and operator
 labels (`lbl-`). Version 2 derives a separate key per id type (`sess-`,
 `usr-`, `act-`, `hst-`, `sbx-`, `p-` and others) for domain separation.
 Without a key, production omits v2 ids. Built
-([`_sequence.py`](../sdk/python/src/fabric/_sequence.py),
-[`_identity.py`](../sdk/python/src/fabric/_identity.py)). 049 §2.9.
+([`_sequence.py`](../../sdk/python/src/fabric/_sequence.py),
+[`_identity.py`](../../sdk/python/src/fabric/_identity.py)). 049 §2.9.
 
 **EmittedId.** A string subtype for ids this process minted or emitted.
 Only these pass through unchanged; every caller-supplied id is mapped,
@@ -438,7 +438,7 @@ epoch. 049 §2.9 rule 6.
 
 **Capture policy.** The customer's configuration of how Fabric records and
 protects: content role to privacy mode, storage, retention and profile
-([`contracts/deployment-policy/v1`](../contracts/deployment-policy/v1/)).
+([`contracts/deployment-policy/v1`](../../contracts/deployment-policy/v1/)).
 In the local profile with no policy, the implicit `fabric.local-default`
 applies. Not to be confused with the agent's *execution policy*, which
 Fabric only records. 049 §2.7.
@@ -446,7 +446,7 @@ Fabric only records. 049 §2.7.
 **Content role (PROTECT role).** The name of what a content object is, for
 example `model.exchange.request`, `tool.call.result`, `terminal.stdout` or
 `record.evidence`. The role table
-([`content-roles-v1.json`](../contracts/coverage/v1/registry/content-roles-v1.json))
+([`content-roles-v1.json`](../../contracts/coverage/v1/registry/content-roles-v1.json))
 gives each role its default policy, permitted boundaries, provenance,
 media types and size cap; the capture policy maps roles to privacy modes.
 049 §4.3.
@@ -461,7 +461,7 @@ back to raw bytes. Built. 049 §2.7, §7.7.
 **PROTECT stage.** The step on the capture worker, before the spool, that
 applies each object's privacy mode. Nothing reaches disk or the network
 before it runs. Built
-([`wire/_protect.py`](../sdk/python/src/fabric/wire/_protect.py)). 049 §7.7.
+([`wire/_protect.py`](../../sdk/python/src/fabric/wire/_protect.py)). 049 §7.7.
 
 **Privacy class.** How a value may travel: `ID`, `META`, `LABEL`, `DIGEST`
 or `CONTENT`. Content lives only in content objects, never in telemetry,
@@ -485,7 +485,7 @@ production. Built. 049 §7.8.
 
 All of this is specified in [056]. Milestone M1 is released in v0.10.0
 for the local profile: the contracts and rule fixtures
-([`contracts/coverage/v1/fixtures/action-record/`](../contracts/coverage/v1/fixtures/action-record/README.md)),
+([`contracts/coverage/v1/fixtures/action-record/`](../../contracts/coverage/v1/fixtures/action-record/README.md)),
 the hooks, the subprocess hook, attribution, chain verdicts, the `actions`
 view, the host join and its `--host-records` option (WP6-01 to WP6-06).
 The AR-1 acceptance test passes in CI in hermetic mode and in live mode
@@ -502,7 +502,7 @@ the operating system independently saw (host sensors). [056] §0.
 **Tool call, tool result.** A tool request the model returned in a response
 (`tool_calls[i]`, a `function_call` item or a `tool_use` block) and the
 matching result item in a later request, paired by id. Built
-([`reconstruct/_stitch.py`](../sdk/python/src/fabric/reconstruct/_stitch.py)).
+([`reconstruct/_stitch.py`](../../sdk/python/src/fabric/reconstruct/_stitch.py)).
 
 **Effect.** A record of something the agent's process did outside the model
 call; in M1, one subprocess run (`exec.subprocess`): arguments, returned
@@ -547,7 +547,7 @@ the reason. [056] §4.3, §4.5.
 **AR-1.** The end-to-end acceptance scenario of [056] §6.2. Fabric does not
 claim agent action reconstruction until AR-1 passes in CI on the
 milestone's profile. Built
-([`qualification/action-record/`](../qualification/action-record/README.md)):
+([`qualification/action-record/`](../../qualification/action-record/README.md)):
 hermetic mode (recorded host-sensor events) passes in CI on macOS and
 Linux, and live mode with a real eBPF sensor on Linux; the auditd fallback
 is not run live in CI.
@@ -625,7 +625,7 @@ segment. 049 §8.2 (P1 exit).
 **Qualification markers.** `NO_COVERAGE_CLAIM`: the spec claims no coverage
 beyond the clients and endpoints it lists. `NO_GO`: the work was not
 qualified for production use when written. See
-[specs/README.md](../specs/README.md#status-values).
+[specs/README.md](../../specs/README.md#status-values).
 
 **`file:line` references.** Specs 049–055 cite code as `file:line` at the
 commit they were written against (`36f7a89`, then `main`). Line numbers
@@ -633,23 +633,23 @@ drift; the file and function names are the stable part.
 
 **Generated blocks.** Tables in 049 between `<!-- generated:... -->`
 comments are rendered from the registries in
-[`contracts/coverage/v1/registry/`](../contracts/coverage/v1/registry/).
+[`contracts/coverage/v1/registry/`](../../contracts/coverage/v1/registry/).
 The registries are the source of truth;
 `scripts/contracts/validate_coverage_contracts.py` checks the tables.
 
-[027]: ../specs/027-recorder-v1.md
-[029]: ../specs/029-content-objects-transcript-contract.md
-[030]: ../specs/030-auditd-host-connector.md
-[031]: ../specs/031-ebpf-host-emitter.md
-[045]: ../specs/045-independent-evidence-feeds.md
-[046]: ../specs/046-qualified-call-run-verification.md
-[047]: ../specs/047-llm-wire-capture-and-reconstruction.md
-[048]: ../specs/048-node-content-delivery-and-agent-spool.md
-[049]: ../specs/049-four-layer-capture-coverage.md
-[050]: ../specs/050-run-structure-and-records-p1.md
-[051]: ../specs/051-context-and-lifecycle-p2.md
-[052]: ../specs/052-decisions-and-effects-p3.md
-[053]: ../specs/053-execution-channels-p4.md
-[054]: ../specs/054-specialised-runtimes-p5.md
-[055]: ../specs/055-typescript-wire-capture.md
-[056]: ../specs/056-agent-action-reconstruction.md
+[027]: ../../specs/027-recorder-v1.md
+[029]: ../../specs/029-content-objects-transcript-contract.md
+[030]: ../../specs/030-auditd-host-connector.md
+[031]: ../../specs/031-ebpf-host-emitter.md
+[045]: ../../specs/045-independent-evidence-feeds.md
+[046]: ../../specs/046-qualified-call-run-verification.md
+[047]: ../../specs/047-llm-wire-capture-and-reconstruction.md
+[048]: ../../specs/048-node-content-delivery-and-agent-spool.md
+[049]: ../../specs/049-four-layer-capture-coverage.md
+[050]: ../../specs/050-run-structure-and-records-p1.md
+[051]: ../../specs/051-context-and-lifecycle-p2.md
+[052]: ../../specs/052-decisions-and-effects-p3.md
+[053]: ../../specs/053-execution-channels-p4.md
+[054]: ../../specs/054-specialised-runtimes-p5.md
+[055]: ../../specs/055-typescript-wire-capture.md
+[056]: ../../specs/056-agent-action-reconstruction.md

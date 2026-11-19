@@ -63,7 +63,7 @@ The same objectives apply to the single-node Compose overlay
 (`deploy/compose/docker-compose.production.yml`). The durable state is the
 `fabric-queue` named volume mounted at `/var/lib/fabric-node/queue`.
 
-With wire capture in node mode ([deployment](../deployment.md))
+With wire capture in node mode ([deployment](../reference/manual-setup/deployment.md))
 two more volumes hold state: `fabric-content-queue`
 (`/var/lib/fabric-node/content-queue`, the fsync'd queue of content records
 waiting for the store, up to `queue_size` × 64 MiB) and `fabric-content`

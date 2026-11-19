@@ -3,8 +3,8 @@
 > **Status:** released in v0.10.0, except the work packages marked
 > **Not built** [below](#what-is-built-and-what-is-not); v0.9.x and earlier
 > do not have it. Design:
-> [spec 050](../specs/050-run-structure-and-records-p1.md), which builds
-> phase P1 of [spec 049](../specs/049-four-layer-capture-coverage.md).
+> [spec 050](../../specs/050-run-structure-and-records-p1.md), which builds
+> phase P1 of [spec 049](../../specs/049-four-layer-capture-coverage.md).
 > Implementation: the modules listed [below](#where-the-code-lives).
 > Terms are defined in the [glossary](glossary.md).
 
@@ -55,7 +55,7 @@ Every package marked Built is in v0.10.0.
 ## Using it
 
 Nothing changes for an agent that only uses wire capture: install as in
-the [quickstart](quickstart.md). The new run controls are in
+the [quickstart](manual-setup/quickstart.md). The new run controls are in
 `fabric.wire`:
 
 | API or setting | Effect |
@@ -87,27 +87,27 @@ it is not a completeness claim.
 ## Where the code lives
 
 Paths are relative to
-[`sdk/python/src/fabric/`](../sdk/python/src/fabric/) unless noted.
+[`sdk/python/src/fabric/`](../../sdk/python/src/fabric/) unless noted.
 
 | Module | Role | 050 section |
 |---|---|---|
-| [`_sequence.py`](../sdk/python/src/fabric/_sequence.py) | Source identity, epochs, the shared `SourceAllocator`, run-scope context, pseudonyms | §3.2, §3.3 |
-| [`wire/_registration.py`](../sdk/python/src/fabric/wire/_registration.py) | Epoch registration files in the spool directory | §3.2 |
-| [`_records.py`](../sdk/python/src/fabric/_records.py) | The records input: `Attempt.emit`, phases and status inputs | §3.4 |
-| [`_evidence.py`](../sdk/python/src/fabric/_evidence.py) | The structured evidence carrier | §3.4a |
-| [`_capture_types.py`](../sdk/python/src/fabric/_capture_types.py) | Types shared by every P1 module | §3 |
-| [`wire/_spool.py`](../sdk/python/src/fabric/wire/_spool.py), [`wire/_sender.py`](../sdk/python/src/fabric/wire/_sender.py), [`wire/_pipeline.py`](../sdk/python/src/fabric/wire/_pipeline.py) | Spool kinds, sender, capture worker | §3.5 |
-| [`_segments.py`](../sdk/python/src/fabric/_segments.py) | Run table, segments, resume tokens, `end_run` | §3.6 |
-| [`_seal.py`](../sdk/python/src/fabric/_seal.py) | Canonical record digest, seal digest, seal accumulator | §3.7 |
-| [`_manifest.py`](../sdk/python/src/fabric/_manifest.py) | Capture manifests | §3.8 |
-| [`wire/_attrs.py`](../sdk/python/src/fabric/wire/_attrs.py) | P1 keys on every exchange span | §3.9 |
-| [`call_recorder.py`](../sdk/python/src/fabric/call_recorder.py), [`adapters/`](../sdk/python/src/fabric/adapters/), [`http_dispatch.py`](../sdk/python/src/fabric/http_dispatch.py) | Explicit producers in `records` mode | §3.10 |
-| [`reconstruct/_inputs.py`](../sdk/python/src/fabric/reconstruct/_inputs.py), [`_verify.py`](../sdk/python/src/fabric/reconstruct/_verify.py), [`_report.py`](../sdk/python/src/fabric/reconstruct/_report.py) | Reading records, manifests and seals; integrity | §3.12 |
-| [`reconstruct/_graph.py`](../sdk/python/src/fabric/reconstruct/_graph.py) | Segment graph, rules G1–G10, run states | §3.12 |
-| [`reconstruct/_project.py`](../sdk/python/src/fabric/reconstruct/_project.py), [`_fields_model.py`](../sdk/python/src/fabric/reconstruct/_fields_model.py), [`reconstruct/_evidence.py`](../sdk/python/src/fabric/reconstruct/_evidence.py) | The step projection | §3.13 |
-| [`fabricguardprocessor/records.go`](../components/otel-collector-fabric/processor/fabricguardprocessor/records.go) | Node admission of the records class | §3.14 |
-| [`contracts/coverage/v1/`](../contracts/coverage/v1/README.md), [`contracts/capture/v1/`](../contracts/capture/v1/README.md) | Schemas, registries, fixtures and vectors | §4 |
-| [`scripts/contracts/p1_reference.py`](../scripts/contracts/p1_reference.py) | Reference implementations used to produce the vectors | §4.3 |
+| [`_sequence.py`](../../sdk/python/src/fabric/_sequence.py) | Source identity, epochs, the shared `SourceAllocator`, run-scope context, pseudonyms | §3.2, §3.3 |
+| [`wire/_registration.py`](../../sdk/python/src/fabric/wire/_registration.py) | Epoch registration files in the spool directory | §3.2 |
+| [`_records.py`](../../sdk/python/src/fabric/_records.py) | The records input: `Attempt.emit`, phases and status inputs | §3.4 |
+| [`_evidence.py`](../../sdk/python/src/fabric/_evidence.py) | The structured evidence carrier | §3.4a |
+| [`_capture_types.py`](../../sdk/python/src/fabric/_capture_types.py) | Types shared by every P1 module | §3 |
+| [`wire/_spool.py`](../../sdk/python/src/fabric/wire/_spool.py), [`wire/_sender.py`](../../sdk/python/src/fabric/wire/_sender.py), [`wire/_pipeline.py`](../../sdk/python/src/fabric/wire/_pipeline.py) | Spool kinds, sender, capture worker | §3.5 |
+| [`_segments.py`](../../sdk/python/src/fabric/_segments.py) | Run table, segments, resume tokens, `end_run` | §3.6 |
+| [`_seal.py`](../../sdk/python/src/fabric/_seal.py) | Canonical record digest, seal digest, seal accumulator | §3.7 |
+| [`_manifest.py`](../../sdk/python/src/fabric/_manifest.py) | Capture manifests | §3.8 |
+| [`wire/_attrs.py`](../../sdk/python/src/fabric/wire/_attrs.py) | P1 keys on every exchange span | §3.9 |
+| [`call_recorder.py`](../../sdk/python/src/fabric/call_recorder.py), [`adapters/`](../../sdk/python/src/fabric/adapters/), [`http_dispatch.py`](../../sdk/python/src/fabric/http_dispatch.py) | Explicit producers in `records` mode | §3.10 |
+| [`reconstruct/_inputs.py`](../../sdk/python/src/fabric/reconstruct/_inputs.py), [`_verify.py`](../../sdk/python/src/fabric/reconstruct/_verify.py), [`_report.py`](../../sdk/python/src/fabric/reconstruct/_report.py) | Reading records, manifests and seals; integrity | §3.12 |
+| [`reconstruct/_graph.py`](../../sdk/python/src/fabric/reconstruct/_graph.py) | Segment graph, rules G1–G10, run states | §3.12 |
+| [`reconstruct/_project.py`](../../sdk/python/src/fabric/reconstruct/_project.py), [`_fields_model.py`](../../sdk/python/src/fabric/reconstruct/_fields_model.py), [`reconstruct/_evidence.py`](../../sdk/python/src/fabric/reconstruct/_evidence.py) | The step projection | §3.13 |
+| [`fabricguardprocessor/records.go`](../../components/otel-collector-fabric/processor/fabricguardprocessor/records.go) | Node admission of the records class | §3.14 |
+| [`contracts/coverage/v1/`](../../contracts/coverage/v1/README.md), [`contracts/capture/v1/`](../../contracts/capture/v1/README.md) | Schemas, registries, fixtures and vectors | §4 |
+| [`scripts/contracts/p1_reference.py`](../../scripts/contracts/p1_reference.py) | Reference implementations used to produce the vectors | §4.3 |
 
 Tests: `sdk/python/tests/test_records_*.py`, `test_segments*.py`,
 `test_manifest.py`, `test_reconstruct_project.py`,

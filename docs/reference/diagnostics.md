@@ -70,14 +70,15 @@ Fix: unset the variable if fabric.yaml should decide.
 
 `command_not_built`, error: this command is not part of this release yet.
 
-Fix: upgrade the CLI; until then follow docs/quickstart.md.
+Fix: upgrade the CLI; until then follow docs/reference/manual-setup/quickstart.md.
 
 ### FC-011
 
 `option_not_built`, error: this option is not part of this release yet.
 
 Fix: use the local profile's defaults; production, Kubernetes and the other destinations follow
-docs/production-setup.md and docs/deployment.md until the CLI builds them.
+docs/reference/manual-setup/production-setup.md and docs/reference/manual-setup/deployment.md until
+the CLI builds them.
 
 ### FC-012
 
@@ -270,8 +271,8 @@ evidence.
 
 `sensor_auditd_available`, info: eBPF cannot load here but auditd is present on this host.
 
-Fix: follow docs/host-sensors.md to run the auditd sensor collector; the CLI does not start it in
-this release.
+Fix: follow docs/reference/host-sensors.md to run the auditd sensor collector; the CLI does not
+start it in this release.
 
 ### FC-047
 
@@ -626,10 +627,9 @@ generated together (a new id key changes the namespace's pseudonyms; restart its
 `kube_certificate_expiring`, warning: a certificate in a Secret expires within 14 days; Secrets are
 never overwritten, so it is not renewed by itself.
 
-Fix: delete the Node's or the injector's Secret the message names and run the command again (helm
-upgrade runs the secrets Job): a new certificate is issued from the same CA; then restart the Node
-if it was its own. For an agent Secret or the CA Secret follow 'Certificate renewal' in
-docs/deployment.md.
+Fix: delete the Node's or injector's Secret the message names and rerun the command (helm upgrade
+runs the secrets Job): a new certificate comes from the same CA; restart the Node if it was its own.
+For an agent or CA Secret see 'Certificate renewal' in docs/reference/manual-setup/deployment.md.
 
 ### FC-112
 
@@ -637,10 +637,9 @@ docs/deployment.md.
 secures fail: agents cannot deliver to the Node, or the injector's webhook is skipped and pods start
 without capture.
 
-Fix: delete the Node's or the injector's Secret the message names and run the command again (helm
-upgrade runs the secrets Job): a new certificate is issued from the same CA; then restart the Node
-if it was its own. For an agent Secret or the CA Secret follow 'Certificate renewal' in
-docs/deployment.md.
+Fix: delete the Node's or injector's Secret the message names and rerun the command (helm upgrade
+runs the secrets Job): a new certificate comes from the same CA; restart the Node if it was its own.
+For an agent or CA Secret see 'Certificate renewal' in docs/reference/manual-setup/deployment.md.
 
 ### FC-113
 

@@ -65,5 +65,5 @@ the port-forward `up.sh` opens on `localhost:4318`.
   for the fail-closed posture (tenant identity, receiver mTLS, explicit
   peers, authenticated HTTPS export, persistent queue).
 - **Privacy and security** — see
-  [`docs/privacy-and-security.md`](../../docs/privacy-and-security.md) for
+  [`docs/reference/privacy-and-security.md`](../../docs/reference/privacy-and-security.md) for
   what Fabric protects, what it records and its limits.

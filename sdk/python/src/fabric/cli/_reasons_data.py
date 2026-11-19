@@ -11,7 +11,7 @@ from typing import Any
 
 REASONS: dict[str, Any] = {
     "schema": "fabric.reason-words/v1",
-    "docs": "docs/diagnostics.md",
+    "docs": "docs/reference/diagnostics.md",
     "comment": "Spec 058 WP8-18 (F10): every reason a reader verdict can carry (the "
     "run-reconstruction chainReason, controls chain and unattributed host event "
     "enums), in plain words with the fix. `chains` overrides the words where a reason "

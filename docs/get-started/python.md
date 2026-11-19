@@ -69,4 +69,4 @@ its fix.
   `fabric init --exec`, `fabric init --http-host api.example.com`.
 - Stop the recorder with `fabric down`. Your records stay in `./fabric-data`.
 - Something wrong: `fabric doctor`, and the
-  [diagnostics catalogue](../diagnostics.md).
+  [diagnostics catalogue](../reference/diagnostics.md).

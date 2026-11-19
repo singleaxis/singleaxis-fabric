@@ -489,7 +489,7 @@ def test_rotate_id_key_and_node_cert_by_name(
 # ---------------------------------------------------------------- --from-env (§11.3)
 
 QUICKSTART_ENV = {
-    # docs/quickstart.md section 4, as a user's shell has it.
+    # docs/reference/manual-setup/quickstart.md section 4, as a user's shell has it.
     "FABRIC_WIRE_AUTOLOAD": "1",
     "FABRIC_TENANT_ID": "demo",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",

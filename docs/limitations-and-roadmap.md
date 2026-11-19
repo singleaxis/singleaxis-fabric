@@ -14,14 +14,14 @@ not built.
 
 | Not captured | Why | What the record shows |
 |---|---|---|
-| TypeScript model calls at the wire | TypeScript wire capture (`undici`) is not built (planned). TypeScript has only the explicit, app-reported APIs. | Nothing. Use the [explicit APIs](explicit-apis.md). |
+| TypeScript model calls at the wire | TypeScript wire capture (`undici`) is not built (planned). TypeScript has only the explicit, app-reported APIs. | Nothing. Use the [explicit APIs](reference/explicit-apis.md). |
 | Python model calls through `requests` or `urllib3` | Only `httpx`, `httpx2` and `aiohttp` are teed. | An `uninstrumented_client` loss per matched call (method and URL only are read): the run is `partial`, and `WireHandle.status()` lists the client under `uninstrumented_clients`. |
 | Python model calls through `boto3` (including Bedrock), gRPC or raw sockets, an httpx client on a custom transport not wrapped in `fabric.wire.WireTransport` / `AsyncWireTransport`, or any client with `FABRIC_WIRE_AIOHTTP=0` (aiohttp) | Not teed. `boto3` sends through urllib3, but Bedrock hosts are not matched by default. | Nothing. The call is invisible, and a run can still be complete for the calls that were captured (see below). |
 | Endpoints other than chat completions, responses, completions, embeddings and messages | The endpoint matcher (`fabric/wire/_match.py`) recognises only those five APIs. Images, audio, moderations, rerank, fine-tuning, files, provider batch and realtime are not matched. | Nothing. |
 | Model hosts you have not listed | Only `api.openai.com`, `api.anthropic.com` and `*.openai.azure.com` are matched by default. | Nothing, until you add the host with `FABRIC_WIRE_ENDPOINTS`. |
 | HTTP headers, environment values, credentials | Privacy rule: never captured. | Nothing. |
 | Hidden reasoning, local variables, provider-held state | Never crosses an observable boundary; Fabric never fetches provider-side state. | Only what appears in the request and response bytes. |
-| Tool execution inside the agent process, databases, files, MCP servers, browsers, remote sandboxes other than E2B; subprocesses, non-model HTTP and E2B sandboxes when their hooks are off | No capture point except the opt-in hooks (Python): `exec.subprocess` (v0.10.0, `FABRIC_WIRE_EXEC=1`), and `http.nonmodel` for httpx calls to listed hosts and `remote.sandbox` for the pinned E2B SDK (v0.11.0; [agent action reconstruction](action-reconstruction.md)), what the application reports through the explicit APIs, and the optional [host sensors](host-sensors.md) (metadata only). MCP calls are recorded only when the application wraps its session with `fabric.integrations.mcp` (app-reported). | Only what the application reports, the hook's subprocess records, or host metadata. |
+| Tool execution inside the agent process, databases, files, MCP servers, browsers, remote sandboxes other than E2B; subprocesses, non-model HTTP and E2B sandboxes when their hooks are off | No capture point except the opt-in hooks (Python): `exec.subprocess` (v0.10.0, `FABRIC_WIRE_EXEC=1`), and `http.nonmodel` for httpx calls to listed hosts and `remote.sandbox` for the pinned E2B SDK (v0.11.0; [agent action reconstruction](reference/action-reconstruction.md)), what the application reports through the explicit APIs, and the optional [host sensors](reference/host-sensors.md) (metadata only). MCP calls are recorded only when the application wraps its session with `fabric.integrations.mcp` (app-reported). | Only what the application reports, the hook's subprocess records, or host metadata. |
 
 LiteLLM and DSPy send through `aiohttp` by default; that path is captured
 (capture point `wire.py.aiohttp`, on whenever wire capture is installed;
@@ -79,7 +79,7 @@ ledger); and `fabric.reconstruct` exhausting memory under heavy loss
 - **Redaction needs a service you run, and zero-code capture cannot
   redact.** `redact`, `masked_only` and the review copy of
   `original_plus_masked` are performed by your
-  [redaction service](privacy-and-security.md#redaction-service) (Unix
+  [redaction service](reference/privacy-and-security.md#redaction-service) (Unix
   socket or loopback only), with the transformation named in code at
   `fabric.wire.install()`. Under autoload those modes withhold the content
   (`protection_failed`), as does any service failure, timeout (5 s) or
@@ -91,7 +91,7 @@ ledger); and `fabric.reconstruct` exhausting memory under heavy loss
   so it does not run on Windows. Local file mode on Windows has no spool
   and exports directly.
 - **Host sensors in production (v0.11.0) have three known limits**
-  ([host sensors](host-sensors.md#production-mode)):
+  ([host sensors](reference/host-sensors.md#production-mode)):
   - the `hst-` host id in a sensor's records is not bound to its ingress
     group yet, only format-checked, so a sensor holding one group's
     credentials can name another host;
@@ -105,15 +105,15 @@ ledger); and `fabric.reconstruct` exhausting memory under heavy loss
   `fabric.event_id` (the reader counts repeats as `duplicate_records`).
   Fabric does not prove that a destination durably persisted a record.
 - **Host sensors are corroboration only** and are not enterprise-qualified
-  ([host sensors](host-sensors.md)).
+  ([host sensors](reference/host-sensors.md)).
 
 ## Production qualification
 
 Fabric v0.12.1 has been tested on a developer workstation and in CI (unit,
 installed-package, Compose and kind tests). No customer production
 deployment has been qualified. Before production, run the tests in
-[deployment](deployment.md) against your own Node, store and agents, and
-read [privacy and security](privacy-and-security.md).
+[deployment](reference/manual-setup/deployment.md) against your own Node, store and agents, and
+read [privacy and security](reference/privacy-and-security.md).
 
 ## Roadmap (spec 049 §8, spec 056)
 
@@ -129,14 +129,14 @@ hook and host-sensor ingress of P4 ahead of P2 and P3.
 |---|---|---|---|
 | P0 | [049](../specs/049-four-layer-capture-coverage.md) | Coverage contract freeze (`contracts/coverage/v1`) | **Built in v0.8** (contracts); the run-level coverage report is P1 |
 | P0-A | [049](../specs/049-four-layer-capture-coverage.md) | PROTECT stage, production profile gate, encryption at rest, source authentication, typed extraction, pseudonym v2 | **Built in v0.8** |
-| P1 | [050](../specs/050-run-structure-and-records-p1.md) | One allocator and spool for both inputs, `event_id`, segment chaining and resume tokens, capture manifests, the step projection (`fabric.step-projection/v1`) and per-layer verdicts | **Mostly released in v0.10.0** (waves 0–2: shared allocator, records input via `WireHandle.records`, segments, seals, manifests, step projection); `decision()` records (WP-15) and Node pre-acknowledgement validation (WP-21) not built. See [the P1 run record](run-record.md) |
+| P1 | [050](../specs/050-run-structure-and-records-p1.md) | One allocator and spool for both inputs, `event_id`, segment chaining and resume tokens, capture manifests, the step projection (`fabric.step-projection/v1`) and per-layer verdicts | **Mostly released in v0.10.0** (waves 0–2: shared allocator, records input via `WireHandle.records`, segments, seals, manifests, step projection); `decision()` records (WP-15) and Node pre-acknowledgement validation (WP-21) not built. See [the P1 run record](reference/run-record.md) |
 | P1-A | [050](../specs/050-run-structure-and-records-p1.md) | Mixed explicit + wire capture qualification, passivity harness | Not built |
 | P2 | [051](../specs/051-context-and-lifecycle-p2.md) | Run context and lifecycle reporting (`record_trigger`, `record_input`, `record_run_context`, `record_outcome`, ...) | Not built |
 | P3 | [052](../specs/052-decisions-and-effects-p3.md) | Decision and effect records: observations of controls run by other systems, commit state, receipts. Record-only: Fabric never approves, blocks or waits | Not built |
 | P4 | [053](../specs/053-execution-channels-p4.md) | Opt-in hooks for MCP clients, subprocesses, DB-API, non-model HTTP, file audit; host sensors on a production Node | Not built, except what spec 056 needs: the hooks foundation and the subprocess hook (v0.10.0); the non-model HTTP hook (httpx, no dialects) and host sensors on a production Node (v0.11.0) |
 | P5 | [054](../specs/054-specialised-runtimes-p5.md) | Realtime/websocket, provider batch and files, media, UI automation | Not built |
 | TS-1 | [055](../specs/055-typescript-wire-capture.md) | TypeScript wire capture on `undici` (Node.js 24+) | Not built |
-| 056 M1 | [056](../specs/056-agent-action-reconstruction.md) | Agent action reconstruction on the local profile: subprocess effects linked to the tool calls that caused them, host events joined through the process tree, per-chain verdicts | **Released in v0.10.0**: contracts, hooks, subprocess hook, attribution, chain verdicts, host join and `--host-records`; AR-1 passes in CI in hermetic mode and in live mode (Linux, eBPF); local-profile host anchors are `tentative` ([agent action reconstruction](action-reconstruction.md)) |
+| 056 M1 | [056](../specs/056-agent-action-reconstruction.md) | Agent action reconstruction on the local profile: subprocess effects linked to the tool calls that caused them, host events joined through the process tree, per-chain verdicts | **Released in v0.10.0**: contracts, hooks, subprocess hook, attribution, chain verdicts, host join and `--host-records`; AR-1 passes in CI in hermetic mode and in live mode (Linux, eBPF); local-profile host anchors are `tentative` ([agent action reconstruction](reference/action-reconstruction.md)) |
 | 056 M2 | [056](../specs/056-agent-action-reconstruction.md) | The same against a production Node, container and remote sandboxes | **Released in v0.11.0**: host-records library, auditd and eBPF production modes, per-source ingress groups, chart, Compose and Kubernetes bindings, exec start times and container ids, the non-model HTTP and E2B hooks, production reconstruction (H1 `certain`, H5); AR-1 production passes in CI (replay, live, auditd). Known limits [above](#deployment-limits) |
 
 ### Current focus: agent action reconstruction (spec 056)
@@ -163,7 +163,7 @@ Released in v0.8: Decisions (wire capture) and tool call ↔ result pairing
 the subprocess hook, linking effects to tool calls, the
 process-tree host join for local-profile host records and per-chain
 verdicts, read with `python -m fabric.reconstruct actions`
-([agent action reconstruction](action-reconstruction.md)). Released in
+([agent action reconstruction](reference/action-reconstruction.md)). Released in
 v0.11.0 (milestone M2): production host ingress, process start times on
 host records (`certain` anchors), container sandboxes linked by their
 reported id, and the E2B remote sandbox. Not built: remote sandboxes other

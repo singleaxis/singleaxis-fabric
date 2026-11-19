@@ -103,7 +103,7 @@ Issues that undermine any of these will be treated as critical:
    content pipeline that runs anything other than `memory_limiter` and
    `fabriccontent` (bare-binary builds rely on
    `qualify-distribution-config.sh`). See
-   [privacy and security](docs/privacy-and-security.md).
+   [privacy and security](docs/reference/privacy-and-security.md).
 3. **Durable, authenticated delivery** — ingress is authenticated
    (bearer token in the compose overlay, mTLS in the production Helm
    profile); delivery uses a persistent fsync queue with
