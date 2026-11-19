@@ -15,6 +15,18 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: the encrypted durable spool (spec 055, unit
+  055-t7).** Still not installable from the package, and no Node.js build is
+  released as qualified yet. A Node process can now write captured records to
+  the same spool directory format the Python recorder uses, one fsync'd file
+  per record, sealed with AES-256-GCM when a spool key is set. Python's drainer
+  reads what Node wrote and Node reads what Python wrote (including Python's
+  batch files), byte for byte. Every writer of a directory, Node or Python,
+  shares one size bound; corrupt or renamed records are set aside as
+  `.corrupt` files and still count against it, and records sealed under a key
+  this process does not hold are left for a drainer that has it. Records
+  survive the writer being killed.
+
 - **Node.js capture groundwork: the `fetch` capture hook and its passivity
   gate (spec 055, unit 055-t6).** Still not installable from the package
   (that is unit 055-t14), and no Node.js build is released as qualified yet.
