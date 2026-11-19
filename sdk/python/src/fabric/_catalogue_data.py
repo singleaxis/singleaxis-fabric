@@ -1411,7 +1411,7 @@ CATALOGUE: dict[str, Any] = {
         {
             "id": "FC-164",
             "name": "node_run_nothing_reported",
-            "severity": "warning",
+            "severity": "error",
             "text": "no record of this Node.js run reached the destination",
             "fix": "build the agent's exporter with new "
             "OTLPTraceExporter(fabricExporterOptions()) from @singleaxis/fabric, "

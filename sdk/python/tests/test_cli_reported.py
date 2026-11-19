@@ -74,7 +74,10 @@ def test_a_node_run_with_nothing_reported_says_why(lab: dict[str, Any]) -> None:
     code, _, report = _verify_now(lab)
     (finding,) = [f for f in report["findings"] if f["id"] == "FC-164"]
     assert "fabricExporterOptions" in finding["fix"]
-    assert "FC-070" not in _ids(report) and code == 0
+    # An error, as a Python run with nothing in the destination is (FC-067): never
+    # "no problem found" with exit 0 for a run whose records never arrived.
+    assert finding["severity"] == "error"
+    assert "FC-070" not in _ids(report) and code == 1
 
 
 def test_show_labels_reported_records(lab: dict[str, Any]) -> None:

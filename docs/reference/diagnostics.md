@@ -1010,7 +1010,7 @@ show displays the reported records, and the host sensor records the process's co
 
 ### FC-164
 
-`node_run_nothing_reported`, warning: no record of this Node.js run reached the destination.
+`node_run_nothing_reported`, error: no record of this Node.js run reached the destination.
 
 Fix: build the agent's exporter with new OTLPTraceExporter(fabricExporterOptions()) from
 @singleaxis/fabric, record each decision with fabric.decision(...), call provider.shutdown() before
