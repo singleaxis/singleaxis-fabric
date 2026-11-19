@@ -1,0 +1,19 @@
+{
+  "capture": "not_installed",
+  "error": "ValueError",
+  "fix": "FABRIC_WIRE_ENDPOINTS is a JSON array such as [{\"endpoint_id\":\"my-model\",\"dialect\":\"openai\",\"hosts\":[\"models.example.com\"]}] (see docs/quickstart.md)",
+  "notice_ids": [],
+  "phase": "install",
+  "pid": 4243,
+  "reason": "FABRIC_WIRE_ENDPOINTS is not valid JSON (line 1 column 1)",
+  "reason_id": "FW-014",
+  "schema": "fabric.wire-status/v1",
+  "sdk_version": "0.12.1",
+  "status": {
+    "capture": "disabled"
+  },
+  "warning_ids": [
+    "FW-001"
+  ],
+  "written_at": "2026-11-12T19:32:36.143Z"
+}

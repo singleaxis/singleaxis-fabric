@@ -1,0 +1,47 @@
+{
+  "capture": "installed",
+  "notice_ids": [
+    "FW-005",
+    "FW-029"
+  ],
+  "phase": "install",
+  "pid": 5151,
+  "schema": "fabric.wire-status/v1",
+  "sdk_language": "typescript",
+  "sdk_version": "0.13.0",
+  "status": {
+    "capture": "active",
+    "capture_point_reasons": {
+      "wire.ts.node_http": "hook_disabled"
+    },
+    "capture_points": {
+      "wire.ts.node_http": "disabled",
+      "wire.ts.undici": "active"
+    },
+    "content_capture": "enabled",
+    "endpoint_set": [
+      "openai",
+      "anthropic",
+      "azure-openai"
+    ],
+    "endpoint_table_version": 1,
+    "last_prompt": "Summarise the patient record for Jane Doe",
+    "profile": "local",
+    "runtime_qualification": {
+      "listed": true,
+      "node": "24.4.0",
+      "platform": "linux-x64-glibc",
+      "undici": "7.11.0",
+      "undici_origin": "bundled"
+    },
+    "spool_backlog": {
+      "bytes": 0,
+      "records": 0
+    },
+    "workers_unattached": 1
+  },
+  "warning_ids": [
+    "FW-030"
+  ],
+  "written_at": "2026-11-13T09:00:00.000Z"
+}
