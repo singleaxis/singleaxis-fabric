@@ -53,7 +53,8 @@ _FIXES: tuple[tuple[str, str, str], ...] = (
      "releases before 0.13)"),
     ("FABRIC_WIRE_ENDPOINTS", "FW-014",
      'FABRIC_WIRE_ENDPOINTS is a JSON array such as [{"endpoint_id":"my-model",'
-     '"dialect":"openai","hosts":["models.example.com"]}] (see docs/reference/manual-setup/quickstart.md)'),
+     '"dialect":"openai","hosts":["models.example.com"]}] '
+     "(see docs/reference/manual-setup/quickstart.md)"),
     ("invalid endpoint matcher", "FW-015",
      "each FABRIC_WIRE_ENDPOINTS entry needs an endpoint_id and provider_name of lowercase "
      "letters, digits and ._-, dialect openai or anthropic, hosts or host_suffixes, schemes "

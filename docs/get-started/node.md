@@ -91,5 +91,5 @@ npx fabric show
 ## Next
 
 - Stop the recorder with `npx fabric down`. Your records stay in `./fabric-data`.
-- Something wrong: `npx fabric doctor`, and the [diagnostics catalogue](../diagnostics.md).
+- Something wrong: `npx fabric doctor`, and the [diagnostics catalogue](../reference/diagnostics.md).
 - What Fabric can see for your agent, and what stays invisible: `npx fabric plan -- node agent.mjs`.
