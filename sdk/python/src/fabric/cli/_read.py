@@ -200,8 +200,9 @@ def reported(files: Sequence[str], record: _runstate.RunRecord,
 
 def reports_by_code(record: _runstate.RunRecord) -> bool:
     """A Node.js agent records through its explicit API (before zero-code Node capture):
-    its run is ``capture: off`` with only the "not built yet" note, not a failed launch."""
-    return record.runtime == "node" and all(f.get("id") == "FC-053" for f in record.findings)
+    its run is ``capture: off`` with the "not built yet" note (and any sensor notes), not
+    a failed launch; only ``--no-capture`` (``FC-058``) means nothing was meant to record."""
+    return record.runtime == "node" and not any(f.get("id") == "FC-058" for f in record.findings)
 
 
 # ---------------------------------------------------------------- reasons in words (§12.4)

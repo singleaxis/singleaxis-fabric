@@ -34,7 +34,8 @@ def _node_run(lab: dict[str, Any], label: str = "node-1") -> int:
     started = time.time_ns() - 1_000_000_000
     record = _runstate.RunRecord(
         label=label, started_ns=started, command="node", runtime="node",
-        project=lab["project"].name, findings=[{"id": "FC-053", "detail": "Node.js"}],
+        project=lab["project"].name,
+        findings=[{"id": "FC-053", "detail": "Node.js"}, {"id": "FC-042"}],
     )  # fmt: skip
     _runstate.save(record, lab["project"] / ".fabric")
     return started
@@ -95,3 +96,13 @@ def test_show_says_why_a_node_run_has_no_records(lab: dict[str, Any]) -> None:
     report, lines = _show.run(parse(["show"]), lab["shell"], lab["project"])
     assert report.exit_code == 1 and [f.id for f in report.findings] == ["FC-164"]
     assert "verdict: no records" in lines[0]
+
+
+def test_a_node_run_started_with_no_capture_is_not_reported(lab: dict[str, Any]) -> None:
+    record = _runstate.RunRecord(
+        label="node-off", started_ns=time.time_ns(), command="node", runtime="node",
+        findings=[{"id": "FC-058"}],
+    )  # fmt: skip
+    _runstate.save(record, lab["project"] / ".fabric")
+    _, _, report = _verify_now(lab)
+    assert "FC-070" in _ids(report) and "FC-163" not in _ids(report)
