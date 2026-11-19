@@ -15,6 +15,34 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **`fabric init --production`.** One command makes a production project on
+  a single host: it writes a capture policy into your project
+  (`fabric-capture-policy.json`: model exchanges kept, no command argument,
+  command output or other HTTP body kept in clear; yours to review and edit,
+  never rewritten), and generates the spool and content keys, one ingest
+  token and client certificate for each source (the agent, the host sensor,
+  and the canary `fabric verify` sends under its own binding), and derives
+  the source ids the Node binds from your id key. The agent's settings and
+  the Node's (`.fabric/node.env`) are compiled from `fabric.yaml`, every
+  secret by file path; nothing secret is ever printed. `--image-digest`
+  names your agent image in the policy. `fabric init --rotate tokens` and
+  `--rotate client-certs` rotate them (`all` includes both and never the id
+  key). Starting the production Node with `fabric up` and `fabric verify
+  --production` on a single host are not in this release yet.
+- **Destination presets.** `fabric init --production --destination trial`
+  (try the production Node before you have a destination; not durable
+  storage), `s3 --bucket NAME --region REGION --otlp-endpoint URL`,
+  `s3-compatible --endpoint URL --bucket NAME --otlp-endpoint URL` (with
+  `--ca-file` for a private CA and `--credentials-file` by path) and `otlp
+  --otlp-endpoint URL`. Only identifiers you already own are asked for, as
+  flags, or on a terminal by a prompt; never a credential. A file a preset
+  names must exist, and a credentials or headers file must be private.
+- **`node.queue_size` and sizing advice.** One setting for the Node's
+  durable queue, as a disk budget (`20GiB`, `500MB`, or `auto`: half of the
+  free disk). `fabric init` turns it into the Node's queue lengths and warns,
+  with a size that fits, when it is more than the disk has free or when the
+  disk is too full for a useful queue. The local Node's queue follows it too
+  (unchanged on a disk with room).
 - **Node.js agents without Python.** `npx fabric up`, `init`, `plan`,
   `verify`, `show` and `down` now run the full CLI from the release's
   `fabric-cli` container image with Docker (as your own user, with your
