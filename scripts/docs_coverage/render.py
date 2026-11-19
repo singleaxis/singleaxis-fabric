@@ -109,6 +109,29 @@ def tables(reports: Path = REPORTS) -> dict[str, str]:
     return out
 
 
+def drift(fresh: Mapping[str, Any], committed: Mapping[str, Any]) -> list[str]:
+    """Where a fresh ``plan-scenarios`` report renders other tables than the committed one,
+    scenario by scenario id: a changed table, and a scenario either report lacks."""
+    fix = ("copy it to docs/_generated/coverage/reports/ and run "
+           "scripts/docs_coverage/render.py")  # fmt: skip
+    new = {s["id"]: s for s in fresh.get("scenarios") or []}
+    old = {s["id"]: s for s in committed.get("scenarios") or []}
+    found: list[str] = []
+    for scenario in sorted(new.keys() | old.keys()):
+        if scenario not in old:
+            found.append(f"plan-scenarios {scenario}: in the fresh report only; {fix}")
+        elif scenario not in new:
+            found.append(f"plan-scenarios {scenario}: missing from the fresh report, so its "
+                         "committed table is no longer measured; fix the plan-scenarios job, "
+                         f"or {fix}")  # fmt: skip
+        elif table(new[scenario].get("coverage") or [], "x") != table(
+            old[scenario].get("coverage") or [], "x"
+        ):
+            found.append(f"plan-scenarios {scenario}: the fresh report renders another table; "
+                         f"{fix}")  # fmt: skip
+    return found
+
+
 def embed(text: str, rendered: Mapping[str, str]) -> str:
     def sub(match: re.Match[str]) -> str:
         found = rendered.get(match.group("id"))
@@ -130,14 +153,7 @@ def main(argv: list[str] | None = None) -> int:
     if options.plan_scenarios:
         fresh = json.loads(options.plan_scenarios.read_text("utf-8"))
         committed = json.loads((REPORTS / "plan-scenarios.json").read_text("utf-8"))
-        for new, old in zip(fresh["scenarios"], committed["scenarios"], strict=False):
-            source = "x"
-            if table(new.get("coverage") or [], source) != table(
-                old.get("coverage") or [], source
-            ):
-                problems.append(f"plan-scenarios {new['id']}: the fresh report renders another "
-                                "table; copy it to docs/_generated/coverage/reports/ and run "
-                                "scripts/docs_coverage/render.py")  # fmt: skip
+        problems += drift(fresh, committed)
     for name, text in rendered.items():
         path = OUT / f"{name}.md"
         if options.check:
