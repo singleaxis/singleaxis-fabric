@@ -247,8 +247,11 @@ export interface FabricExporterOptions {
   url?: string;
   /** The ingress credential from `FABRIC_OTLP_HEADERS_FILE`. */
   headers?: Record<string, string>;
-  /** The CA and client certificate the Node is reached with. */
-  httpAgentOptions?: { ca?: Buffer; cert?: Buffer; key?: Buffer };
+  /**
+   * The CA and client certificate the Node is reached with, as PEM text. Strings,
+   * not `Buffer`s, so a project without `@types/node` can typecheck against this.
+   */
+  httpAgentOptions?: { ca?: string; cert?: string; key?: string };
   timeoutMillis?: number;
 }
 
@@ -270,14 +273,14 @@ export function fabricExporterOptions(env: Env = process.env): FabricExporterOpt
       url: `${base.replace(/\/+$/, "")}/v1/traces`,
       timeoutMillis: 10_000,
     };
-    const agent: { ca?: Buffer; cert?: Buffer; key?: Buffer } = {};
+    const agent: { ca?: string; cert?: string; key?: string } = {};
     const ca = get(env, "FABRIC_OTLP_CERTIFICATE");
     const cert = get(env, "FABRIC_OTLP_CLIENT_CERTIFICATE");
     const key = get(env, "FABRIC_OTLP_CLIENT_KEY");
-    if (ca !== undefined) agent.ca = readFileSync(ca);
+    if (ca !== undefined) agent.ca = readFileSync(ca, "utf-8");
     if (cert !== undefined && key !== undefined) {
-      agent.cert = readFileSync(cert);
-      agent.key = readFileSync(key);
+      agent.cert = readFileSync(cert, "utf-8");
+      agent.key = readFileSync(key, "utf-8");
     }
     if (Object.keys(agent).length > 0) options.httpAgentOptions = agent;
     const headersFile = get(env, "FABRIC_OTLP_HEADERS_FILE");

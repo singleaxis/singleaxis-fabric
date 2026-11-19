@@ -52,7 +52,7 @@ describe("FABRIC_OTLP_* route", () => {
     expect(captureStatus(env)).toEqual({ capture: "enabled" });
     const options = fabricExporterOptions(env);
     expect(options.url).toBe("https://fabric-node:4318/v1/traces");
-    expect(options.httpAgentOptions?.ca?.toString()).toBe("CA PEM");
+    expect(options.httpAgentOptions?.ca).toBe("CA PEM");
     expect(options.httpAgentOptions?.cert).toBeUndefined();
     expect(options.headers).toBeUndefined();
   });
@@ -65,8 +65,8 @@ describe("FABRIC_OTLP_* route", () => {
       FABRIC_OTLP_CLIENT_KEY: key,
       FABRIC_OTLP_HEADERS_FILE: headers,
     });
-    expect(options.httpAgentOptions?.cert?.toString()).toBe("CERT PEM");
-    expect(options.httpAgentOptions?.key?.toString()).toBe("KEY PEM");
+    expect(options.httpAgentOptions?.cert).toBe("CERT PEM");
+    expect(options.httpAgentOptions?.key).toBe("KEY PEM");
     expect(options.headers).toEqual({ authorization: "Bearer tok", "x-tenant": "acme" });
   });
 
