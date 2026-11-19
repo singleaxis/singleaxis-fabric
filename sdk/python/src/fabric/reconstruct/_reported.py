@@ -34,6 +34,8 @@ DECISION_SPAN = "fabric.decision"
 #: The ``decisions`` chain of a reported run, as ``plan`` and ``verify`` state it.
 DECISIONS_CHAIN = "unsupported(unsupported_runtime)"
 _LANGUAGES = {"nodejs": "TypeScript SDK", "webjs": "TypeScript SDK", "python": "Python SDK"}
+#: The SDK of a span whose resource names no language Fabric ships an SDK for.
+_UNKNOWN_SDK = "an SDK's"
 _TEXT_LIMIT = 80
 
 
@@ -105,7 +107,7 @@ def _text(value: Any) -> str | None:
 
 def _sdk(record: SpanRecord) -> str:
     language = record.resource.get("telemetry.sdk.language")
-    return _LANGUAGES.get(str(language), "explicit API") if language else "explicit API"
+    return _LANGUAGES.get(str(language), _UNKNOWN_SDK) if language else _UNKNOWN_SDK
 
 
 def _step(record: SpanRecord) -> ReportedStep | None:

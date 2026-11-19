@@ -19,6 +19,7 @@ from fabric.reconstruct._reported import (
     DECISIONS_CHAIN,
     in_window,
     reported_runs,
+    reported_runs_from,
 )
 
 TRACE = "ab" * 16
@@ -108,3 +109,17 @@ def test_the_reader_names_reported_runs_and_still_exits_1(
     # The explanation prints fixed vocabulary only, never an input value.
     for value in ("d-1", "support-agent", "acme", "model-example", "SECRET"):
         assert value not in err
+
+
+def test_a_span_without_a_known_sdk_language_is_worded_once() -> None:
+    """The summary names the SDK once: no "explicit API explicit API" for a resource that
+    names no language (or one Fabric ships no SDK for)."""
+    from fabric.reconstruct._inputs import SpanRecord  # noqa: PLC0415
+
+    for resource in ({}, {"telemetry.sdk.language": "rust"}):
+        root = SpanRecord(trace_id="t" * 32, span_id="s" * 16, parent_span_id=None,
+                          name="fabric.decision", start_ns=1, end_ns=2, attributes={},
+                          resource=resource, status="ok")  # fmt: skip
+        (run,) = reported_runs_from([root])
+        line = run.summary("#1")
+        assert "(an SDK's explicit API)" in line and line.count("explicit API") == 1
