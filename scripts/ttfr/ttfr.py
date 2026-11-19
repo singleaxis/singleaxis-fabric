@@ -191,6 +191,16 @@ def summarize(report: Mapping[str, Any], *, budget: float, path: str, agent: str
     }  # fmt: skip
 
 
+def observed_coverage(stdout: str) -> list[dict[str, Any]]:
+    """The coverage rows of a ``fabric verify --json`` report (§12.4), ``[]`` if none."""
+    try:
+        report = json.loads(stdout)
+    except ValueError:
+        return []
+    rows = ((report.get("data") or {}).get("run") or {}).get("coverage") or []
+    return [r for r in rows if isinstance(r, dict)]
+
+
 # ---------------------------------------------------------------- container mode
 
 
@@ -291,8 +301,16 @@ def run_container(options: argparse.Namespace, work: Path) -> dict[str, Any]:
                                "--workdir", str(project), "--json", str(report_file)],
                               env=env, check=False, timeout=1800)  # fmt: skip
         report = load_report(report_file, done)
-        return summarize(report, budget=options.budget, path=options.path, agent=options.agent,
-                         mode="container", package_source=source, evicted=evicted)  # fmt: skip
+        summary = summarize(report, budget=options.budget, path=options.path,
+                            agent=options.agent, mode="container", package_source=source,
+                            evicted=evicted)  # fmt: skip
+        if report.get("ok"):
+            # The observed coverage of the run (§12.5: the docs' per-shape tables are
+            # generated from it), after the clock.
+            observed = container.exec(["fabric", "verify", "--json"], env=env, check=False,
+                                      timeout=300)  # fmt: skip
+            summary["coverage"] = observed_coverage(observed.stdout)
+        return summary
     finally:
         container.exec(["fabric", "down", "--purge", "--quiet"], env={"PATH": f"{work}/venv/bin:"
                        "/usr/local/bin:/usr/bin:/bin"}, check=False, timeout=300)  # fmt: skip

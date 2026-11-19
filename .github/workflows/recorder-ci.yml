@@ -335,6 +335,47 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  ttfr-laptop-node:
+    # Spec 058 §3.3, G2 before zero-code Node.js capture: the Get started page for Node.js,
+    # executed as written in a fresh node:24 container with no Python (Docker reachable),
+    # against a fixture model on a host in no endpoint table. The page's npm install
+    # resolves the SDK to the tarball under test; `npx fabric up|verify|show` run the
+    # fabric-cli image built from this tree. G2: the install works first time, verify
+    # states the decisions unsupported(unsupported_runtime) and never passes the run,
+    # show labels the records reported, plan states the runtime. ttfr.json is kept.
+    name: TTFR laptop Node.js (G2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: Pack the SDK under test
+        working-directory: sdk/typescript
+        run: |
+          npm ci
+          npm run build
+          npm pack --pack-destination "${RUNNER_TEMP}"
+      - name: Time to first record (docs/get-started/node.md)
+        run: >-
+          python3 scripts/ttfr/ttfr_node.py
+          --tarball "${RUNNER_TEMP}/singleaxis-fabric-$(node -p 'require("./sdk/typescript/package.json").version').tgz"
+          --work "${RUNNER_TEMP}/f058-ttfr-node" --out ttfr.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ttfr-laptop-node
+          path: |
+            ttfr.json
+            ${{ runner.temp }}/f058-ttfr-node/steps.json
+          if-no-files-found: warn
+          retention-days: 30
+
   plan-scenarios:
     # Spec 058 §3.3, G5 (WP8-21): `fabric plan` answers each of the friction audit's five
     # "which layers do I need?" scenarios (scripts/plan_scenarios/scenarios.json) in one

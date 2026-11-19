@@ -69,6 +69,10 @@ TARGETS: Mapping[str, Target] = {
     # G4: one install with a preset, one namespace label, one pod annotation, then
     # verify. G4 limits no flag count; this bound only keeps the page from growing.
     "kubernetes": Target(commands=4, flags=10, lines=120),
+    # G2 before zero-code Node.js capture: the documented install works first time, and
+    # plan, verify and show state what is reported. G2 sets no command budget; this
+    # bound (up, run, verify, show) keeps the page from growing.
+    "laptop-node": Target(commands=4, flags=0, lines=110),
 }
 #: Pages whose every command block is tested, and the internal ids they may not name.
 TESTED_DIRS = ("get-started", "shapes", "production")
@@ -228,17 +232,22 @@ def lint(page: Path, docs_root: Path | None = None) -> dict[str, dict[str, int]]
 
 
 def run(page: Path, path: str, workdir: Path, environ: Mapping[str, str] | None = None,
-        timeout: float = 900) -> list[dict[str, Any]]:  # fmt: skip
+        timeout: float = 900, container: str | None = None) -> list[dict[str, Any]]:  # fmt: skip
     """Execute the path's blocks in order, verbatim. Stops at the first failure; returns
-    one result per block run (``seconds``, ``exit_code``, ``ok``, ``output`` tail)."""
+    one result per block run (``seconds``, ``exit_code``, ``ok``, ``output`` tail).
+    ``container``: run each block in that running container (``docker exec``, its own
+    environment, ``workdir`` inside it), for an environment with no Python of its own."""
     blocks = blocks_for(parse(page)[0], path)
     results: list[dict[str, Any]] = []
     env = dict(os.environ if environ is None else environ)
     for block in blocks:
         started = time.monotonic()
         try:
+            shell = ["bash", "-e", "-o", "pipefail", "-c", block.text]
+            if container is not None:
+                shell = ["docker", "exec", "-w", str(workdir), container, *shell]
             done = subprocess.run(  # noqa: S603 - the page's own commands, as documented
-                ["bash", "-e", "-o", "pipefail", "-c", block.text],  # noqa: S607
+                shell,  # noqa: S607
                 cwd=workdir, env=env, capture_output=True, text=True, timeout=timeout,
                 check=False, stdin=subprocess.DEVNULL,
             )  # fmt: skip
@@ -267,6 +276,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--path", help="the path to execute")
     parser.add_argument("--workdir", type=Path, help="where the path's commands run")
     parser.add_argument("--json", type=Path, help="write the results here")
+    parser.add_argument("--container", help="run the blocks in this running container")
     options = parser.parse_args(argv)
     docs_root = options.docs_root or next(
         (p for p in options.page.resolve().parents if p.name == "docs"), None
@@ -294,7 +304,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if options.path not in counts:
         return refuse(f"{options.page} has no path {options.path}", 2)
     workdir = options.workdir or Path.cwd()
-    results = run(options.page, options.path, workdir)
+    results = run(options.page, options.path, workdir, container=options.container)
     report = {"page": str(options.page), "path": options.path, "counts": counts[options.path],
               "steps": results, "ok": bool(results) and all(r["ok"] for r in results)}  # fmt: skip
     if options.json:

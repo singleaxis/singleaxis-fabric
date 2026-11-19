@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -344,3 +345,70 @@ def test_the_kubernetes_capture_policy_is_a_valid_production_policy() -> None:
     assert {k: v for k, v in documented.items() if k != "deployment"} == {
         k: v for k, v in fixture.items() if k != "deployment"
     }
+
+
+# ---------------------------------------------------------------- ttfr-laptop-node (G2)
+
+import ttfr_node  # noqa: E402
+
+
+def test_the_node_fixture_agent_imports_only_its_own_and_the_documented_packages() -> None:
+    """A plain fetch tool loop: no provider SDK, nothing of this repository; the Fabric
+    lines are the ones the Node.js page shows (the explicit API, before zero-code)."""
+    text = (TTFR / "agents" / "fetch_tool_loop.mjs").read_text("utf-8")
+    imported = set(re.findall(r'^import .* from "([^"]+)";', text, re.M))
+    assert imported == {"@opentelemetry/context-async-hooks", "@opentelemetry/exporter-trace-otlp-http",
+                        "@opentelemetry/sdk-trace", "@singleaxis/fabric"}  # fmt: skip
+    page = (ROOT / "docs/get-started/node.md").read_text("utf-8")
+    for line in ("new OTLPTraceExporter(fabricExporterOptions())", "Fabric.fromEnv()",
+                 "installDefaultProvider(", "await provider.shutdown()"):  # fmt: skip
+        assert line in text and line in page, line
+    assert "process.env.FABRIC" not in text  # the agent reads no Fabric setting itself
+
+
+def test_the_local_npm_registry_serves_the_build_and_proxies_the_rest(tmp_path: Path) -> None:
+    import io
+    import tarfile
+
+    manifest = json.dumps({"name": "@singleaxis/fabric", "version": "9.9.9",
+                           "peerDependencies": {"@opentelemetry/api": ">=1.9.0"},
+                           "bin": {"fabric": "bin/fabric.mjs"}}).encode()  # fmt: skip
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        info = tarfile.TarInfo("package/package.json")
+        info.size = len(manifest)
+        archive.addfile(info, io.BytesIO(manifest))
+    tarball = tmp_path / "fabric.tgz"
+    tarball.write_bytes(buffer.getvalue())
+    ready = tmp_path / "registry.json"
+    process = subprocess.Popen(  # noqa: S603
+        [sys.executable, "-I", str(TTFR / "local_npm_registry.py"), "--tarball", str(tarball),
+         "--ready-file", str(ready)],
+    )  # fmt: skip
+    try:
+        base = f"http://127.0.0.1:{ttfr.wait_file(ready, timeout=20)['port']}"
+        document = json.loads(urllib.request.urlopen(f"{base}/@singleaxis%2ffabric").read())  # noqa: S310
+        entry = document["versions"]["9.9.9"]
+        assert document["dist-tags"]["latest"] == "9.9.9" and entry["bin"]
+        assert entry["dist"]["integrity"].startswith("sha512-")
+        served = urllib.request.urlopen(entry["dist"]["tarball"]).read()  # noqa: S310
+        assert served == tarball.read_bytes()
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+
+
+def test_g2_needs_fc163_and_never_a_false_pass() -> None:
+    ok = {"ok": True, "steps": [{"output_tail": "warning FC-163: reported"}]}
+    assert ttfr_node.g2_checks(ok, "model calls invisible unsupported_runtime") == []
+    false_pass = {"ok": True, "steps": [{"output_tail": "FC-163 FC-069 complete_for_declared_scope"}]}
+    assert any("false pass" in f for f in ttfr_node.g2_checks(false_pass, "unsupported_runtime"))
+    assert any("plan" in f for f in ttfr_node.g2_checks(ok, "recorded"))
+    assert ttfr_node.NODE_IMAGE.startswith("node:24") and "@sha256:" in ttfr_node.NODE_IMAGE
+
+
+def test_ci_runs_the_node_page_and_keeps_ttfr_json() -> None:
+    ci = yaml.safe_load((ROOT / ".github/workflows/recorder-ci.yml").read_text())
+    steps = json.dumps(ci["jobs"]["ttfr-laptop-node"]["steps"])
+    assert "scripts/ttfr/ttfr_node.py" in steps and "npm pack" in steps
+    assert "ttfr.json" in steps and "upload-artifact" in steps
