@@ -28,6 +28,7 @@ import {
     readFileSync,
     realpathSync,
     rmSync,
+    statSync,
     writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -227,11 +228,15 @@ syncBuiltinESMExports(); // named imports of these modules see the guards too
 });
 
 describe("the other commands", () => {
+    // No docker on PATH: the launcher says where the full CLI is.
+    const noDocker = join(work, "no-docker-bin");
+    mkdirSync(noDocker, { recursive: true });
     for (const command of ["plan", "init", "up", "down", "verify", "show"]) {
-        it(`fabric ${command} names the full CLI and the image`, () => {
+        it(`fabric ${command} names the full CLI and the image without Docker`, () => {
             const result = spawnSync(process.execPath, [BIN, command], {
                 cwd: work,
                 encoding: "utf-8",
+                env: { ...process.env, PATH: noDocker },
             });
             assert.equal(result.status, 2);
             assert.match(result.stderr, /FC-098/);
@@ -269,5 +274,77 @@ describe("the SDK entry point never loads the launcher", () => {
             assert.ok(!text.includes("cli.js"), `${file} references the launcher bundle`);
             assert.ok(!text.includes("FC-098"), `${file} carries the launcher's catalogue`);
         }
+    });
+});
+
+describe("the other commands, from the image", () => {
+    // A stand-in `docker` that records its arguments, the environment names it was given
+    // and its working directory, and exits 7 (the image's exit code reaches the caller).
+    const bin = join(work, "docker-bin");
+    mkdirSync(bin, { recursive: true });
+    const log = join(work, "docker-argv.json");
+    writeFileSync(
+        join(bin, "docker"),
+        `#!${process.execPath}\n` +
+            `require("node:fs").writeFileSync(${JSON.stringify(log)}, JSON.stringify({` +
+            `argv: process.argv.slice(2), secret: process.env.FABRIC_WIRE_ID_KEY ?? null }));\n` +
+            `process.exit(7);\n`,
+    );
+    chmodSync(join(bin, "docker"), 0o755);
+
+    it("runs fabric up in the release's image, as this user, with the project and state mounted", () => {
+        const dir = project("valid");
+        const state = join(work, "state-home");
+        const result = spawnSync(process.execPath, [BIN, "up", "--wait", "5"], {
+            cwd: dir,
+            encoding: "utf-8",
+            env: {
+                PATH: `${bin}:${process.env.PATH}`,
+                HOME: work,
+                XDG_STATE_HOME: state,
+                FABRIC_WIRE_ID_KEY: "a-secret-value-never-on-argv",
+                OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318",
+                DOCKER_HOST: "",
+            },
+        });
+        assert.equal(result.status, 7, result.stderr);
+        const seen = JSON.parse(readFileSync(log, "utf-8"));
+        const argv = seen.argv;
+        assert.deepEqual(argv.slice(0, 2), ["run", "--rm"]);
+        assert.ok(argv.join(" ").endsWith(`ghcr.io/singleaxis/fabric-cli:${VERSION} up --wait 5`));
+        const pairs = (flag) => argv.flatMap((a, i) => (a === flag ? [argv[i + 1]] : []));
+        assert.deepEqual(pairs("--network"), ["host"]);
+        assert.ok(pairs("-v").includes(`${dir}:${dir}`));
+        assert.ok(pairs("-v").includes(`${join(state, "fabric")}:${join(state, "fabric")}`));
+        assert.ok(pairs("-v").includes("/var/run/docker.sock:/var/run/docker.sock"));
+        assert.deepEqual(pairs("-w"), [dir]);
+        if (typeof process.getuid === "function") {
+            assert.deepEqual(pairs("--user"), [`${process.getuid()}:${process.getgid()}`]);
+        }
+        // Values are passed by name only; OTEL_* never.
+        assert.ok(pairs("-e").includes("FABRIC_WIRE_ID_KEY"));
+        assert.ok(!argv.join(" ").includes("a-secret-value-never-on-argv"));
+        assert.ok(!argv.some((a) => a.startsWith("OTEL_")));
+        assert.equal(seen.secret, "a-secret-value-never-on-argv");
+        assert.ok(statSync(join(state, "fabric")).isDirectory());
+    });
+
+    it("uses FABRIC_CLI_IMAGE and a remote DOCKER_HOST as given", () => {
+        const result = spawnSync(process.execPath, [BIN, "verify"], {
+            cwd: work,
+            encoding: "utf-8",
+            env: {
+                PATH: `${bin}:${process.env.PATH}`,
+                HOME: work,
+                FABRIC_CLI_IMAGE: "registry.example/fabric-cli:test",
+                DOCKER_HOST: "tcp://docker.example:2376",
+            },
+        });
+        assert.equal(result.status, 7, result.stderr);
+        const argv = JSON.parse(readFileSync(log, "utf-8")).argv;
+        assert.ok(argv.join(" ").endsWith("registry.example/fabric-cli:test verify"));
+        assert.ok(argv.includes("DOCKER_HOST"));
+        assert.ok(!argv.includes("/var/run/docker.sock:/var/run/docker.sock"));
+        assert.ok(!argv.includes("FABRIC_CLI_IMAGE"));
     });
 });

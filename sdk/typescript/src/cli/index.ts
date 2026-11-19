@@ -8,12 +8,23 @@
  * Python distribution (`pipx install "singleaxis-fabric[cli]"`) and in the
  * `ghcr.io/singleaxis/fabric-cli` image; here they say so (`FC-098`).
  *
+ * With Docker, `plan`, `init`, `up`, `down`, `verify` and `show` run from the
+ * image of this release (`./image`), so a Node.js-only machine needs no Python.
+ *
  * The launcher runs outside the agent: the SDK entry point never imports it.
  */
 
 import { SDK_VERSION } from "../version";
 import { Finding, printable } from "./catalogue";
 import { doctor, type DoctorWorld } from "./doctor";
+import {
+  dockerOnPath,
+  imageArgs,
+  IMAGE_COMMANDS,
+  prepareState,
+  thisHost,
+  type Host,
+} from "./image";
 import { launch, start, type Environ, type RunOptions } from "./run";
 
 export const COMMANDS = [
@@ -40,9 +51,9 @@ commands:
   version   print the launcher and SDK version
   help      show this help
 
-plan, init, up, down, verify and show are in the full CLI:
-  pipx install "singleaxis-fabric[cli]"
-  or the image ghcr.io/singleaxis/fabric-cli:${SDK_VERSION}
+  plan, init, up, down, verify, show
+            the full CLI, run from the image ghcr.io/singleaxis/fabric-cli:${SDK_VERSION}
+            with Docker (or install it: pipx install "singleaxis-fabric[cli]")
 
 options on every command: --config PATH, --project NAME, --json, --quiet, --no-color
 `;
@@ -107,6 +118,7 @@ export async function main(
   environ: Environ = process.env,
   cwd: string = process.cwd(),
   world?: DoctorWorld,
+  host?: Host,
 ): Promise<number> {
   const [command, ...args] = argv;
   if (command === undefined || command === "help" || command === "--help" || command === "-h") {
@@ -114,11 +126,17 @@ export async function main(
     return command === undefined ? 2 : 0;
   }
   if (command === "version" || command === "--version") {
-    write(process.stdout, `fabric ${SDK_VERSION} (npm launcher: run and doctor)\n`);
+    write(
+      process.stdout,
+      `fabric ${SDK_VERSION} (npm launcher: run and doctor; the other commands from the image)\n`,
+    );
     return 0;
   }
   if (command === "run") return runCommand(args, environ, cwd);
   if (command === "doctor") return doctorCommand(args, environ, cwd, world);
+  if ((IMAGE_COMMANDS as readonly string[]).includes(command) && dockerOnPath(environ)) {
+    return imageCommand(command, args, environ, cwd, host);
+  }
   if ((COMMANDS as readonly string[]).includes(command)) {
     const finding = new Finding("FC-098", `fabric ${command}`);
     write(process.stderr, `${printable(finding.line()).replace("VERSION", SDK_VERSION)}\n`);
@@ -127,6 +145,24 @@ export async function main(
   write(process.stderr, `${new Finding("FC-006", `unknown command ${command}`).line()}\n`);
   write(process.stderr, USAGE);
   return 2;
+}
+
+/** `fabric COMMAND` of the full CLI, in the image (§1.4); exits with its code. */
+async function imageCommand(
+  command: string,
+  args: readonly string[],
+  environ: Environ,
+  cwd: string,
+  host?: Host,
+): Promise<number> {
+  prepareState(environ);
+  const at = args.findIndex((a) => a === "--config" || a.startsWith("--config="));
+  const config = at < 0 ? undefined : args[at]?.includes("=") ? args[at]?.slice(9) : args[at + 1];
+  const argv = imageArgs(command, args, environ, cwd, host ?? thisHost(environ), config);
+  const env = Object.fromEntries(
+    Object.entries(environ).filter((e): e is [string, string] => e[1] !== undefined),
+  );
+  return start(["docker", ...argv], env);
 }
 
 async function runCommand(args: readonly string[], environ: Environ, cwd: string): Promise<number> {
