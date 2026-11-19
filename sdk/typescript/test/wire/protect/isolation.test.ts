@@ -18,6 +18,7 @@ import { ExchangeTable, REQUEST, RESPONSE } from "../../../src/wire/exchange.js"
 import { WireRuntime, createRuntimeShared } from "../../../src/wire/runtime.js";
 import { FabricWorker } from "../../../src/wire/worker.js";
 import { native, spoolDir, cleanupDirs } from "../spool/helpers.js";
+import { PUBLISHES_BODIES } from "../undici/helpers.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const built = mkdtempSync(join(tmpdir(), "f055-t8-protect-"));
@@ -45,53 +46,57 @@ function everyFile(dir: string): string[] {
 }
 
 describe("isolation of PROTECT", () => {
-  it("a process killed while protecting leaves no unprotected byte on disk", async () => {
-    const { build, digest } = native();
-    const dir = spoolDir();
-    const socketDir = mkdtempSync(join(existsSync("/tmp") ? "/tmp" : tmpdir(), "f055-t8-"));
-    const canary = "UNPROTECTED-CANARY-" + process.pid;
-    const child = spawn(
-      process.execPath,
-      [
-        join(built, "crash.cjs"),
-        JSON.stringify({
-          prebuilds: build.dir,
-          digest,
-          spool: dir,
-          socket: join(socketDir, "r.sock"),
-          canary,
-        }),
-      ],
-      { stdio: ["ignore", "pipe", "pipe"] },
-    );
-    let err = "";
-    child.stderr.on("data", (part: Buffer) => (err += part.toString()));
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error(`the child never reached PROTECT: ${err}`)),
-        30_000,
+  // The child captures a real `fetch`, which needs a build that publishes body chunks.
+  it.skipIf(!PUBLISHES_BODIES)(
+    "a process killed while protecting leaves no unprotected byte on disk",
+    async () => {
+      const { build, digest } = native();
+      const dir = spoolDir();
+      const socketDir = mkdtempSync(join(existsSync("/tmp") ? "/tmp" : tmpdir(), "f055-t8-"));
+      const canary = "UNPROTECTED-CANARY-" + process.pid;
+      const child = spawn(
+        process.execPath,
+        [
+          join(built, "crash.cjs"),
+          JSON.stringify({
+            prebuilds: build.dir,
+            digest,
+            spool: dir,
+            socket: join(socketDir, "r.sock"),
+            canary,
+          }),
+        ],
+        { stdio: ["ignore", "pipe", "pipe"] },
       );
-      child.stdout.on("data", (part: Buffer) => {
-        if (part.toString().includes('"protecting":true')) {
-          clearTimeout(timer);
-          resolve();
-        }
+      let err = "";
+      child.stderr.on("data", (part: Buffer) => (err += part.toString()));
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`the child never reached PROTECT: ${err}`)),
+          30_000,
+        );
+        child.stdout.on("data", (part: Buffer) => {
+          if (part.toString().includes('"protecting":true')) {
+            clearTimeout(timer);
+            resolve();
+          }
+        });
+        child.once("exit", (code) => reject(new Error(`the child exited ${code}: ${err}`)));
       });
-      child.once("exit", (code) => reject(new Error(`the child exited ${code}: ${err}`)));
-    });
-    const exited = new Promise((resolve) => child.once("exit", resolve));
-    child.kill("SIGKILL");
-    await exited;
-    rmSync(socketDir, { recursive: true, force: true });
-    const files = everyFile(dir);
-    // The spool exists (its lock files), and nothing in it holds the body.
-    expect(files.length).toBeGreaterThan(0);
-    expect(files.filter((path) => path.endsWith(".rec"))).toEqual([]);
-    for (const path of files) {
-      const bytes = readFileSync(path).toString("latin1");
-      expect(bytes, path).not.toContain(canary);
-    }
-  });
+      const exited = new Promise((resolve) => child.once("exit", resolve));
+      child.kill("SIGKILL");
+      await exited;
+      rmSync(socketDir, { recursive: true, force: true });
+      const files = everyFile(dir);
+      // The spool exists (its lock files), and nothing in it holds the body.
+      expect(files.length).toBeGreaterThan(0);
+      expect(files.filter((path) => path.endsWith(".rec"))).toEqual([]);
+      for (const path of files) {
+        const bytes = readFileSync(path).toString("latin1");
+        expect(bytes, path).not.toContain(canary);
+      }
+    },
+  );
 
   it("a CPU-bound Fabric worker does not move the hook medians", async () => {
     const chunk = Buffer.alloc(1024, 0x61);

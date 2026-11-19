@@ -107,6 +107,11 @@ void (async () => {
     await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: "POST", body })
   ).arrayBuffer();
   await new Promise((resolve) => setTimeout(resolve, 20));
-  const record = runtime.jobs.peek()!;
+  const record = runtime.jobs.peek();
+  if (record === undefined) {
+    throw new Error(
+      "no captured job: this Node build publishes no body chunks; run the crash fixture on a listed Node 24 build",
+    );
+  }
   await pipeline.handle(table.job(record.byteOffset), table.arena, runtime.epoch);
 })();
