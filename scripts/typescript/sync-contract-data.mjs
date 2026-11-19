@@ -9,6 +9,7 @@
 //   src/wire/catalogue.generated.ts        contracts/diagnostics/v1/messages-v1.json (FW- ids)
 //   src/wire/telemetry-keys.generated.ts   contracts/coverage/v1/registry/telemetry-keys-v1.json
 //                                          and capture-points-v1.json (point kinds)
+//   src/wire/roles.generated.ts            contracts/coverage/v1/registry/content-roles-v1.json
 //
 // Usage: node scripts/typescript/sync-contract-data.mjs [--check]
 // --check writes nothing and exits 1 when a generated file differs from its contract.
@@ -189,7 +190,33 @@ function telemetryKeys() {
     );
 }
 
+function roleTable() {
+    const source = "contracts/coverage/v1/registry/content-roles-v1.json";
+    const reg = readJson(source);
+    const rows = reg.roles.map((row) => {
+        const out = {
+            role: row.role,
+            boundary: row.boundary,
+            provenance: row.provenance,
+            media_types: row.media_types,
+            default_policy: row.default_policy,
+            cap: row.cap,
+        };
+        if (row.allowed_modes !== undefined) out.allowed_modes = row.allowed_modes;
+        return out;
+    });
+    return (
+        HEADER +
+        `// Source: ${source} (spec 049 §4.3), the rows Python's _roles.py is generated from.\n` +
+        "// The PROTECT stage applies them before anything is spooled (spec 055 §5).\n\n" +
+        'import type { RoleRow } from "./types.js";\n\n' +
+        `export const ROLE_TABLE_VERSION = ${JSON.stringify(`${reg.schema_version}@${reg.registry_revision}`)};\n\n` +
+        `export const ROLE_ROWS: readonly RoleRow[] = ${literal(rows)};\n`
+    );
+}
+
 const OUTPUTS = {
+    "roles.generated.ts": roleTable,
     "endpoint-table.generated.ts": endpointTable,
     "catalogue.generated.ts": catalogue,
     "telemetry-keys.generated.ts": telemetryKeys,

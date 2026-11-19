@@ -186,3 +186,17 @@ export interface TelemetryKeyRow {
   readonly capture_point_kinds?: readonly string[];
   readonly manifest_property?: string;
 }
+
+/** One content role row (`content-roles-v1.json`; spec 049 §4.3), as generated. */
+export interface RoleRow {
+  readonly role: string;
+  readonly boundary: readonly string[];
+  readonly provenance: readonly string[];
+  readonly media_types: readonly string[];
+  /** `content`, `off` or `metadata` (spec 049 §2.7). */
+  readonly default_policy: string;
+  /** A size (`64 KiB` ...) or `max_body_bytes` (the deployment's configured value). */
+  readonly cap: string;
+  /** Absent: every privacy mode. */
+  readonly allowed_modes?: readonly string[];
+}
