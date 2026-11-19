@@ -387,6 +387,18 @@ def _run_identity(base: Row, run: _Run) -> Row:
     return base
 
 
+def _remote_sandbox(run: _Run) -> Row:
+    """The remote sandbox row, which plan shows for a sandbox library and verify for a run
+    whose capture manifests declare the remote sandbox hook (its library is not read)."""
+    entry = _coverage.row("remote_sandbox")
+    question = str(entry["question"])
+    if run.observed.channels.get("remote.sandbox") == "active":
+        return _from_chain(question, run.runs, "effects", "remote sandbox hook (E2B)",
+                           "remote_sandbox")  # fmt: skip
+    fix = str(_coverage.point("remote_sandbox", "remote.sandbox")["fix"])
+    return Row(question, "fix", fix, "remote_sandbox")
+
+
 _OBSERVE = {
     "model_calls": _model_calls, "tool_calls": _tool_calls, "commands": _commands,
     "network": _network, "mcp": _mcp, "host": _host, "permissions": _permissions,
@@ -421,6 +433,8 @@ def coverage(
     for base in _coverage.predict(prediction_context(resolved, record)):
         observe = _OBSERVE.get(base.row_id or "")
         rows.append(observe(base, run) if observe else base)
+        if base.row_id == "commands" and "remote.sandbox" in observed.channels:
+            rows.append(_remote_sandbox(run))
     if observed.startup:
         text, _fix = _coverage.note_words("startup_effects")
         rows.append(Row("commands before the first model call", "recorded",

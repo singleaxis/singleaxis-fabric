@@ -182,3 +182,23 @@ def test_no_model_call_names_the_unmatched_host(tmp_path: Path) -> None:
         "fix: fabric init --provider https://my-llm.example.com/v1"
     )
     assert rows["permissions and control decisions"].state == "not observed"
+
+
+def test_a_run_with_the_remote_sandbox_hook_shows_its_row(tmp_path: Path) -> None:
+    """verify reads no library list, so the remote sandbox row comes from the run's
+    capture manifests: active is the effects chain, declared off is the fix line."""
+    plain = _rows(_read.coverage(_resolved(tmp_path), _record(), [_run()], None))
+    assert "commands in a remote sandbox" not in plain
+    effects = {"decisions": {"verdict": "complete"}, "effects": {"verdict": "complete"}}
+    active = _read.coverage(_resolved(tmp_path), _record(), [_run(effects)], None,
+                            observed=_read.Observed({"remote.sandbox": "active"}))  # fmt: skip
+    questions = [row.question for row in active]
+    at = questions.index("commands in a remote sandbox")
+    assert questions[at - 1] == "commands the agent runs"
+    assert active[at].state == "recorded"
+    declared_off = _read.Observed({"remote.sandbox": "disabled"})
+    off = _rows(
+        _read.coverage(_resolved(tmp_path), _record(), [_run()], None, observed=declared_off)
+    )
+    row = off["commands in a remote sandbox"]
+    assert (row.state, row.note) == ("fix", "FABRIC_WIRE_REMOTE_SANDBOX=e2b fabric run -- CMD")
