@@ -21,7 +21,12 @@ import { join } from "node:path";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { FLOCK_EXCLUSIVE, FLOCK_UNLOCK, type NativeAddon } from "../../../src/wire/native.js";
+import {
+  FLOCK_EXCLUSIVE,
+  FLOCK_UNLOCK,
+  type NativeAddon,
+  NativeCode,
+} from "../../../src/wire/native.js";
 import {
   ENVELOPE_MAGIC,
   MAGIC,
@@ -32,11 +37,13 @@ import {
   ADMIT_LOCK,
   LEDGER,
   LEDGER_BYTES,
+  NativeSpoolError,
   QUARANTINE_SUFFIX,
   RESERVE_BYTES,
   Spool,
   SpoolConfigError,
   type SpoolIo,
+  SpoolIoError,
   type SpoolOptions,
   TMP_PREFIX,
   diskFull,
@@ -401,6 +408,61 @@ describe("configuration errors name the cause and the fix", () => {
     expect(() => make(link)).toThrow(/real directory.*fix:/);
     expect(() => make(spoolDir(), { maxBytes: 0 })).toThrow(/FABRIC_WIRE_SPOOL_MAX_BYTES/);
     expect(() => make(spoolDir(), { key: Buffer.alloc(16) })).toThrow(/32 bytes/);
+  });
+
+  const root = process.getuid?.() === 0; // root ignores the permission bits these tests use
+
+  it.skipIf(root)("a failed file-system call names its code and fix, never the spool path", () => {
+    const dir = spoolDir();
+    const spool = make(dir);
+    chmodSync(dir, 0o500); // the agent's user can no longer create files in it
+    let error: unknown;
+    try {
+      spool.write(exchange.doc, exchange.bodies);
+    } catch (caught) {
+      error = caught;
+    } finally {
+      chmodSync(dir, 0o700);
+    }
+    expect(error).toBeInstanceOf(SpoolIoError);
+    const { message, code } = error as SpoolIoError;
+    expect(code).toBe("EACCES");
+    expect(message).toMatch(/^wire spool open failed \(EACCES\); fix: .*FABRIC_WIRE_SPOOL_DIR/);
+    expect(message).not.toContain(dir);
+    expect(message).not.toContain(".rec");
+    expect(diskFull(error)).toBe(false);
+    expect(spool.bytes).toBe(spool.diskTotal());
+    expect(spool.write(exchange.doc, exchange.bodies)).not.toBeNull();
+  });
+
+  it.skipIf(root)("a spool directory that cannot be created names the cause, not the path", () => {
+    const parent = spoolDir();
+    mkdirSync(parent, 0o700);
+    chmodSync(parent, 0o500);
+    try {
+      const dir = join(parent, "spool");
+      expect(() => make(dir)).toThrow(SpoolIoError);
+      expect(() => make(dir)).toThrow(/^wire spool mkdir failed \(EACCES\); fix: /);
+      try {
+        make(dir);
+      } catch (error) {
+        expect((error as Error).message).not.toContain(parent);
+      }
+    } finally {
+      chmodSync(parent, 0o700);
+    }
+  });
+
+  it("a failed native call names its code and fix", () => {
+    const error = new NativeSpoolError("openDir", NativeCode.UNSAFE_PATH);
+    expect(error.message).toBe(
+      "wire spool openDir failed (UNSAFE_PATH); fix: point FABRIC_WIRE_SPOOL_DIR at a real " +
+        "directory owned by the agent's user, with no symlink in the spool",
+    );
+    const full = new NativeSpoolError("fsync", NativeCode.NO_SPACE);
+    expect(diskFull(full)).toBe(true);
+    expect(full.message).toMatch(/\(NO_SPACE\); fix: free space/);
+    expect(new NativeSpoolError("openFile", NativeCode.LIMIT).message).toMatch(/handles/);
   });
 
   it("creates missing parents owner-only and tightens a loose directory", () => {

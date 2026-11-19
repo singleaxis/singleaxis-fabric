@@ -42,7 +42,13 @@ import {
 import { dirname, join } from "node:path";
 import { isMainThread } from "node:worker_threads";
 
-import { FLOCK_EXCLUSIVE, FLOCK_UNLOCK, type NativeAddon, NativeCode } from "./native.js";
+import {
+  FLOCK_EXCLUSIVE,
+  FLOCK_UNLOCK,
+  type NativeAddon,
+  NativeCode,
+  nativeCodeName,
+} from "./native.js";
 import {
   CorruptRecordError,
   OverBoundError,
@@ -99,13 +105,86 @@ export function diskFull(error: unknown): boolean {
   return code === "ENOSPC" || code === "EDQUOT";
 }
 
-/** A native call that failed: its fixed result code, never a path. */
+/** How to fix a failed file-system call of the spool, by its `errno` code. */
+function ioFix(code: string | undefined): string {
+  switch (code) {
+    case "ENOSPC":
+    case "EDQUOT":
+      return "free space on the volume (or the quota) holding FABRIC_WIRE_SPOOL_DIR, or lower FABRIC_WIRE_SPOOL_MAX_BYTES to what it can hold";
+    case "EACCES":
+    case "EPERM":
+      return "give FABRIC_WIRE_SPOOL_DIR to the agent's user (a directory it owns, mode 0700)";
+    case "EROFS":
+      return "point FABRIC_WIRE_SPOOL_DIR at a writable local volume";
+    case "ELOOP":
+      return "remove the symlink from FABRIC_WIRE_SPOOL_DIR; the spool never follows one";
+    case "EMFILE":
+    case "ENFILE":
+      return "raise the open-file limit of the agent's process (ulimit -n)";
+    case "ENOTDIR":
+    case "ENOENT":
+      return "point FABRIC_WIRE_SPOOL_DIR at a directory that stays in place while the agent runs";
+    default:
+      return "check the local volume holding FABRIC_WIRE_SPOOL_DIR (disk errors, a lost mount)";
+  }
+}
+
+/**
+ * A file-system call of the spool that failed: the call and its `errno` code (`code`, so
+ * {@link diskFull} and the callers' checks work as for an `fs` error) with how to fix it.
+ * Never the path, which Node puts in its own error message.
+ */
+export class SpoolIoError extends Error {
+  readonly code: string | undefined;
+  readonly errno: number | undefined;
+  constructor(
+    readonly syscall: string,
+    error: unknown,
+  ) {
+    const { code, errno } = (error ?? {}) as { code?: unknown; errno?: unknown };
+    const known = typeof code === "string" ? code : undefined;
+    super(`wire spool ${syscall} failed (${known ?? "unknown error"}); fix: ${ioFix(known)}`);
+    this.name = "SpoolIoError";
+    this.code = known;
+    this.errno = typeof errno === "number" ? errno : undefined;
+  }
+}
+
+/** Runs one `fs` call, rethrowing its failure as a {@link SpoolIoError}. */
+function scrub<T>(syscall: string, call: () => T): T {
+  try {
+    return call();
+  } catch (error) {
+    throw new SpoolIoError(syscall, error);
+  }
+}
+
+/** How to fix a failed native call of the spool, by its fixed code. */
+function nativeFix(result: number): string {
+  switch (result) {
+    case NativeCode.NO_SPACE:
+    case NativeCode.QUOTA:
+      return ioFix("ENOSPC");
+    case NativeCode.PERMISSION:
+      return ioFix("EACCES");
+    case NativeCode.UNSAFE_PATH:
+      return "point FABRIC_WIRE_SPOOL_DIR at a real directory owned by the agent's user, with no symlink in the spool";
+    case NativeCode.LIMIT:
+      return "the native module's handles are all in use in this process; close spools that are no longer used";
+    case NativeCode.NOT_FOUND:
+      return ioFix("ENOENT");
+    default:
+      return ioFix(undefined);
+  }
+}
+
+/** A native call that failed: its fixed result code and how to fix it, never a path. */
 export class NativeSpoolError extends Error {
   constructor(
     readonly step: string,
     readonly result: number,
   ) {
-    super(`spool ${step} failed (native code ${result})`);
+    super(`wire spool ${step} failed (${nativeCodeName(result)}); fix: ${nativeFix(result)}`);
     this.name = "NativeSpoolError";
     // The callers tell a full disk apart by `code`, as for an `fs` error.
     if (result === NativeCode.NO_SPACE) (this as { code?: string }).code = "ENOSPC";
@@ -166,22 +245,32 @@ export interface SpoolIo {
   syncDir(path: string): void;
 }
 
-/** The default {@link SpoolIo}. */
+/**
+ * The default {@link SpoolIo}. Every `fs` failure is a {@link SpoolIoError}: its code and
+ * fix, never the path Node's own message carries.
+ */
 export function nodeSpoolIo(addon: NativeAddon): SpoolIo {
   const nofollow = constants.O_NOFOLLOW ?? 0;
+  // A FIFO swapped in after the reader's lstat must not block the open.
+  const nonblock = constants.O_NONBLOCK ?? 0;
   return {
     openExclusive: (path) =>
-      openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | nofollow, 0o600),
-    openRead: (path) => openSync(path, constants.O_RDONLY | nofollow),
-    write: (fd, data, position) => writeSync(fd, data, 0, data.length, position),
-    writev: (fd, data, position) => writevSync(fd, data as Uint8Array[], position),
-    read: (fd, into, position) => readSync(fd, into, 0, into.length, position),
-    fsync: (fd) => fsyncSync(fd),
-    close: (fd) => closeSync(fd),
-    rename: (from, to) => renameSync(from, to),
-    unlink: (path) => unlinkSync(path),
+      scrub("open", () =>
+        openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | nofollow, 0o600),
+      ),
+    openRead: (path) =>
+      scrub("open", () => openSync(path, constants.O_RDONLY | nofollow | nonblock)),
+    write: (fd, data, position) =>
+      scrub("write", () => writeSync(fd, data, 0, data.length, position)),
+    writev: (fd, data, position) =>
+      scrub("writev", () => writevSync(fd, data as Uint8Array[], position)),
+    read: (fd, into, position) => scrub("read", () => readSync(fd, into, 0, into.length, position)),
+    fsync: (fd) => scrub("fsync", () => fsyncSync(fd)),
+    close: (fd) => scrub("close", () => closeSync(fd)),
+    rename: (from, to) => scrub("rename", () => renameSync(from, to)),
+    unlink: (path) => scrub("unlink", () => unlinkSync(path)),
     lstat: (path) => {
-      const info = lstatSync(path);
+      const info = scrub("lstat", () => lstatSync(path));
       return {
         size: info.size,
         mtimeMs: info.mtimeMs,
@@ -189,7 +278,7 @@ export function nodeSpoolIo(addon: NativeAddon): SpoolIo {
         isSymbolicLink: info.isSymbolicLink(),
       };
     },
-    readdir: (path) => readdirSync(path),
+    readdir: (path) => scrub("readdir", () => readdirSync(path)),
     syncDir: (path) => {
       const handle = addon.openDir(path);
       if (handle < 0) throw new NativeSpoolError("openDir", handle);
@@ -234,7 +323,7 @@ function secureDir(path: string): void {
   let current = path;
   for (;;) {
     try {
-      lstatSync(current);
+      scrub("lstat", () => lstatSync(current));
       break;
     } catch (error) {
       if (errnoOf(error) !== "ENOENT") throw error;
@@ -246,12 +335,12 @@ function secureDir(path: string): void {
   }
   for (const directory of missing.reverse()) {
     try {
-      mkdirSync(directory, 0o700);
+      scrub("mkdir", () => mkdirSync(directory, 0o700));
     } catch (error) {
       if (errnoOf(error) !== "EEXIST") throw error;
     }
   }
-  const info = lstatSync(path);
+  const info = scrub("lstat", () => lstatSync(path));
   if (info.isSymbolicLink() || !info.isDirectory()) {
     throw new SpoolConfigError(
       "FABRIC_WIRE_SPOOL_DIR must be a real directory, not a symlink or a file",
@@ -264,7 +353,7 @@ function secureDir(path: string): void {
       "create the spool directory as the agent's user, or point FABRIC_WIRE_SPOOL_DIR at one it owns",
     );
   }
-  chmodSync(path, 0o700);
+  scrub("chmod", () => chmodSync(path, 0o700));
 }
 
 /** A record of {@link Spool.recover}: one pending file and its records, in drain order. */
