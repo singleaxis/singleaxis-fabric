@@ -233,6 +233,31 @@ function forbidden() {
     };
 }
 
+/**
+ * Large shapes (unit 055-t8): the longest single synchronous snapshot of 0 B to 32 MiB
+ * requests, in memory and streamed. Reported per shape, never averaged into the medians;
+ * fails when one publication stalls the application longer than 25 ms × scale.
+ */
+function largeShapes() {
+    const result = child("large.mjs", common).json;
+    const ceilingMs = REFERENCE.budgets.large_shapes.max_single_ms;
+    let worst = 0;
+    for (const deliveries of Object.values(result.shapes)) {
+        for (const row of Object.values(deliveries)) worst = Math.max(worst, row.max_single_ms);
+    }
+    return (scale) => ({
+        large_shapes: {
+            shapes: result.shapes,
+            losses: result.losses,
+            worst_single_ms: round(worst, 3),
+            ceiling_ms: round(ceilingMs * scale, 3),
+            passed:
+                worst <= ceilingMs * scale &&
+                Object.values(result.losses).every((count) => count === 0),
+        },
+    });
+}
+
 function identity() {
     const formats = {};
     for (const file of ["identity.mjs", "identity.cjs"]) {
@@ -339,6 +364,7 @@ function attempt() {
     log(`calibration before: ${before} ns (scale ${scaleBefore.toFixed(3)})`);
     const judgeHookCost = hookCost(scaleBefore);
     const judgeEventLoop = eventLoop(scaleBefore);
+    const judgeLarge = largeShapes();
     const others = { ...forbidden(), ...identity(), ...memory() };
     const after = calibrate();
     const ratio = Math.max(before, after) / Math.min(before, after);
@@ -355,6 +381,7 @@ function attempt() {
         },
         ...judgeHookCost(scale),
         ...judgeEventLoop(scale),
+        ...judgeLarge(scale),
         ...others,
     };
 }
@@ -390,6 +417,7 @@ const gates = {
     forbidden_work: result.forbidden_work.passed,
     behaviour_identity: result.behaviour_identity.passed,
     memory_bound: result.memory_bound.passed,
+    large_shapes: result.large_shapes.passed,
 };
 const passed = Object.values(gates).every(Boolean);
 const report = {
@@ -423,6 +451,9 @@ log(
 );
 log(
     `memory: ${JSON.stringify({ enabled: result.memory_bound.enabled.excess_growth_bytes, saturated: result.memory_bound.saturated.excess_growth_bytes })}`,
+);
+log(
+    `large shapes: worst single snapshot ${result.large_shapes.worst_single_ms} ms (ceiling ${result.large_shapes.ceiling_ms} ms)`,
 );
 log(`gates: ${JSON.stringify(gates)}`);
 log(`result: ${report.result}`);

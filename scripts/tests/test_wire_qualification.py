@@ -38,6 +38,9 @@ PASSIVITY_GATES = {
     "behaviour_identity",
     "memory_bound",
 }
+# Gates added after the committed reports were measured: a report may predate them
+# (large_shapes: unit 055-t8; unit 055-t17 commits the claim's reports with every gate).
+LATER_PASSIVITY_GATES = {"large_shapes"}
 
 
 def _table() -> dict[str, Any]:
@@ -161,7 +164,7 @@ def test_every_active_tuple_has_its_passed_report_committed() -> None:
         assert report["schema"] == "fabric.node-wire-passivity-report/v1"
         assert report["quick"] is False and report["result"] == "passed"
         assert report["voided_runs"] in (0, 1)
-        assert set(report["gates"]) == PASSIVITY_GATES
+        assert PASSIVITY_GATES <= set(report["gates"]) <= PASSIVITY_GATES | LATER_PASSIVITY_GATES
         assert all(report["gates"].values()), path.name
         assert report["tuple"] == {
             "point": tuple_["point"],

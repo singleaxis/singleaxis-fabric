@@ -53,6 +53,14 @@ Steps (child script, then what fails the gate):
   types, abort reason identity, abort and transport error classes,
   backpressure, keep-alive, the caller's request buffer and the exit code must
   be identical.
+- **Large shapes** (`large.mjs`, unit 055-t8; 40 and 70 MiB from 055-t15):
+  matched requests of 0 B, 64 KiB, 1 MiB and 32 MiB through real `fetch`, once
+  as one in-memory body (undici publishes it as one chunk: the largest single
+  snapshot copy) and once streamed in 64 KiB chunks. The report lists, per
+  shape, the bytes copied, the publications and the longest synchronous time
+  one publication spent in the hook; these shapes are never averaged into the
+  small-body medians. Fails when one publication exceeds 25 ms × scale or a
+  shape lost a position.
 - **Memory bound** (`memory.mjs`): tiny-chunk storms and zero-body requests in
   10 batches with small configured bounds, with the Fabric worker draining and
   with none (saturated). RSS over baseline within the shared buffers' maximum

@@ -19,6 +19,9 @@
       "p99_ms": 2,
       "max_ms": 25,
       "utilization_delta": 0.05
+    },
+    "large_shapes": {
+      "max_single_ms": 25
     }
   },
   "trials": {
