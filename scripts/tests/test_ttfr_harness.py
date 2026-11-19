@@ -352,11 +352,13 @@ def test_the_kubernetes_capture_policy_is_a_valid_production_policy() -> None:
 import ttfr_node  # noqa: E402
 
 
-def test_the_node_fixture_agent_imports_only_its_own_and_the_documented_packages() -> None:
+def test_the_node_fixture_agent_imports_only_its_own_and_the_documented_packages() -> (
+    None
+):
     """A plain fetch tool loop: no provider SDK, nothing of this repository; the Fabric
     lines are the ones the Node.js page shows (the explicit API, before zero-code)."""
     text = (TTFR / "agents" / "fetch_tool_loop.mjs").read_text("utf-8")
-    imported = set(re.findall(r'^import .* from "([^"]+)";', text, re.M))
+    imported = set(re.findall(r'^import .* from "([^"]+)";', text, re.MULTILINE))
     assert imported == {"@opentelemetry/context-async-hooks", "@opentelemetry/exporter-trace-otlp-http",
                         "@opentelemetry/sdk-trace", "@singleaxis/fabric"}  # fmt: skip
     page = (ROOT / "docs/get-started/node.md").read_text("utf-8")
@@ -366,7 +368,9 @@ def test_the_node_fixture_agent_imports_only_its_own_and_the_documented_packages
     assert "process.env.FABRIC" not in text  # the agent reads no Fabric setting itself
 
 
-def test_the_local_npm_registry_serves_the_build_and_proxies_the_rest(tmp_path: Path) -> None:
+def test_the_local_npm_registry_serves_the_build_and_proxies_the_rest(
+    tmp_path: Path,
+) -> None:
     import io
     import tarfile
 
@@ -387,7 +391,9 @@ def test_the_local_npm_registry_serves_the_build_and_proxies_the_rest(tmp_path: 
     )  # fmt: skip
     try:
         base = f"http://127.0.0.1:{ttfr.wait_file(ready, timeout=20)['port']}"
-        document = json.loads(urllib.request.urlopen(f"{base}/@singleaxis%2ffabric").read())  # noqa: S310
+        document = json.loads(
+            urllib.request.urlopen(f"{base}/@singleaxis%2ffabric").read()
+        )  # noqa: S310
         entry = document["versions"]["9.9.9"]
         assert document["dist-tags"]["latest"] == "9.9.9" and entry["bin"]
         assert entry["dist"]["integrity"].startswith("sha512-")
@@ -401,10 +407,19 @@ def test_the_local_npm_registry_serves_the_build_and_proxies_the_rest(tmp_path: 
 def test_g2_needs_fc163_and_never_a_false_pass() -> None:
     ok = {"ok": True, "steps": [{"output_tail": "warning FC-163: reported"}]}
     assert ttfr_node.g2_checks(ok, "model calls invisible unsupported_runtime") == []
-    false_pass = {"ok": True, "steps": [{"output_tail": "FC-163 FC-069 complete_for_declared_scope"}]}
-    assert any("false pass" in f for f in ttfr_node.g2_checks(false_pass, "unsupported_runtime"))
+    false_pass = {
+        "ok": True,
+        "steps": [{"output_tail": "FC-163 FC-069 complete_for_declared_scope"}],
+    }
+    assert any(
+        "false pass" in f
+        for f in ttfr_node.g2_checks(false_pass, "unsupported_runtime")
+    )
     assert any("plan" in f for f in ttfr_node.g2_checks(ok, "recorded"))
-    assert ttfr_node.NODE_IMAGE.startswith("node:24") and "@sha256:" in ttfr_node.NODE_IMAGE
+    assert (
+        ttfr_node.NODE_IMAGE.startswith("node:24")
+        and "@sha256:" in ttfr_node.NODE_IMAGE
+    )
 
 
 def test_ci_runs_the_node_page_and_keeps_ttfr_json() -> None:

@@ -45,9 +45,16 @@ def packument(tarball: bytes, base: str) -> dict[str, Any]:
     version = manifest["version"]
     integrity = "sha512-" + base64.b64encode(hashlib.sha512(tarball).digest()).decode()
     entry = {k: manifest[k] for k in _FIELDS if k in manifest}
-    entry["dist"] = {"tarball": f"{base}/-/fabric-{version}.tgz", "integrity": integrity,
-                     "shasum": hashlib.sha1(tarball).hexdigest()}  # noqa: S324 - npm's field
-    return {"name": PACKAGE, "dist-tags": {"latest": version}, "versions": {version: entry}}
+    entry["dist"] = {
+        "tarball": f"{base}/-/fabric-{version}.tgz",
+        "integrity": integrity,
+        "shasum": hashlib.sha1(tarball).hexdigest(),
+    }  # noqa: S324 - npm's field
+    return {
+        "name": PACKAGE,
+        "dist-tags": {"latest": version},
+        "versions": {version: entry},
+    }
 
 
 def handler(tarball: bytes, base: str) -> type[BaseHTTPRequestHandler]:

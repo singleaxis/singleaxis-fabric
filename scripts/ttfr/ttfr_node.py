@@ -44,9 +44,7 @@ import ttfr  # noqa: E402 - this directory's harness helpers
 
 ROOT = ttfr.ROOT
 PAGE = ROOT / "docs" / "get-started" / "node.md"
-NODE_IMAGE = (
-    "node:24-bookworm@sha256:9d266751ca3d7fdbe651c878ffd5ad0a42fed49a18c283509267c97f025b7496"
-)
+NODE_IMAGE = "node:24-bookworm@sha256:9d266751ca3d7fdbe651c878ffd5ad0a42fed49a18c283509267c97f025b7496"
 PATH_NAME = "laptop-node"
 #: G2 sets no time budget before zero-code Node.js capture; this bound only catches a hang.
 BUDGET_S = 600.0
@@ -75,7 +73,10 @@ def agent_project(project: Path) -> None:
     """The user's own Node.js project before Fabric: its manifest and its agent."""
     project.mkdir(parents=True)
     (project / "package.json").write_text(
-        json.dumps({"name": "weather-agent", "private": True, "type": "module"}, indent=2) + "\n"
+        json.dumps(
+            {"name": "weather-agent", "private": True, "type": "module"}, indent=2
+        )
+        + "\n"
     )
     shutil.copy(HERE / "agents" / "fetch_tool_loop.mjs", project / "agent.mjs")
 
