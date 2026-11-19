@@ -28,12 +28,30 @@ PRIMARY_DOCS = (
     "docs/get-started/node.md",
     "docs/get-started/other-languages.md",
     "docs/get-started/kubernetes.md",
-    *(f"docs/shapes/{n}.md" for n in ("choose", "laptop", "linux-host", "containers",
-                                       "kubernetes", "serverless-and-sandboxes",
-                                       "macos-and-windows")),
-    *(f"docs/production/{n}.md" for n in ("index", "linux-host", "kubernetes",
-                                           "destinations", "secrets-and-rotation", "sizing",
-                                           "upgrade")),
+    *(
+        f"docs/shapes/{n}.md"
+        for n in (
+            "choose",
+            "laptop",
+            "linux-host",
+            "containers",
+            "kubernetes",
+            "serverless-and-sandboxes",
+            "macos-and-windows",
+        )
+    ),
+    *(
+        f"docs/production/{n}.md"
+        for n in (
+            "index",
+            "linux-host",
+            "kubernetes",
+            "destinations",
+            "secrets-and-rotation",
+            "sizing",
+            "upgrade",
+        )
+    ),
     "docs/reference/cli.md",
     "docs/reference/fabric-yaml.md",
     "docs/reference/env-vars.md",
