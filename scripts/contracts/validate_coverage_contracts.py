@@ -2726,6 +2726,7 @@ ROW_SWITCHES = {
     "capture.http_hosts",
     "capture.mcp",
     "sensor",
+    "manual",
 }
 _ROW_KEYS = {
     "id",
@@ -2968,7 +2969,20 @@ def _check_row_point(
     for key in ("fix", "code", "evidence"):
         if key in entry:
             _text(entry[key], here)
-    if "fix" in entry and not re.match(r"^(fabric |FABRIC_[A-Z0-9_]+=)", entry["fix"]):
+    if switch == "manual":
+        # Built, but no fabric command starts it: the fix names the documented step,
+        # never a command that would not turn it on.
+        if "fix" in entry and not re.match(
+            r"^follow docs/[a-z0-9/_-]+\.md ", entry["fix"]
+        ):
+            _fail(
+                "coverage.rows.fix",
+                here,
+                "a manual capture point's fix names its docs page (follow docs/....md)",
+            )
+    elif "fix" in entry and not re.match(
+        r"^(fabric |FABRIC_[A-Z0-9_]+=)", entry["fix"]
+    ):
         _fail(
             "coverage.rows.fix",
             here,

@@ -64,6 +64,9 @@ class Context:
     sensor_point: str | None = None
     sensor_reason: str | None = None
     sensor_note: str | None = None
+    #: The one line that runs a sensor for this agent from elsewhere (a pod's node), when
+    #: none can load where plan runs.
+    sensor_fix: str | None = None
 
 
 def rows() -> list[dict[str, Any]]:
@@ -93,7 +96,8 @@ def _applies(point: Mapping[str, Any], ctx: Context) -> bool:
     runtime = point["runtime"]
     if runtime not in ("any", ctx.runtime):
         return False
-    if point["switch"] == "sensor" and point["id"] != ctx.sensor_point:
+    # A host sensor point (eBPF, or auditd started by hand) runs only where it can load.
+    if str(point["id"]).startswith("host.") and point["id"] != ctx.sensor_point:
         return False
     return _has(ctx.libraries, point.get("libraries", ()))
 
@@ -117,7 +121,8 @@ def invisible_note(entry: Mapping[str, Any], runtime: str, text: str | None = No
     return note
 
 
-def predict_row(entry: Mapping[str, Any], ctx: Context, states: Mapping[str, str]) -> Row:
+def predict_row(entry: Mapping[str, Any], ctx: Context,  # noqa: PLR0911 - one per state
+                states: Mapping[str, str]) -> Row:  # fmt: skip
     """§12.3 steps 2 and 3 for one row: the built capture points that can run here, then
     ``recorded`` (one is on), ``fix`` (one is off: its command), ``needs code`` (only a
     records API can), else ``invisible`` with the registry's reason and alternative."""
@@ -146,6 +151,8 @@ def predict_row(entry: Mapping[str, Any], ctx: Context, states: Mapping[str, str
     if upstream in ("fix", "needs code"):
         return Row(entry["question"], upstream,
                    f"follows {question(derived[0]['from_row'])}", rid)  # fmt: skip
+    if rid == "host" and ctx.sensor_fix:
+        return Row(entry["question"], "fix", ctx.sensor_fix, rid)
     if rid == "host" and ctx.sensor_reason:
         return Row(entry["question"], "invisible", ctx.sensor_reason, rid)
     return Row(entry["question"], "invisible", invisible_note(entry, ctx.runtime), rid)

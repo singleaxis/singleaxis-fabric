@@ -469,41 +469,59 @@ def endpoints(resolved: Mapping[str, Any] | None, environ: Mapping[str, str]
 # ---------------------------------------------------------------- sensor
 
 
-def sensor(host: Host, kind: str) -> tuple[str | None, str | None, str | None]:  # noqa: PLR0911 - one return per case
-    """``(capture point that can load, why none can, evidence note)`` for the host sensor
-    (§5.4 step 4, §10.5) on this host."""
+#: In a pod the sensor is the chart's DaemonSet on each node, installed from a workstation
+#: with the cluster's kube context (§10.5); ``fabric up`` inside the pod cannot run it.
+POD_SENSOR_FIX = ("fabric up --kubernetes --preset production-host-sensor --values "
+                  "destination.yaml, from a workstation with this cluster's kube context "
+                  "(docs/get-started/kubernetes.md; fabric plan --kubernetes checks the "
+                  "nodes)")  # fmt: skip
+
+
+def sensor(host: Host, kind: str  # noqa: PLR0911 - one return per case
+           ) -> tuple[str | None, str | None, str | None, str | None]:  # fmt: skip
+    """``(capture point that can load, why none can, evidence note, fix from elsewhere)``
+    for the host sensor on this host, by the rules ``fabric up`` applies (§5.4 step 4,
+    ``_sensor.plan``): eBPF needs Linux 5.8+, BTF and cgroup v2 on the host itself; the
+    auditd sensor is built but ``fabric up`` does not start it (``FC-046``), so it is
+    offered as its documented manual step, never predicted ``recorded``."""
     if host.serverless:
         return None, (f"unsupported_runtime: {host.serverless} gives no host access, so no "
                       "kernel sensor can run; wire capture in the agent still records "
-                      "model calls"), None  # fmt: skip
+                      "model calls"), None, None  # fmt: skip
     if host.sandbox:
         why = (f"unsupported_runtime: {host.sandbox} keeps system calls from the host "
                "kernel; run the sensor on a host whose kernel runs the agent")  # fmt: skip
-        return None, why, None
+        return None, why, None, None
+    if host.in_pod:
+        return None, None, None, POD_SENSOR_FIX
     if host.system != "Linux":
         system = {"Darwin": "macOS"}.get(host.system, host.system)
         if host.docker:
             why = f"{system}: the sensor sees only the Docker VM; run the agent in a container"
-            return None, f"{why} or on Linux", None
-        return None, f"no Linux kernel here ({system}); run the agent on Linux", None
+            return None, f"{why} or on Linux", None, None
+        return None, f"no Linux kernel here ({system}); run the agent on Linux", None, None
     if host.in_container:
         return None, ("inside a container the sensor cannot load; run fabric up on the "
-                      "host, which observes this container"), None  # fmt: skip
+                      "host, which observes this container"), None, None  # fmt: skip
     release = host.release
     if kind == "auditd":
         if host.auditd:
-            return "host.auditd", None, None
-        return None, "auditd is not installed on this host (sensor.kind: auditd)", None
-    if _sensor.kernel_ok(release) and host.btf:
+            return "host.auditd", None, "sensor.kind: auditd", None
+        return None, "auditd is not installed on this host (sensor.kind: auditd)", None, None
+    missing = [name for name, ok in (
+        (f"kernel {release} is older than 5.8", _sensor.kernel_ok(release)),
+        ("the kernel has no BTF (/sys/kernel/btf/vmlinux)", host.btf),
+        ("the host has no cgroup v2", host.cgroup_v2),
+    ) if not ok]  # fmt: skip
+    if not missing:
         note = f"kernel {release.split('-')[0]}, BTF"
         if not host.privileged:
             note += "; fabric up needs root or a delegated cgroup"
-        return "host.ebpf", None, note
-    why = (f"kernel {release} is older than 5.8" if not _sensor.kernel_ok(release)
-           else "the kernel has no BTF (/sys/kernel/btf/vmlinux)")  # fmt: skip
+        return "host.ebpf", None, note, None
+    why = ", ".join(missing)
     if host.auditd:
-        return "host.auditd", None, f"{why}, so auditd instead of eBPF"
-    return None, f"eBPF cannot load: {why}; install auditd for the auditd sensor", None
+        return "host.auditd", None, f"eBPF cannot load: {why}", None
+    return None, f"eBPF cannot load: {why}; install auditd for the auditd sensor", None, None
 
 
 # ---------------------------------------------------------------- the report
@@ -524,7 +542,7 @@ def context(facts: Facts, resolved: Mapping[str, Any] | None,
             environ: Mapping[str, str]) -> _coverage.Context:  # fmt: skip
     agent = facts.agent
     kind = str((resolved or {}).get("sensor.kind") or "auto")
-    point, reason, note = sensor(facts.host, kind)
+    point, reason, note, fix = sensor(facts.host, kind)
     node_major = None
     if agent.runtime == "node" and agent.version:
         with contextlib.suppress(ValueError):
@@ -534,11 +552,14 @@ def context(facts: Facts, resolved: Mapping[str, Any] | None,
         "capture.http_hosts": bool((resolved or {}).get("capture.http_hosts")),
         "capture.mcp": bool((resolved or {}).get("capture.mcp")),
         "sensor": kind != "off",
-        "env:FABRIC_WIRE_REMOTE_SANDBOX": "e2b" in (environ.get(
-            "FABRIC_WIRE_REMOTE_SANDBOX") or "").lower(),
+        # The SDK reads a comma-separated provider list (hooks/_config.py).
+        "env:FABRIC_WIRE_REMOTE_SANDBOX": "e2b" in {
+            word.strip().lower()
+            for word in (environ.get("FABRIC_WIRE_REMOTE_SANDBOX") or "").split(",")},
     }  # fmt: skip
     libraries = frozenset(agent.libraries) if agent.libraries is not None else None
-    return _coverage.Context(agent.runtime, libraries, node_major, switches, point, reason, note)
+    return _coverage.Context(agent.runtime, libraries, node_major, switches, point, reason,
+                             note, fix)  # fmt: skip
 
 
 def coverage(facts: Facts, resolved: Mapping[str, Any] | None,
@@ -670,6 +691,14 @@ def next_commands(facts: Facts, command: Sequence[str]) -> list[str]:
     if facts.host.shape == "serverless":
         steps.append("fabric run --print-env --format dotenv (into the function's settings; "
                      "the Node must be reachable over https)")  # fmt: skip
+        return steps
+    if facts.host.shape == "kubernetes":
+        # Inside a pod: the Node, the sensor and the injector are installed on the cluster
+        # from a workstation; the pod gets its environment from the injector (§10.4).
+        steps.append("fabric plan --kubernetes (from a workstation with this cluster's kube "
+                     "context)")  # fmt: skip
+        steps.append("fabric up --kubernetes --agent-namespace NS --injector")
+        steps.append("fabric verify --kubernetes")
         return steps
     steps.append("fabric up")
     shown = " ".join(command) if command else "CMD"

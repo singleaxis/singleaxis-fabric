@@ -1744,6 +1744,17 @@ def test_integration_rows_registry_is_valid_and_covers_the_spec_rows() -> None:
         ),
         (lambda d: _row(d, "files").update(extra=True), "coverage.rows.shape"),
         (lambda d: d.update(states=["recorded"]), "coverage.rows.states"),
+        # fabric up does not start the auditd sensor: its fix may not claim a command does
+        (
+            lambda d: _row(d, "host")["capture_points"][1].update(
+                fix="fabric init --sensor auditd, then fabric up"
+            ),
+            "coverage.rows.fix",
+        ),
+        (
+            lambda d: _row(d, "host")["capture_points"][1].pop("fix"),
+            "coverage.rows.fix",
+        ),
     ],
 )
 def test_integration_rows_registry_refuses(

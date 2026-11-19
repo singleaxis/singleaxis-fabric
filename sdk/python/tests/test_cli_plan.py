@@ -47,6 +47,7 @@ def linux_root(
     version: str | None = None,
     cmdline: str = "BOOT_IMAGE=/vmlinuz ro",
     container: bool = False,
+    cgroup_v2: bool = True,
 ) -> Path:
     """A directory standing for ``/`` on a Linux host."""
     root = tmp_path / "root"
@@ -59,7 +60,8 @@ def linux_root(
     (root / "proc/self/status").write_text("Name:\tpython\nCapEff:\t0000000000000000\n")
     (root / "proc/1/cgroup").write_text("0::/init.scope\n")
     (root / "sys/fs/cgroup").mkdir(parents=True)
-    (root / "sys/fs/cgroup/cgroup.controllers").write_text("cpu memory\n")
+    if cgroup_v2:
+        (root / "sys/fs/cgroup/cgroup.controllers").write_text("cpu memory\n")
     (root / "sys/class/dmi/id").mkdir(parents=True)
     if btf:
         (root / "sys/kernel/btf").mkdir(parents=True)
@@ -584,7 +586,8 @@ def test_no_command_and_no_manifest_is_said(tmp_path: Path) -> None:
         (lambda t: ({"container": True}, {}), "container", "inside a container"),
         (lambda t: ({"kernel": "5.4.0-200-generic"}, {}), "linux-host", "older than 5.8"),
         (lambda t: ({"btf": False}, {}), "linux-host", "no BTF"),
-        (lambda t: ({}, {"KUBERNETES_SERVICE_HOST": "10.0.0.1"}), "kubernetes", "eBPF sensor"),
+        # fabric up refuses a cgroup v1 host (_sensor.plan): plan must not predict recorded
+        (lambda t: ({"cgroup_v2": False}, {}), "linux-host", "no cgroup v2"),
     ],
 )
 def test_the_host_sensor_row_says_why_it_cannot_load(
@@ -620,7 +623,12 @@ def _docker_path(tmp_path: Path) -> str:
     return str(bin_dir)
 
 
-def test_an_old_kernel_with_auditd_offers_the_auditd_sensor(tmp_path: Path) -> None:
+def test_an_old_kernel_with_auditd_offers_the_auditd_sensor_as_a_manual_step(
+    tmp_path: Path,
+) -> None:
+    """fabric up does not start the auditd sensor (FC-046): plan never predicts it
+    recorded, and its fix is the documented manual step, not a command that would not
+    start it."""
     root = linux_root(tmp_path, kernel="4.19.0-27-amd64")
     (root / "etc/audit").mkdir(parents=True)
     (root / "etc/audit/auditd.conf").write_text("")
@@ -631,11 +639,23 @@ def test_an_old_kernel_with_auditd_offers_the_auditd_sensor(tmp_path: Path) -> N
         ["--", ".venv/bin/python", "agent.py"],
     )
     row = rows(report)["host evidence (kernel sensor)"]
-    assert row["state"] == "recorded"
-    assert (
-        row["note"]
-        == "auditd sensor; kernel 4.19.0-27-amd64 is older than 5.8, so auditd instead of eBPF"
+    assert row["state"] == "fix"
+    assert row["note"].startswith("follow docs/host-sensors.md")
+    assert "fabric up does not start it" in row["note"]
+    assert (REPO / "docs/host-sensors.md").is_file()
+    (python_project(tmp_path / "a") / "fabric.yaml").write_text(
+        "schema: fabric.config/v1\nsensor:\n  kind: auditd\n"
     )
+    root = linux_root(tmp_path / "a")
+    (root / "etc/audit").mkdir(parents=True)
+    (root / "etc/audit/auditd.conf").write_text("")
+    report, _ = plan(
+        tmp_path / "a" / "project",
+        root,
+        Runner({"httpx": "1"}),
+        ["--", ".venv/bin/python", "agent.py"],
+    )
+    assert rows(report)["host evidence (kernel sensor)"]["state"] == "fix"
     (python_project(tmp_path / "p") / "fabric.yaml").write_text(
         'schema: fabric.config/v1\nsensor:\n  kind: "off"\n'
     )
@@ -651,6 +671,46 @@ def test_an_old_kernel_with_auditd_offers_the_auditd_sensor(tmp_path: Path) -> N
         "id": "host",
         "note": "fabric init --sensor auto, then fabric up",
     }
+
+
+def test_inside_a_pod_the_sensor_and_the_next_steps_are_the_clusters(tmp_path: Path) -> None:
+    """A pod cannot run fabric up: the sensor is the chart's DaemonSet, installed from a
+    workstation, and the next steps are the --kubernetes commands (each parses)."""
+    report, _ = plan(
+        python_project(tmp_path),
+        linux_root(tmp_path),
+        Runner({"httpx": "1"}),
+        ["--", ".venv/bin/python", "agent.py"],
+        {"KUBERNETES_SERVICE_HOST": "10.0.0.1"},
+    )
+    assert report.data["shape"] == "kubernetes"
+    row = rows(report)["host evidence (kernel sensor)"]
+    assert row["state"] == "fix"
+    assert row["note"].startswith("fabric up --kubernetes --preset production-host-sensor")
+    parser = cli.build_parser()
+    for line in [row["note"].split(", from ")[0], *report.data["next"]]:
+        words = line.split(" (")[0].split()
+        if words[0] == "fabric":
+            parser.parse_args(words[1:])
+    assert report.data["next"][-1] == "fabric verify --kubernetes"
+    assert "fabric up" not in report.data["next"]
+
+
+@pytest.mark.parametrize(
+    ("value", "state"),
+    [("e2b", "recorded"), ("modal, E2B", "recorded"), ("e2bx", "fix"), ("modal", "fix")],
+)
+def test_the_remote_sandbox_switch_reads_the_providers_as_the_sdk_does(
+    tmp_path: Path, value: str, state: str
+) -> None:
+    report, _ = plan(
+        python_project(tmp_path),
+        linux_root(tmp_path),
+        Runner({"httpx": "1", "e2b": "2"}),
+        ["--", ".venv/bin/python", "agent.py"],
+        {"FABRIC_WIRE_REMOTE_SANDBOX": value},
+    )
+    assert rows(report)["commands in a remote sandbox"]["state"] == state
 
 
 # ---------------------------------------------------------------- --mcp-config
@@ -704,6 +764,9 @@ def test_every_fix_in_the_registry_is_a_command_this_cli_accepts() -> None:
     fixes = [p["fix"] for row in ROWS["rows"] for p in row["capture_points"] if "fix" in p]
     assert fixes
     for fix in fixes:
+        if fix.startswith("follow docs/"):  # a manual step: its page exists
+            assert (REPO / fix.split()[1]).is_file()
+            continue
         for part in fix.split(", then "):
             words = part.replace("HOST", "example.com").split()
             if words[0] != "fabric":  # an SDK variable line before `fabric run`

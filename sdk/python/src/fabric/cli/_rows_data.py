@@ -23,9 +23,10 @@ ROWS: dict[str, Any] = {
     "other runtime) and any. Switches: always (on whenever the SDK is installed), "
     "derived (the reader derives it from the row named by from_row), code (a records "
     "API call in the agent's code), capture.exec, capture.http_hosts, capture.mcp "
-    "(fabric.yaml keys), sensor (sensor.kind and a host where the sensor loads) and "
-    "env:NAME (an SDK variable with no fabric.yaml key). A supporting capture point "
-    "adds to a row but never answers it alone.",
+    "(fabric.yaml keys), sensor (sensor.kind and a host where the sensor loads), "
+    "env:NAME (an SDK variable with no fabric.yaml key) and manual (built, but no "
+    "fabric command starts it: the fix names the documented step). A supporting "
+    "capture point adds to a row but never answers it alone.",
     "states": ["recorded", "fix", "needs code", "invisible", "partial", "not observed"],
     "rows": [
         {
@@ -309,8 +310,9 @@ ROWS: dict[str, Any] = {
                     "id": "host.auditd",
                     "runtime": "any",
                     "built": True,
-                    "switch": "sensor",
-                    "fix": "fabric init --sensor auditd, then fabric up",
+                    "switch": "manual",
+                    "fix": "follow docs/host-sensors.md to run the auditd sensor "
+                    "(fabric up does not start it in this release)",
                     "evidence": "auditd sensor",
                 },
             ],

@@ -2,7 +2,7 @@
   "schema_version": "fabric.integration-rows/v1",
   "registry_revision": 1,
   "spec": "058 section 12",
-  "comment": "The coverage report's rows (spec 058 section 12.1): questions a user asks, each mapped to spec 049 field ids and capture points. `fabric plan` predicts each row's state from them (section 12.3); `fabric verify` reports it observed (section 12.4). Checked by scripts/contracts/validate_coverage_contracts.py against the field and capture-point registries; shipped in the CLI as sdk/python/src/fabric/cli/_rows_data.py (sdk/python/scripts/sync_contract_data.py). Runtimes: python, node, other (every other runtime) and any. Switches: always (on whenever the SDK is installed), derived (the reader derives it from the row named by from_row), code (a records API call in the agent's code), capture.exec, capture.http_hosts, capture.mcp (fabric.yaml keys), sensor (sensor.kind and a host where the sensor loads) and env:NAME (an SDK variable with no fabric.yaml key). A supporting capture point adds to a row but never answers it alone.",
+  "comment": "The coverage report's rows (spec 058 section 12.1): questions a user asks, each mapped to spec 049 field ids and capture points. `fabric plan` predicts each row's state from them (section 12.3); `fabric verify` reports it observed (section 12.4). Checked by scripts/contracts/validate_coverage_contracts.py against the field and capture-point registries; shipped in the CLI as sdk/python/src/fabric/cli/_rows_data.py (sdk/python/scripts/sync_contract_data.py). Runtimes: python, node, other (every other runtime) and any. Switches: always (on whenever the SDK is installed), derived (the reader derives it from the row named by from_row), code (a records API call in the agent's code), capture.exec, capture.http_hosts, capture.mcp (fabric.yaml keys), sensor (sensor.kind and a host where the sensor loads), env:NAME (an SDK variable with no fabric.yaml key) and manual (built, but no fabric command starts it: the fix names the documented step). A supporting capture point adds to a row but never answers it alone.",
   "states": ["recorded", "fix", "needs code", "invisible", "partial", "not observed"],
   "rows": [
     {
@@ -104,7 +104,7 @@
       "fields": ["C41"],
       "capture_points": [
         {"id": "host.ebpf", "runtime": "any", "built": true, "switch": "sensor", "fix": "fabric init --sensor auto, then fabric up", "evidence": "eBPF sensor"},
-        {"id": "host.auditd", "runtime": "any", "built": true, "switch": "sensor", "fix": "fabric init --sensor auditd, then fabric up", "evidence": "auditd sensor"}
+        {"id": "host.auditd", "runtime": "any", "built": true, "switch": "manual", "fix": "follow docs/host-sensors.md to run the auditd sensor (fabric up does not start it in this release)", "evidence": "auditd sensor"}
       ],
       "invisible": [
         {"runtime": "*", "reason": "unsupported_runtime", "text": "the host sensor cannot load here"}
