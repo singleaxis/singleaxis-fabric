@@ -26,7 +26,7 @@ profile's default. Unknown keys are refused with the nearest valid key.
 | `capture.security_context` | `null` or text | none | none |  |
 | `node.mode` | `docker` \| `helm` \| `external` | `docker` | `docker` |  |
 | `node.endpoint` | `auto` or text | `auto` | `auto` | `FABRIC_OTLP_ENDPOINT` |
-| `node.queue_size` | `auto` or number | `auto` | `auto` |  |
+| `node.queue_size` | `auto` or number or text | `auto` | `auto` |  |
 | `destination` | mapping | `{"preset": "local-dir", "path": "./fabric-data"}` | none |  |
 | `sensor.kind` | `auto` \| `ebpf` \| `auditd` \| `off` | `auto` | `auto` |  |
 | `secrets.dir` | text | `auto` | `auto` |  |

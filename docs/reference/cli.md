@@ -25,18 +25,30 @@ Write fabric.yaml, generated secrets and the compiled environment.
 | Option | What it does |
 |---|---|
 | `--profile {local,production}` |  |
+| `--production` | the production profile (same as --profile production): tokens, client certificates, an encrypted spool and a capture policy written into the project |
 | `--shape {laptop,linux-host,container,kubernetes}` |  |
 | `--tenant ID` |  |
 | `--agent ID` |  |
 | `--provider [DIALECT=]URL` | a model endpoint outside the built-in table, by its base URL |
-| `--destination PRESET` |  |
+| `--destination PRESET` | where records go: local-dir (local), trial, s3, s3-compatible or otlp (production) |
+| `--bucket NAME` | s3, s3-compatible: the bucket |
+| `--region NAME` | s3, s3-compatible: its region |
+| `--sse-kms-key KEY` | s3: the KMS key id or ARN |
+| `--endpoint URL` | s3-compatible: the store's https URL |
+| `--ca-file PATH` | s3-compatible: the store's private CA certificate |
+| `--credentials-file PATH` | s3-compatible: an AWS credentials file the Node reads |
+| `--otlp-endpoint URL` | otlp, s3, s3-compatible: your OTLP/HTTP collector, where spans go |
+| `--otlp-ca-file PATH` | the collector's private CA certificate |
+| `--otlp-headers-file PATH` | a file with the collector's headers (Authorization=...) |
+| `--queue-size SIZE` | the disk the Node's durable queue may use (20GiB, 500MB, or auto: half the free space) |
+| `--image-digest sha256:HEX` | production: the agent image's digest, written into the capture policy |
 | `--exec` | record the commands the agent runs |
 | `--http-host HOST` | a non-model HTTP host to record |
 | `--mcp` | record MCP transport messages |
 | `--sensor {auto,ebpf,auditd,off}` |  |
 | `--from-env` | import the `FABRIC_*` and `OTEL_*` settings of this shell |
 | `--import-secrets` | with --from-env: copy the id key and CA into the secrets directory |
-| `--rotate NAME` | rotate a generated secret: node-cert, ca, id-key, or all |
+| `--rotate NAME` | rotate a generated secret: node-cert, ca, id-key, tokens or client-certs (production), or all (every one but the id key) |
 | `--force` | rewrite fabric.yaml from the defaults and flags (keeps a backup, the project name and where its secrets are) |
 | `--kubernetes` | create the missing Secrets in the current kube context |
 | `--namespace NS` | the release namespace (default fabric-system) |

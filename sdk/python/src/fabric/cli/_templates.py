@@ -53,12 +53,13 @@ class Layout:
     port: int  # loopback port of the Node's OTLP/HTTP TLS listener
     user: str | None  # "uid:gid" the Node and the sink run as; None: the image's user
     sensor_cgroup: str | None = None  # set: run the sensor, scoped to this cgroup
+    queue_items: int = 1000  # the Node's durable queue, in batches (node.queue_size)
 
 
-def node_config() -> dict[str, Any]:
-    """The local Node: OTLP over TLS in, the export allowlist, a durable queue, the sink.
-    Content is written by the SDK to the file store in the local profile, so there is no
-    content pipeline."""
+def node_config(queue_items: int = 1000) -> dict[str, Any]:
+    """The local Node: OTLP over TLS in, the export allowlist, a durable queue of
+    ``queue_items`` batches (``node.queue_size``), the sink. Content is written by the SDK
+    to the file store in the local profile, so there is no content pipeline."""
     tls = {"cert_file": f"{_TLS_DIR}/node.crt", "key_file": f"{_TLS_DIR}/node.key",
            "min_version": "1.2"}  # fmt: skip
     return {
@@ -81,7 +82,7 @@ def node_config() -> dict[str, Any]:
             # The sink is on the project's own Compose network; only the Node reaches it.
             "endpoint": f"http://{SINK_SERVICE}:8080", "timeout": "5s",
             "middlewares": [{"id": "noredirect"}], "tls": {"insecure": True},
-            "sending_queue": {"enabled": True, "num_consumers": 2, "queue_size": 1000,
+            "sending_queue": {"enabled": True, "num_consumers": 2, "queue_size": queue_items,
                               "block_on_overflow": True, "storage": "file_storage/fabric"},
             "retry_on_failure": {"enabled": True, "initial_interval": "1s",
                                  "max_interval": "5s", "max_elapsed_time": "0s"},

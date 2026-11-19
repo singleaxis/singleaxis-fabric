@@ -32,7 +32,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from . import _args, _config, _images, _init, _project, _secrets, _sensor, _templates
+from . import _args, _config, _images, _init, _project, _secrets, _sensor, _sizing, _templates
 from ._docker import Docker, interactive_echo
 from ._report import EXIT_FINDINGS, CliError, Finding, Report
 
@@ -105,7 +105,7 @@ def _refuse_unbuilt(options: argparse.Namespace, project: _project.Project | Non
 
 def _load_or_init(options: argparse.Namespace, environ: Mapping[str, str], cwd: Path
                   ) -> tuple[_project.Project, _config.Located, list[Finding], list[str],
-                             list[_secrets.SecretInfo]]:  # fmt: skip
+                             _init.Prepared]:  # fmt: skip
     """§5.4 step 1: the project, created with defaults when there is no ``fabric.yaml``."""
     located = _config.discover(options.config, environ, cwd)
     lines: list[str] = []
@@ -125,12 +125,12 @@ def _load_or_init(options: argparse.Namespace, environ: Mapping[str, str], cwd: 
         project = _project.load(located, {}, environ)
         _refuse_other_project(options, project)
     _refuse_unbuilt(options, project)
-    secrets_now, more, _ = _init.prepare(project)
-    findings.extend(more)
+    prepared = _init.prepare(project)
+    findings.extend(prepared.findings)
     ignored = _project.gitignore_entries(project)
     if ignored:
         lines.append("added to .gitignore: " + ", ".join(ignored))
-    return project, located, findings, lines, secrets_now
+    return project, located, findings, lines, prepared
 
 
 def _refuse_other_project(options: argparse.Namespace, project: _project.Project) -> None:
@@ -304,7 +304,8 @@ def _render(project: _project.Project, images: _images.Images, layout: _template
             ) -> tuple[Path, str, str]:  # fmt: skip
     """§5.4 step 2: write the Compose project. Returns the Compose file, the Node
     configuration's digest and the Node certificate's fingerprint."""
-    node_text = _templates.dump(_templates.node_config(), _templates.RENDER_HEADER)
+    node_text = _templates.dump(_templates.node_config(layout.queue_items),
+                                _templates.RENDER_HEADER)  # fmt: skip
     fingerprint, _ = _secrets.certificate_info(layout.node_cert)
     compose_text = _templates.dump(
         _templates.compose(project.name, project.compose_project, images, layout, node_text,
@@ -317,7 +318,8 @@ def _render(project: _project.Project, images: _images.Images, layout: _template
 
 
 def _layout(project: _project.Project, facts: _sensor.HostFacts, port: int,
-            sensor: _sensor.SensorPlan) -> _templates.Layout:  # fmt: skip
+            sensor: _sensor.SensorPlan, queue: _sizing.QueuePlan | None = None
+            ) -> _templates.Layout:  # fmt: skip
     """The directories and files the containers mount, created as the operator's own."""
     user, share_key = _container_user(facts)
     queue_dir = _private_dir(project.state_dir / "state" / "node-queue")
@@ -340,7 +342,8 @@ def _layout(project: _project.Project, facts: _sensor.HostFacts, port: int,
         data_dir=project.data_dir, node_cert=project.secrets_dir / _secrets.NODE_CERT,
         node_key=project.secrets_dir / _secrets.NODE_KEY,
         ca_cert=project.secrets_dir / _secrets.CA_CERT, port=port, user=user,
-        sensor_cgroup=sensor.cgroup if sensor.start else None)  # fmt: skip
+        sensor_cgroup=sensor.cgroup if sensor.start else None,
+        queue_items=queue.telemetry_items if queue else _sizing.LOCAL_TELEMETRY_ITEMS)  # fmt: skip
 
 
 def _start(docker: Docker, project: _project.Project, compose_file: Path, layout: _templates.Layout,
@@ -412,10 +415,10 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
 
         return _kubecmd.run_up(options, environ, cwd)
     _refuse_unbuilt(options, None)
-    project, located, findings, lines, secrets_now = _load_or_init(options, environ, cwd)
+    project, located, findings, lines, prepared = _load_or_init(options, environ, cwd)
     report = Report("up", findings=findings, config=located.to_json())
     report.data = {"project": project.name, "compose_project": project.compose_project,
-                   "secrets": [info.to_json() for info in secrets_now]}  # fmt: skip
+                   "secrets": [info.to_json() for info in prepared.secrets]}  # fmt: skip
     endpoint = _project.node_endpoint(project.resolved)
     if project.resolved["node.mode"] == "external":
         findings.append(Finding("FC-024", f"node.endpoint: {endpoint}"))
@@ -435,7 +438,7 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
     sensor = _sensor.plan(str(project.resolved["sensor.kind"]), options.no_sensor, facts,
                           project.name)  # fmt: skip
     _prepare_sensor(sensor, facts, project.name, docker, images)
-    layout = _layout(project, facts, port, sensor)
+    layout = _layout(project, facts, port, sensor, prepared.queue)
     compose_file, node_digest, fingerprint = _render(project, images, layout)
 
     state_path = project.state_dir / "state" / STATE_FILE

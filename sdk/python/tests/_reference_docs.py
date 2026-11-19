@@ -115,14 +115,27 @@ NOT_VARIABLES = frozenset({"FABRIC_WRAPPER_ATTR", "FABRIC_THREAD_NAMES", "FABRIC
 FILE_FORMS = ("FABRIC_TOKENIZATION_KEY_FILE", "FABRIC_WIRE_SPOOL_KEY_FILE")
 
 
+#: The Fabric Node's own variables, which `fabric init --production` writes into
+#: ``.fabric/node.env`` (spec 058 §6.1) and the SDK and the CLI never read: the Node's
+#: settings are documented on the manual setup pages (reference/manual-setup/).
+NODE_VARIABLES = frozenset({
+    "FABRIC_AGENT_SOURCE_ID", "FABRIC_EBPF_SOURCE_ID", "FABRIC_EBPF_TOKEN_FILE",
+    "FABRIC_INGRESS_TOKEN_FILE", "FABRIC_EXPORT_ENDPOINT", "FABRIC_CONTENT_BACKEND",
+    "FABRIC_CONTENT_KEY_FILE", "FABRIC_CONTENT_S3_BUCKET", "FABRIC_CONTENT_S3_ENDPOINT",
+    "FABRIC_CONTENT_S3_KMS_KEY_ID", "FABRIC_CONTENT_S3_PATH_STYLE", "FABRIC_CONTENT_S3_REGION",
+    "FABRIC_CONTENT_S3_SSE",
+})  # fmt: skip
+
+
 def source_variables() -> set[str]:
-    """``FABRIC_*`` string literals in the Python SDK and CLI (and the TS-only ones)."""
+    """``FABRIC_*`` string literals in the Python SDK and CLI (and the TS-only ones), but
+    the file forms (documented with their variable) and the Node's own variables."""
     found: set[str] = set()
     for path in (ROOT / "sdk/python/src/fabric").rglob("*.py"):
         if path.name.startswith("_") and path.name.endswith("_data.py"):
             continue  # generated catalogue texts name variables in fixes, not reads
         found |= set(re.findall(r"[\"'](FABRIC_[A-Z0-9_]+)[\"']", path.read_text("utf-8")))
-    return found - NOT_VARIABLES
+    return found - NOT_VARIABLES - NODE_VARIABLES - set(FILE_FORMS)
 
 
 def _escape(text: str) -> str:

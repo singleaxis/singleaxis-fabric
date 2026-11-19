@@ -27,7 +27,20 @@ from ._report import CliError, Finding
 
 STATE_DIR = ".fabric"
 COMPILED_ENV = "compiled.env"
+NODE_ENV = "node.env"
+SPOOL_DIR = "spool"
 DEFAULT_NODE_PORT = 4318
+#: The production Node's content listener is the port after the telemetry one (4319 beside
+#: 4318, as the ingress-group Compose files publish them).
+CONTENT_PORT_OFFSET = 1
+#: The clear source label of the canary `fabric verify` sends (its own ingress binding).
+CANARY_SOURCE = "fabric-canary"
+TRIAL_BUCKET = "fabric-content"
+TRIAL_REGION = "us-east-1"
+TRIAL_OTLP_PORT = 4318
+TRIAL_S3_PORT = 8333
+#: Destinations with a content store (the S3 API, §9.1); `otlp` alone keeps no content.
+CONTENT_PRESETS = ("trial", "s3", "s3-compatible")
 _DIGEST_PREFIX = "# fabric-yaml-sha256: "
 #: The fabric.yaml settings a launcher needs besides the variables, one comment line each:
 #: the project name (the run record and the agent cgroup), whether `run` adds endpoints from
@@ -87,6 +100,45 @@ class Project:
     def generates_tls(self) -> bool:
         """A local Node needs the generated CA and certificate; an external Node has its own."""
         return bool(self.resolved["node.mode"] == "docker")
+
+    @property
+    def production(self) -> bool:
+        return bool(self.resolved["profile"] == "production")
+
+    @property
+    def destination(self) -> dict[str, Any]:
+        return dict(self.resolved["destination"] or {})
+
+    @property
+    def host_label(self) -> str:
+        """The host label the agent (``FABRIC_HOST_LABEL``) and the host sensor
+        (``EMIT_HOST_LABEL``) share, so host records join the agent's: the project name,
+        stable across restarts and host renames (the Node binds a source id derived from
+        it)."""
+        return self.name
+
+    def source_labels(self) -> dict[str, str]:
+        """The clear source label of each ingress source (§7.1): the agent's is its agent
+        id, the host sensor's ``<host label>/ebpf``, the canary's its own."""
+        return {"agent": str(self.resolved["agent"]), "ebpf": f"{self.host_label}/ebpf",
+                "canary": CANARY_SOURCE}  # fmt: skip
+
+    @property
+    def policy_path(self) -> Path | None:
+        privacy = str(self.resolved["capture.privacy"])
+        return None if privacy == "profile-default" else _absolute(self.directory, privacy)
+
+    @property
+    def node_env_path(self) -> Path:
+        return self.state_dir / NODE_ENV
+
+    @property
+    def spool_dir(self) -> Path:
+        return self.state_dir / SPOOL_DIR
+
+    @property
+    def queue_dir(self) -> Path:
+        return self.state_dir / "state" / "node-queue"
 
     @property
     def ca_file(self) -> Path | None:
@@ -177,17 +229,41 @@ def node_endpoint(resolved: _config.Resolved) -> str:
     return endpoint.rstrip("/")
 
 
+def _check_destination(project: Project) -> None:
+    """The destination a profile can deliver to (§9.1): the local Node writes the local-dir
+    sink only; a production Node needs a destination that keeps records, and a span target
+    beside an S3 content store (the Node exports spans over OTLP only)."""
+    preset = project.destination.get("preset")
+    if not project.production:
+        if preset not in (None, "local-dir"):
+            raise CliError([Finding("FC-004", f"destination.preset: {preset} is a production "
+                                    "destination; run `fabric init --production` first, or "
+                                    "use local-dir with the local profile")])  # fmt: skip
+        return
+    if preset not in _config.PRODUCTION_PRESETS:
+        raise CliError([Finding("FC-165", f"destination.preset: {preset or 'none'}")])
+    if preset in ("s3", "s3-compatible") and not project.destination.get("otlp_endpoint"):
+        raise CliError([Finding("FC-004", f"destination.otlp_endpoint: is required with the "
+                                f"{preset} preset (the Node exports spans over OTLP; S3 "
+                                "keeps the content): add --otlp-endpoint URL of your "
+                                "collector")])  # fmt: skip
+
+
 def _check_compilable(project: Project) -> None:
     """Refuse what this release cannot compile, before anything is written."""
     resolved = project.resolved
-    if resolved["profile"] != "local":
-        raise CliError([Finding("FC-011", "profile: production")])
+    if project.production and resolved["node.mode"] != "docker":
+        # A production Node somebody else runs needs its content listener and bindings
+        # named; that route is the manual setup page until the CLI builds it.
+        raise CliError([Finding("FC-011", f"profile: production with node.mode: "
+                                          f"{resolved['node.mode']}")])  # fmt: skip
     if not resolved["providers.builtin"]:
         raise CliError([Finding("FC-011", "providers.builtin: false")])
-    # Accepted by fabric.config/v1 and compiled by later work packages (E4; 057 WP7-9):
-    # a value that would be ignored is refused, never dropped without a word.
-    if resolved["node.queue_size"] != "auto":
-        raise CliError([Finding("FC-011", "node.queue_size (leave it at auto)")])
+    _check_destination(project)
+    if project.production and project.policy_path is None:
+        raise CliError([Finding("FC-166", "capture.privacy: profile-default")])
+    # Accepted by fabric.config/v1 and compiled by later work packages (057 WP7-9): a
+    # value that would be ignored is refused, never dropped without a word.
     if resolved["capture.security_context"] is not None:
         raise CliError([Finding("FC-011", "capture.security_context (remove the line)")])
     if project.generates_tls and resolved["secrets.ca_file"]:
@@ -217,9 +293,18 @@ def compile_environment(project: Project) -> dict[str, str]:
     }
     if project.ca_file is not None:
         env["FABRIC_OTLP_CERTIFICATE"] = str(project.ca_file)
-    destination = resolved["destination"] or {}
+    destination = project.destination
     if resolved["capture.content"] and destination.get("preset") == "local-dir":
         env["FABRIC_WIRE_STORE"] = (project.data_dir / "store").resolve().as_uri()
+    if project.production:
+        env.update(_production_sender(project, "agent"))
+        if resolved["capture.content"] and destination.get("preset") in CONTENT_PRESETS:
+            # Content goes to the Node's content listener, which writes the S3 store.
+            env["FABRIC_WIRE_STORE"] = "node"
+            env["FABRIC_WIRE_CONTENT_ENDPOINT"] = content_endpoint(resolved)
+        env["FABRIC_WIRE_SPOOL_DIR"] = str(project.spool_dir)
+        env["FABRIC_WIRE_SPOOL_KEY_FILE"] = str(project.secrets_dir / _secrets.SPOOL_KEY)
+        env["FABRIC_HOST_LABEL"] = project.host_label
     if project.id_key_file is not None:
         env["FABRIC_WIRE_ID_KEY_FILE"] = str(project.id_key_file)
     custom = _providers.custom_from_config(resolved["providers.custom"] or [])
@@ -241,6 +326,167 @@ def compile_environment(project: Project) -> dict[str, str]:
         if "\n" in value or "\r" in value:
             raise CliError([Finding("FC-004", f"{name}: the value has a line break")])
     return env
+
+
+def content_endpoint(resolved: _config.Resolved) -> str:
+    """The production Node's content listener (``FABRIC_WIRE_CONTENT_ENDPOINT``)."""
+    return f"https://localhost:{node_port(resolved) + CONTENT_PORT_OFFSET}/v1/logs"
+
+
+def _production_sender(project: Project, source: str) -> dict[str, str]:
+    """What one SDK sender of a production project presents to the Node: its clear source
+    label, its token (as the headers file the SDK reads) and its client certificate."""
+    cert, key = _secrets.client_pair(source)
+    directory = project.secrets_dir
+    return {
+        "FABRIC_SOURCE_ID": project.source_labels()[source],
+        "FABRIC_OTLP_HEADERS_FILE": str(directory / _secrets.headers_file(source)),
+        "FABRIC_OTLP_CLIENT_CERTIFICATE": str(directory / cert),
+        "FABRIC_OTLP_CLIENT_KEY": str(directory / key),
+    }
+
+
+def canary_environment(project: Project) -> dict[str, str]:
+    """The environment the canary of ``fabric verify`` runs with (§5.6 step 3): the
+    agent's, but under the canary's own source, token and client certificate, so the Node
+    tells canary records from an agent's and binds them separately (§7.1)."""
+    env = compile_environment(project)
+    if project.production:
+        env.update(_production_sender(project, "canary"))
+    return env
+
+
+def derived_source_ids(project: Project) -> dict[str, str]:
+    """The source id the Node binds for each ingress source (§7.1), derived from the clear
+    label under the project's id key exactly as the SDK (agent, canary) and the host
+    emitter (``print-source-id``) derive what they send. Pseudonyms, not secrets; the id
+    key itself is read and never returned."""
+    from . import _kube  # noqa: PLC0415 - the derivations the Kubernetes generator uses
+
+    if project.id_key_file is None:
+        return {}
+    key = _secrets._read(project.id_key_file)
+    labels = project.source_labels()
+    return {
+        "agent": _kube.source_id(labels["agent"], key),
+        "ebpf": _kube.sensor_source_id(project.host_label, key),
+        "canary": _kube.source_id(labels["canary"], key),
+    }
+
+
+def node_environment(project: Project, queue: Any = None) -> tuple[dict[str, str], dict[str, str]]:
+    """§6.1: what ``fabric.yaml`` compiles to for a production Node, as the variables the
+    ingress-group Compose files read and, as ``# fabric-setting:`` lines, the files and
+    settings those files do not take as a variable (the destination's CA, headers and
+    credentials files, the queue's item counts, the sensor's and the canary's bindings).
+    Every secret is a file path; no value is ever written (I7)."""
+    resolved = project.resolved
+    directory = project.secrets_dir
+    ids = derived_source_ids(project)
+    destination = project.destination
+    preset = str(destination.get("preset"))
+    env: dict[str, str] = {
+        "FABRIC_TENANT_ID": str(resolved["tenant"]),
+        "FABRIC_AGENT_SOURCE_ID": ids["agent"],
+        "FABRIC_INGRESS_TOKEN_FILE": str(directory / _secrets.token_file("agent")),
+        "FABRIC_EBPF_SOURCE_ID": ids["ebpf"],
+        "FABRIC_EBPF_TOKEN_FILE": str(directory / _secrets.token_file("ebpf")),
+    }
+    settings: dict[str, str] = {
+        "destination.preset": preset,
+        "tls.ca_file": str(directory / _secrets.CA_CERT),
+        "tls.cert_file": str(directory / _secrets.NODE_CERT),
+        "tls.key_file": str(directory / _secrets.NODE_KEY),
+        "canary.source_id": ids["canary"],
+        "canary.token_file": str(directory / _secrets.token_file("canary")),
+        "sensor.source_label": project.source_labels()["ebpf"],
+        "sensor.host_label": project.host_label,
+        "sensor.state_key_file": str(directory / _secrets.SENSOR_STATE_KEY),
+        "sensor.client_cert_file": str(directory / _secrets.client_pair("ebpf")[0]),
+        "sensor.client_key_file": str(directory / _secrets.client_pair("ebpf")[1]),
+        "id_key_file": str(project.id_key_file),
+    }
+    if preset == "trial":
+        env["FABRIC_EXPORT_ENDPOINT"] = f"https://{_secrets.TRIAL_OTLP_SERVICE}:{TRIAL_OTLP_PORT}"
+        settings["export.ca_file"] = str(directory / _secrets.CA_CERT)
+        settings["export.token_file"] = str(directory / _secrets.TRIAL_EXPORT_TOKEN)
+        settings["trial.spans_dir"] = str(project.data_dir / "spans")
+    elif destination.get("otlp_endpoint"):
+        env["FABRIC_EXPORT_ENDPOINT"] = str(destination["otlp_endpoint"]).rstrip("/")
+        for key, name in (("otlp_ca_file", "export.ca_file"),
+                          ("otlp_headers_file", "export.headers_file")):  # fmt: skip
+            if destination.get(key):
+                settings[name] = str(_absolute(project.directory, str(destination[key])))
+    if resolved["capture.content"] and preset in CONTENT_PRESETS:
+        env["FABRIC_CONTENT_BACKEND"] = "s3"
+        env["FABRIC_CONTENT_KEY_FILE"] = str(directory / _secrets.CONTENT_KEY)
+        env.update(_content_store(project, preset))
+        for key, name in (("ca_file", "content.s3.ca_file"),
+                          ("credentials_file", "content.s3.credentials_file")):  # fmt: skip
+            if destination.get(key):
+                settings[name] = str(_absolute(project.directory, str(destination[key])))
+        if preset == "trial":
+            settings["content.s3.ca_file"] = str(directory / _secrets.CA_CERT)
+            settings["content.s3.credentials_file"] = str(
+                directory / _secrets.trial_credentials("node")
+            )
+    if queue is not None:
+        settings["queue.telemetry_items"] = str(queue.telemetry_items)
+        settings["queue.content_items"] = str(queue.content_items)
+    return env, settings
+
+
+def _content_store(project: Project, preset: str) -> dict[str, str]:
+    destination = project.destination
+    if preset == "trial":
+        return {
+            "FABRIC_CONTENT_S3_BUCKET": TRIAL_BUCKET, "FABRIC_CONTENT_S3_REGION": TRIAL_REGION,
+            "FABRIC_CONTENT_S3_ENDPOINT": f"https://{_secrets.TRIAL_S3_SERVICE}:{TRIAL_S3_PORT}",
+            "FABRIC_CONTENT_S3_PATH_STYLE": "true", "FABRIC_CONTENT_S3_SSE": "AES256",
+        }  # fmt: skip
+    out = {"FABRIC_CONTENT_S3_BUCKET": str(destination["bucket"]),
+           "FABRIC_CONTENT_S3_REGION": str(destination.get("region") or TRIAL_REGION)}  # fmt: skip
+    if preset == "s3":
+        out["FABRIC_CONTENT_S3_SSE"] = "aws:kms"
+        if destination.get("sse_kms_key"):
+            out["FABRIC_CONTENT_S3_KMS_KEY_ID"] = str(destination["sse_kms_key"])
+    else:  # s3-compatible: a store without KMS takes SSE-S3
+        out["FABRIC_CONTENT_S3_ENDPOINT"] = str(destination["endpoint"]).rstrip("/")
+        out["FABRIC_CONTENT_S3_PATH_STYLE"] = "true"
+        out["FABRIC_CONTENT_S3_SSE"] = "AES256"
+    return out
+
+
+_NODE_HEADER = (
+    "# The Fabric Node's settings, compiled by `fabric init` from fabric.yaml (spec 058\n"
+    "# section 6.1) in the variables of the ingress-group Compose files. Do not edit: it is\n"
+    "# rewritten when fabric.yaml or a secret changes. Secrets appear as file paths, never\n"
+    "# as values; the `# fabric-setting:` lines are what those files take another way.\n"
+)
+
+
+def write_node_env(project: Project, queue: Any = None) -> tuple[Path, bool]:
+    """Write ``.fabric/node.env`` (0600, atomic) for a production project. Returns its path
+    and whether its content changed."""
+    env, settings = node_environment(project, queue)
+    for name, value in (*env.items(), *settings.items()):
+        if "\n" in value or "\r" in value:
+            raise CliError([Finding("FC-004", f"{name}: the value has a line break")])
+    text = _NODE_HEADER + _DIGEST_PREFIX + config_digest(project.config_path) + "\n"
+    text += "".join(f"{SETTING_PREFIX}{key}={value}\n" for key, value in settings.items())
+    text += "".join(f"{name}={value}\n" for name, value in env.items())
+    return _write_private(project, NODE_ENV, text)
+
+
+def _write_private(project: Project, name: str, text: str) -> tuple[Path, bool]:
+    path = ensure_state_dir(project) / name
+    with contextlib.suppress(OSError, UnicodeDecodeError):  # missing or unreadable: write it
+        if path.read_text(encoding="utf-8") == text and not path.is_symlink():
+            return path, False
+    temporary = path.with_name(f".{name}.{_random.token_hex(6)}.tmp")
+    _secrets.write_new(temporary, text.encode("utf-8"), 0o600)
+    os.replace(temporary, path)
+    return path, True
 
 
 def store_directory(uri: str) -> Path | None:
@@ -281,14 +527,7 @@ def write_compiled_env(project: Project) -> tuple[Path, bool]:
         config_digest(project.config_path),
         launcher_settings(project),
     )
-    path = ensure_state_dir(project) / COMPILED_ENV
-    with contextlib.suppress(OSError, UnicodeDecodeError):  # missing or unreadable: write it
-        if path.read_text(encoding="utf-8") == text and not path.is_symlink():
-            return path, False
-    temporary = path.with_name(f".{COMPILED_ENV}.{_random.token_hex(6)}.tmp")
-    _secrets.write_new(temporary, text.encode("utf-8"), 0o600)
-    os.replace(temporary, path)
-    return path, True
+    return _write_private(project, COMPILED_ENV, text)
 
 
 def read_compiled_env(path: Path) -> tuple[str | None, dict[str, str]]:

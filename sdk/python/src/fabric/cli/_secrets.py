@@ -14,6 +14,7 @@ keeps the old key read-only for the reader."""
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import datetime as dt
 import hashlib
@@ -38,9 +39,51 @@ NODE_CERT = "node.crt"
 NODE_KEY = "node.key"
 RETIRED_DIR = "retired"
 
+#: Production (spec 058 §7.1): the agent's spool key, the Node's content key, the sensor's
+#: state key, and per ingress source a bearer token (and, for the SDK's senders, the same
+#: token as the OTLP headers file the SDK reads) and a client certificate.
+SPOOL_KEY = "spool.key"
+CONTENT_KEY = "content.key"
+SENSOR_STATE_KEY = "ebpf-state.key"
+#: The sources a production project binds on the Node, each its own ingress group: the
+#: agent, the host sensor, and the canary `fabric verify` sends (never an agent's).
+SOURCES: tuple[str, ...] = ("agent", "ebpf", "canary")
+#: The sources that send through the SDK, which reads its token from a headers file.
+HEADER_SOURCES: tuple[str, ...] = ("agent", "canary")
+#: Trial destination (§9.2): the TLS OTLP receiver and S3-compatible store `fabric up`
+#: provisions, their certificates, the store's three identities and its SSE key, and the
+#: token the Node presents to the receiver.
+TRIAL_OTLP_SERVICE = "fabric-trial-otlp"
+TRIAL_S3_SERVICE = "fabric-trial-s3"
+TRIAL_EXPORT_TOKEN = "trial-export.token"  # noqa: S105 - a file name
+TRIAL_S3_KEK = "trial-s3-sse.kek"
+TRIAL_S3_IDENTITIES: tuple[str, ...] = ("root", "node", "reader")
+
+
+def token_file(source: str) -> str:
+    return f"{source}.token"
+
+
+def headers_file(source: str) -> str:
+    return f"{source}.headers"
+
+
+def client_pair(source: str) -> tuple[str, str]:
+    return f"{source}-client.crt", f"{source}-client.key"
+
+
+def trial_credentials(identity: str) -> str:
+    return f"trial-s3-{identity}.credentials"
+
+
+#: The files the Node's container user reads (shared with its group when root runs it).
+NODE_READ = frozenset({NODE_KEY, CONTENT_KEY, *(token_file(s) for s in SOURCES),
+                       trial_credentials("node")})  # fmt: skip
 #: The names ``fabric init --rotate`` accepts (``all``: every one except the id key, whose
-#: rotation changes pseudonyms and is never automatic, §7.3).
-ROTATABLE: tuple[str, ...] = ("node-cert", "ca", "id-key")
+#: rotation changes pseudonyms and is never automatic, §7.3). ``tokens`` and
+#: ``client-certs`` exist in the production profile only.
+ROTATABLE: tuple[str, ...] = ("node-cert", "ca", "id-key", "tokens", "client-certs")
+PRODUCTION_ROTATABLE = frozenset({"tokens", "client-certs"})
 ID_KEY_BYTES = 32
 CA_VALID_DAYS = 730  # §7.2: the local CA is valid 2 years
 LEAF_VALID_DAYS = 90  # §7.2: leaf certificates 90 days
@@ -194,9 +237,9 @@ def check_secret_file(path: Path, *, public: bool = False) -> bool:
     if _POSIX and not public:
         if info.st_uid != os.geteuid():
             raise _unsafe_file(path, "is owned by another user")
-        # Group read is allowed only for the Node's key, which root shares with the
-        # image's group (the production overlay's root:65532 0440 rule).
-        if info.st_mode & (0o037 if path.name == NODE_KEY else 0o077):
+        # Group read is allowed only for the files the Node reads, which root shares
+        # with the image's group (the production overlay's root:65532 0440 rule).
+        if info.st_mode & (0o037 if path.name in NODE_READ else 0o077):
             raise _unsafe_file(path, "is open to group or others")
     return True
 
@@ -468,3 +511,174 @@ def import_file(directory: Path, name: str, data: bytes, *, public: bool = False
     if not check_secret_file(path, public=public):
         write_new(path, data, 0o644 if public else 0o600)
     return path
+
+
+# ---------------------------------------------------------------- production (§7.1)
+
+
+TOKEN_BYTES = 32  # 64 hex characters: within the Node's 32-4096 printable-byte rule
+_HEADERS_PREFIX = b"Authorization=Bearer%20"
+
+
+def _new_token() -> bytes:
+    """A bearer token: 32 CSPRNG bytes as hex, no trailing newline (the Node's
+    bearertokenauth reads the file's bytes exactly)."""
+    return secrets.token_bytes(TOKEN_BYTES).hex().encode("ascii")
+
+
+def _new_key_b64() -> bytes:
+    """A 32-byte key as base64 text, no newline (the SDK's and the Node's key files)."""
+    return base64.b64encode(secrets.token_bytes(32))
+
+
+def headers_for(token: bytes) -> bytes:
+    """The OTLP headers file the SDK reads (``FABRIC_OTLP_HEADERS_FILE``) for a token."""
+    return _HEADERS_PREFIX + token
+
+
+def token_from_headers(raw: bytes) -> bytes | None:
+    body = raw[:-1] if raw.endswith(b"\n") else raw
+    if not body.startswith(_HEADERS_PREFIX):
+        return None
+    token = body[len(_HEADERS_PREFIX) :]
+    return token if token and token.isalnum() else None
+
+
+def _key_info(directory: Path, name: str, label: str, action: str) -> SecretInfo:
+    return SecretInfo(label, (str(directory / name),), action,
+                      key_fingerprint(_read(directory / name)))  # fmt: skip
+
+
+def _ensure_key(directory: Path, name: str, label: str, make: Any) -> SecretInfo:
+    path = directory / name
+    action = "kept"
+    if not check_secret_file(path):
+        write_new(path, make())
+        action = "generated"
+    return _key_info(directory, name, label, action)
+
+
+def _ensure_token(directory: Path, source: str) -> SecretInfo:
+    """A source's token and (for an SDK sender) its headers file, generated together. One
+    half missing is made from the other; two halves that disagree are ``FC-169``."""
+    token_path = directory / token_file(source)
+    has_token = check_secret_file(token_path)
+    header_path = directory / headers_file(source) if source in HEADER_SOURCES else None
+    has_headers = header_path is not None and check_secret_file(header_path)
+    action = "kept"
+    token = _read(token_path) if has_token else None
+    if header_path is not None and has_headers:
+        from_headers = token_from_headers(_read(header_path))
+        if from_headers is None or (token is not None and token != from_headers):
+            raise CliError([Finding("FC-169", f"{header_path} is not the headers file of "
+                                              f"{token_path}")])  # fmt: skip
+        token = from_headers
+    if token is None:
+        token = _new_token()
+        action = "generated"
+    if not has_token:
+        write_new(token_path, token)
+    if header_path is not None and not has_headers:
+        write_new(header_path, headers_for(token))
+    files = (str(token_path),) + ((str(header_path),) if header_path is not None else ())
+    return SecretInfo(f"{source}-token", files, action, key_fingerprint(token))
+
+
+def _ensure_leaf(directory: Path, pair: tuple[str, str], label: str, names: Sequence[str],
+                 addresses: Sequence[str], *, common_name: str, client: bool,
+                 rotate: bool = False) -> SecretInfo:  # fmt: skip
+    cert, key = pair
+    action = "kept"
+    if rotate or not _pair(directory, cert, key, label):
+        api = _crypto()
+        cert_pem, key_pem = _new_leaf(api, _read(directory / CA_CERT), _read(directory / CA_KEY),
+                                      names, addresses, common_name=common_name,
+                                      client=client)  # fmt: skip
+        if rotate and (directory / cert).exists():
+            replace(directory / key, key_pem)
+            replace(directory / cert, cert_pem, 0o644)
+            action = "rotated"
+        else:
+            write_new(directory / key, key_pem)
+            write_new(directory / cert, cert_pem, 0o644)
+            action = "generated"
+    return _cert_info(directory, label, cert, key, action)
+
+
+def _client_certs(directory: Path, labels: Mapping[str, str], *, rotate: bool = False
+                  ) -> list[SecretInfo]:  # fmt: skip
+    """One client certificate per source, its common name the source's clear label."""
+    return [_ensure_leaf(directory, client_pair(source), f"{source}-client-cert", (), (),
+                         common_name=labels[source], client=True, rotate=rotate)
+            for source in SOURCES]  # fmt: skip
+
+
+def _trial_certs(directory: Path, *, rotate: bool = False) -> list[SecretInfo]:
+    return [
+        _ensure_leaf(directory, (f"{name}.crt", f"{name}.key"), f"{name}-cert",
+                     (service, "localhost"), NODE_IPS, common_name=service, client=False,
+                     rotate=rotate)
+        for name, service in (("trial-otlp", TRIAL_OTLP_SERVICE), ("trial-s3", TRIAL_S3_SERVICE))
+    ]  # fmt: skip
+
+
+def _new_credentials(identity: str) -> bytes:
+    """An AWS shared-credentials file for one identity of the trial store."""
+    access = f"fabric-{identity}-{secrets.token_hex(4)}"
+    secret = secrets.token_hex(24)
+    return (f"[default]\naws_access_key_id = {access}\n"
+            f"aws_secret_access_key = {secret}\n").encode("ascii")  # fmt: skip
+
+
+def ensure_production(directory: Path, labels: Mapping[str, str], *, trial: bool
+                      ) -> list[SecretInfo]:  # fmt: skip
+    """Generate every production secret that is missing (§7.1); never overwrite one.
+    ``labels`` maps each of :data:`SOURCES` to its clear source label (the client
+    certificate's common name). The CA must exist (:func:`ensure_local` first)."""
+    ensure_private_dir(directory)
+    if not _pair(directory, CA_CERT, CA_KEY, "ca"):
+        raise CliError([Finding("FC-014", f"ca: {directory / CA_CERT} is missing")])
+    out = [
+        _ensure_key(directory, SPOOL_KEY, "spool-key", _new_key_b64),
+        _ensure_key(directory, CONTENT_KEY, "content-key", _new_key_b64),
+        _ensure_key(directory, SENSOR_STATE_KEY, "ebpf-state-key", _new_key_b64),
+        *(_ensure_token(directory, source) for source in SOURCES),
+        *_client_certs(directory, labels),
+    ]
+    if trial:
+        out += _trial_certs(directory)
+        out += [_ensure_key(directory, trial_credentials(identity), f"trial-s3-{identity}",
+                            lambda identity=identity: _new_credentials(identity))
+                for identity in TRIAL_S3_IDENTITIES]  # fmt: skip
+        out.append(_ensure_key(directory, TRIAL_S3_KEK, "trial-s3-sse-kek", _new_token))
+        out.append(_ensure_key(directory, TRIAL_EXPORT_TOKEN, "trial-export-token", _new_token))
+    return out
+
+
+def rotate_production(directory: Path, names: Sequence[str], labels: Mapping[str, str], *,
+                      trial: bool) -> list[SecretInfo]:  # fmt: skip
+    """§7.3 for the production secrets. ``tokens``: a new token (and headers file) per
+    source, the old one kept read-only under ``retired/``. ``client-certs``: new client
+    certificates from the CA. ``ca`` (after :func:`rotate`): the client and trial
+    certificates the old CA signed are reissued from the new one."""
+    ensure_private_dir(directory)
+    out: list[SecretInfo] = []
+    if "tokens" in names:
+        for source in SOURCES:
+            path = directory / token_file(source)
+            if check_secret_file(path):
+                old = _read(path)
+                _retire(directory, token_file(source), old, key_fingerprint(old))
+            token = _new_token()
+            replace(path, token)
+            files = [str(path)]
+            if source in HEADER_SOURCES:
+                replace(directory / headers_file(source), headers_for(token))
+                files.append(str(directory / headers_file(source)))
+            out.append(SecretInfo(f"{source}-token", tuple(files), "rotated",
+                                  key_fingerprint(token)))  # fmt: skip
+    if "client-certs" in names or "ca" in names:
+        out += _client_certs(directory, labels, rotate=True)
+    if "ca" in names and trial:
+        out += _trial_certs(directory, rotate=True)
+    return out
