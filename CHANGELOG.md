@@ -35,8 +35,8 @@ it never makes, applies, waits for or returns one.
   reader.** A Node.js agent's explicit-API records are shown labelled
   *reported*, model and tool call by call; `fabric verify` states the
   decisions chain `unsupported(unsupported_runtime)` (`FC-163`) and never
-  calls the run verified; a Node.js run with nothing delivered says how to
-  wire the exporter (`FC-164`). `python -m fabric.reconstruct` lists reported
+  calls the run verified; a Node.js run with nothing delivered fails
+  `verify` and says how to wire the exporter (`FC-164`). `python -m fabric.reconstruct` lists reported
   runs when it reconstructs none.
 - **Documentation in four parts.** Get started (Python, Node.js, other
   languages, Kubernetes), Choose your deployment shape (laptop, Linux host,
