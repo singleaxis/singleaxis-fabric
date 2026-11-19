@@ -25,7 +25,10 @@ it never makes, applies, waits for or returns one.
   shares one size bound; corrupt or renamed records are set aside as
   `.corrupt` files and still count against it, and records sealed under a key
   this process does not hold are left for a drainer that has it. Records
-  survive the writer being killed.
+  survive the writer being killed. When a Python writer's loss ledger shares
+  the directory, it counts inside the 1 MiB reserve, so the directory stays
+  within its bound plus 1 MiB. A failed spool write names the cause and the fix
+  and never includes the spool path.
 
 - **Node.js capture groundwork: the `fetch` capture hook and its passivity
   gate (spec 055, unit 055-t6).** Still not installable from the package
