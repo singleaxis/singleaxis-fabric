@@ -8,7 +8,8 @@
  * is the image route §1.4 names for Node.js-only users, done for them:
  *
  * - the project directory (the nearest one holding `fabric.yaml`, else this
- *   directory) and the CLI's state home are mounted at the same paths, so the
+ *   directory), this directory when it is outside the project, and the CLI's
+ *   state home are mounted at the same paths, so the
  *   paths the CLI writes into `.fabric/compiled.env` and gives Docker are the
  *   host's (the npm `fabric run` reads that file);
  * - the command runs as this user (`--user`), so every file it writes is
@@ -129,7 +130,15 @@ export function imageArgs(
   } else {
     out.push("-e", "DOCKER_HOST");
   }
-  out.push("-v", `${root}:${root}`, "-w", resolve(cwd));
+  const here = resolve(cwd);
+  out.push("-v", `${root}:${root}`);
+  // A project named by --config or FABRIC_CONFIG elsewhere: the working directory (the
+  // agent's files `plan` probes, relative paths on the command line) is mounted too, or
+  // the command would run in an empty directory of the container.
+  if (here !== root && !here.startsWith(root.endsWith(sep) ? root : root + sep)) {
+    out.push("-v", `${here}:${here}`);
+  }
+  out.push("-w", here);
   out.push("-v", `${state}:${state}`, "-e", `XDG_STATE_HOME=${stateHome(env)}`);
   out.push("-e", "HOME=/tmp");
   const names = Object.keys(env)

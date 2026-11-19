@@ -350,6 +350,42 @@ describe("the other commands, from the image", () => {
         assert.ok(statSync(join(state, "fabric")).isDirectory());
     });
 
+    it("mounts this directory too when --config names a project elsewhere", () => {
+        const dir = project("valid");
+        const here = join(work, "agent-elsewhere");
+        mkdirSync(here, { recursive: true });
+        const result = spawnSync(
+            process.execPath,
+            [BIN, "plan", "--config", join(dir, "fabric.yaml"), "--", "node", "agent.mjs"],
+            {
+                cwd: here,
+                encoding: "utf-8",
+                env: { PATH: `${bin}:${process.env.PATH}`, HOME: work, DOCKER_HOST: "" },
+            },
+        );
+        assert.equal(result.status, 7, result.stderr);
+        const argv = JSON.parse(readFileSync(log, "utf-8")).argv;
+        const pairs = (flag) => argv.flatMap((a, i) => (a === flag ? [argv[i + 1]] : []));
+        const realHere = realpathSync(here);
+        assert.ok(pairs("-v").includes(`${dir}:${dir}`));
+        assert.ok(
+            pairs("-v").includes(`${here}:${here}`) ||
+                pairs("-v").includes(`${realHere}:${realHere}`),
+            JSON.stringify(argv),
+        );
+        assert.equal(pairs("-w").length, 1);
+        // Inside the project, no second mount.
+        spawnSync(process.execPath, [BIN, "plan"], {
+            cwd: dir,
+            encoding: "utf-8",
+            env: { PATH: `${bin}:${process.env.PATH}`, HOME: work, DOCKER_HOST: "" },
+        });
+        const inside = JSON.parse(readFileSync(log, "utf-8")).argv;
+        const mounts = inside.flatMap((a, i) => (a === "-v" ? [inside[i + 1]] : []));
+        assert.equal(mounts.filter((m) => m.startsWith(`${dir}:`)).length, 1);
+        assert.equal(mounts.length, 3); // the project, the state home, the socket
+    });
+
     it("uses FABRIC_CLI_IMAGE and a remote DOCKER_HOST as given", () => {
         const result = spawnSync(process.execPath, [BIN, "verify"], {
             cwd: work,
