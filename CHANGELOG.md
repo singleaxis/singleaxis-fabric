@@ -15,6 +15,38 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js agents without Python.** `npx fabric up`, `init`, `plan`,
+  `verify`, `show` and `down` now run the full CLI from the release's
+  `fabric-cli` container image with Docker (as your own user, with your
+  project and Fabric's state directory mounted at the same paths), so a
+  Node.js machine needs no Python. Without Docker they say where the CLI is,
+  as before. A new [Get started page for Node.js](docs/get-started/node.md)
+  is run as written in CI in a `node:24` container with no Python.
+- **TypeScript SDK: `FABRIC_OTLP_*` and `fabricExporterOptions()`.** The
+  TypeScript SDK reads `FABRIC_OTLP_ENDPOINT`, `FABRIC_OTLP_CERTIFICATE`, the
+  client certificate pair and `FABRIC_OTLP_HEADERS_FILE` before the
+  `OTEL_EXPORTER_OTLP_*` variables, with the same delivery rule as Python
+  (https with a verified CA, or plain http to loopback only).
+  `new OTLPTraceExporter(fabricExporterOptions())` sends Fabric's records to
+  the Fabric Node they name and leaves your own OpenTelemetry export alone.
+  It also reads the id key from `FABRIC_WIRE_ID_KEY_FILE`. `fabric run` gives
+  a Node.js agent these settings.
+- **Reported records from the TypeScript SDK in `verify`, `show` and the
+  reader.** A Node.js agent's explicit-API records are shown labelled
+  *reported*, model and tool call by call; `fabric verify` states the
+  decisions chain `unsupported(unsupported_runtime)` (`FC-163`) and never
+  calls the run verified; a Node.js run with nothing delivered says how to
+  wire the exporter (`FC-164`). `python -m fabric.reconstruct` lists reported
+  runs when it reconstructs none.
+- **Documentation in four parts.** Get started (Python, Node.js, other
+  languages, Kubernetes), Choose your deployment shape (laptop, Linux host,
+  containers, Kubernetes, serverless and sandboxes, macOS and Windows),
+  Go to production, and Reference. The CLI, `fabric.yaml` and environment
+  variable references are generated from the code; the coverage tables on the
+  shape pages are generated from what CI measured. Every command on a Get
+  started or shape page is run in CI exactly as written. Old page paths keep
+  a page that links to the new one.
+
 - **`fabric plan` tells you which layers you need.** Run
   `fabric plan -- python agent.py` (or with no command, in your project
   directory) to see what Fabric would record for that agent on this machine,
@@ -28,7 +60,7 @@ it never makes, applies, waits for or returns one.
   printed with what it means and how to fix it, and the coverage report shows
   the same rows as `fabric plan`, as observed. Commands that ran before the
   agent's first model call are listed as such, not as a problem. The words for
-  every reason are in the [diagnostics catalogue](docs/diagnostics.md).
+  every reason are in the [diagnostics catalogue](docs/reference/diagnostics.md).
 - **Kubernetes install with one value.** The Helm chart takes
   `--set preset=local`, `production` or `production-host-sensor` instead of
   a profile file, so the published chart installs without pulling it first.
@@ -657,6 +689,9 @@ it never makes, applies, waits for or returns one.
 
 ### Fixed
 
+- **`fabric verify` and `fabric show` now see runs started by `npx fabric
+  run`.** The npm launcher rounded the run's start time, so the Python CLI
+  discarded every run record it wrote.
 - **eBPF host emitter: file access and failed execs were missing on Linux
   6.19+ kernels such as Ubuntu's 7.0.** On those kernels, an eBPF program
   attached to the `openat` or `execve` syscall tracepoint was never run, so
