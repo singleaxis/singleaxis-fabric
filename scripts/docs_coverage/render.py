@@ -67,6 +67,29 @@ def table(rows: Iterable[Mapping[str, Any]], source: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def unfit(reports: Path = REPORTS) -> list[str]:
+    """Why a committed report cannot be a source of the docs' tables: it must be a passing
+    CI run (a ``plan-scenarios`` run in a network namespace with no problems, a TTFR run
+    that is ``ok``), never a local or failed one."""
+    found: list[str] = []
+    plan = reports / "plan-scenarios.json"
+    if plan.is_file():
+        report = json.loads(plan.read_text("utf-8"))
+        if report.get("network_namespace") is not True:
+            found.append(f"{plan.name} was not run in a network namespace: commit the report "
+                         "of the plan-scenarios CI job")  # fmt: skip
+        for scenario in report.get("scenarios") or []:
+            if scenario.get("problems"):
+                found.append(f"{plan.name} scenario {scenario.get('id')!r} failed "
+                             f"({'; '.join(scenario['problems'])}): commit the report of a "
+                             "passing plan-scenarios CI job")  # fmt: skip
+    for path in sorted(reports.glob("ttfr-*.json")):
+        if json.loads(path.read_text("utf-8")).get("ok") is not True:
+            found.append(f"{path.name} is not a passing run: commit the ttfr.json of a "
+                         f"passing {path.stem} CI job")  # fmt: skip
+    return found
+
+
 def tables(reports: Path = REPORTS) -> dict[str, str]:
     """``{table id: Markdown}`` for every committed report."""
     out: dict[str, str] = {}
@@ -103,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="a fresh plan-scenarios report to compare with the committed one")  # fmt: skip
     options = parser.parse_args(argv)
     rendered = tables()
-    problems: list[str] = []
+    problems: list[str] = unfit()
     if options.plan_scenarios:
         fresh = json.loads(options.plan_scenarios.read_text("utf-8"))
         committed = json.loads((REPORTS / "plan-scenarios.json").read_text("utf-8"))

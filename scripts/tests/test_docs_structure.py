@@ -181,3 +181,30 @@ def test_coverage_tables_are_generated_from_the_committed_reports() -> None:
         p for p in DOCS.rglob("*.md") if "<!-- fabric-coverage:" in p.read_text("utf-8")
     ]
     assert {p.parent.name for p in embedded} >= {"shapes"}
+
+
+def test_a_failed_or_local_report_is_not_a_source(tmp_path: Path) -> None:
+    """§12.5: tables come from passing CI runs only. A plan-scenarios report made outside a
+    network namespace or with a failed scenario, or a TTFR report that is not ok, is
+    refused with the fix (regression: a report made in a container, with problems, was
+    committed as the source of the shape pages' tables)."""
+    import json
+
+    sys.path.insert(0, str(ROOT / "scripts/docs_coverage"))
+    try:
+        import render
+    finally:
+        sys.path.pop(0)
+    plan = {"network_namespace": False,
+            "scenarios": [{"id": "s", "problems": ["shape 'container', expected 'linux-host'"],
+                           "coverage": []}]}  # fmt: skip
+    (tmp_path / "plan-scenarios.json").write_text(json.dumps(plan), encoding="utf-8")
+    (tmp_path / "ttfr-laptop-python.json").write_text('{"ok": false}', encoding="utf-8")
+    found = render.unfit(tmp_path)
+    assert len(found) == 3, found
+    assert all("commit the" in line for line in found)
+    plan = {"network_namespace": True, "scenarios": [{"id": "s", "problems": []}]}
+    (tmp_path / "plan-scenarios.json").write_text(json.dumps(plan), encoding="utf-8")
+    (tmp_path / "ttfr-laptop-python.json").write_text('{"ok": true}', encoding="utf-8")
+    assert render.unfit(tmp_path) == []
+    assert render.unfit() == []
