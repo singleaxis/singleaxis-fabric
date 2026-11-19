@@ -417,8 +417,13 @@ def test_g2_needs_fc163_and_never_a_false_pass() -> None:
     )
     assert any("plan" in f for f in ttfr_node.g2_checks(ok, "recorded"))
     # verify's own pass line on a Node.js run is a false pass too.
-    passed = {"ok": True, "steps": [{"output_tail": "FC-163\nresult: no problem found"}]}
-    assert any("false pass" in f for f in ttfr_node.g2_checks(passed, "unsupported_runtime"))
+    passed = {
+        "ok": True,
+        "steps": [{"output_tail": "FC-163\nresult: no problem found"}],
+    }
+    assert any(
+        "false pass" in f for f in ttfr_node.g2_checks(passed, "unsupported_runtime")
+    )
     assert (
         ttfr_node.NODE_IMAGE.startswith("node:24")
         and "@sha256:" in ttfr_node.NODE_IMAGE

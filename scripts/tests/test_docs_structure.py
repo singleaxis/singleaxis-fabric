@@ -221,13 +221,19 @@ def test_a_fresh_plan_report_is_compared_scenario_by_scenario() -> None:
         sys.path.pop(0)
     row = {"row": "Model calls", "state": "recorded", "note": ""}
     gap = {"row": "Model calls", "state": "invisible", "note": "unsupported_runtime: x"}
-    committed = {"scenarios": [{"id": "a", "coverage": [row]}, {"id": "b", "coverage": [gap]}]}
-    reordered = {"scenarios": [{"id": "b", "coverage": [gap]}, {"id": "a", "coverage": [row]}]}
+    committed = {
+        "scenarios": [{"id": "a", "coverage": [row]}, {"id": "b", "coverage": [gap]}]
+    }
+    reordered = {
+        "scenarios": [{"id": "b", "coverage": [gap]}, {"id": "a", "coverage": [row]}]
+    }
     assert render.drift(reordered, committed) == []
     missing = {"scenarios": [{"id": "a", "coverage": [row]}]}
     (only,) = render.drift(missing, committed)
     assert only.startswith("plan-scenarios b: missing from the fresh report")
-    changed = {"scenarios": [{"id": "a", "coverage": [gap]}, {"id": "b", "coverage": [gap]}]}
+    changed = {
+        "scenarios": [{"id": "a", "coverage": [gap]}, {"id": "b", "coverage": [gap]}]
+    }
     (only,) = render.drift(changed, committed)
     assert only.startswith("plan-scenarios a: the fresh report renders another table")
     extra = {"scenarios": [*committed["scenarios"], {"id": "c", "coverage": []}]}
