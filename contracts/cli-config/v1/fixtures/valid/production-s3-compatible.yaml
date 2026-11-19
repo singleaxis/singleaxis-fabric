@@ -1,0 +1,16 @@
+schema: fabric.config/v1
+profile: production
+capture:
+  privacy: ./fabric-capture-policy.json
+node:
+  queue_size: 500 MB
+destination:
+  preset: s3-compatible
+  endpoint: https://store.internal.example:9000
+  bucket: fabric-content
+  region: us-east-1
+  ca_file: ./store-ca.crt
+  credentials_file: ./store.credentials
+  otlp_endpoint: https://otel.internal.example:4318
+  otlp_ca_file: ./otel-ca.crt
+  otlp_headers_file: ./otel.headers

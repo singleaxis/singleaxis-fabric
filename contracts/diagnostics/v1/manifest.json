@@ -1,6 +1,6 @@
 {
   "contract": "singleaxis.fabric.diagnostics",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "digest_scope": "exact_file_bytes",
   "schema": {
     "path": "schema/messages-v1.schema.json",
@@ -9,7 +9,7 @@
   "files": [
     {
       "path": "messages-v1.json",
-      "sha256": "1f1a8cee64057541a6c1c761bc4a15457b1cfead0c3b9394d90d01ba883634cc"
+      "sha256": "badce936f0cabe89bd337b0f67c5a730eead13df61e09d8702ea1a2d344c6232"
     },
     {
       "path": "reasons-v1.json",

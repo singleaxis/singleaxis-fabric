@@ -1016,6 +1016,90 @@ Fix: build the agent's exporter with new OTLPTraceExporter(fabricExporterOptions
 @singleaxis/fabric, record each decision with fabric.decision(...), call provider.shutdown() before
 the process exits, and start the agent with fabric run.
 
+### FC-165
+
+`production_destination_needed`, error: the production profile needs a destination that keeps
+records.
+
+Fix: choose one with fabric init --production: --destination trial to try the production Node (not
+durable), --destination s3 --bucket NAME --region REGION --otlp-endpoint URL, --destination
+s3-compatible --endpoint URL --bucket NAME --otlp-endpoint URL, or --destination otlp
+--otlp-endpoint URL.
+
+### FC-166
+
+`production_policy_missing`, error: the production profile needs a capture policy file, and
+capture.privacy names none or a file that does not exist.
+
+Fix: run `fabric init --production` to write the production preset (fabric-capture-policy.json) into
+the project, or set capture.privacy to the path of your own fabric.deployment-policy/v1 file.
+
+### FC-167
+
+`capture_policy_refused`, error: the SDK would refuse this capture policy, so agents would keep no
+content.
+
+Fix: make it a valid fabric.deployment-policy/v1 document with this project's tenant as tenant_id
+and deployment.profile production; or move it away and run `fabric init --production` to write the
+preset again.
+
+### FC-168
+
+`capture_policy_image_placeholder`, warning: the capture policy names the all-zero placeholder as
+the agent's image digest.
+
+Fix: set deployment.image_digest in the policy file to your agent image's digest (the Id that docker
+image inspect IMAGE prints); a new project takes it as fabric init --production --image-digest
+sha256:....
+
+### FC-169
+
+`secret_pair_mismatch`, error: a source's token file and its headers file hold different tokens.
+
+Fix: run `fabric init --rotate tokens` to write a new token and headers file for every source, then
+`fabric up` and restart agents.
+
+### FC-170
+
+`queue_exceeds_disk`, warning: node.queue_size is more than the disk under the Node's queue has
+free, so a long destination outage could fill that disk.
+
+Fix: set node.queue_size to the size the message names (or auto: half the free space), or free space
+on that disk; real batches are far smaller than the worst case, so this is advice, not a failure.
+
+### FC-171
+
+`queue_disk_low`, warning: the disk under the Node's queue has so little free space that the queue
+holds few batches during a destination outage.
+
+Fix: free space on that disk or keep the project on a larger one, then run `fabric init` again;
+agents keep records in their own spool while the Node's queue is full.
+
+### FC-172
+
+`trial_destination`, warning: the trial destination is not durable storage: it is for trying the
+production Node before a real destination exists.
+
+Fix: for real records choose a destination you own: fabric init --destination s3 --bucket NAME
+--region REGION --otlp-endpoint URL (or s3-compatible, or otlp).
+
+### FC-173
+
+`no_content_store`, warning: this production destination keeps no model bodies, so the reader cannot
+check model decisions against them.
+
+Fix: to keep content, add an S3 store for it: fabric init --destination s3 --bucket NAME --region
+REGION --otlp-endpoint URL (spans still go to that OTLP endpoint).
+
+### FC-174
+
+`destination_file_unusable`, error: a file the destination names is missing, unreadable, or open to
+other users.
+
+Fix: correct the path in fabric.yaml (destination.ca_file, credentials_file, otlp_ca_file or
+otlp_headers_file), make it readable by you, chmod 0600 a credentials or headers file, and run
+`fabric init` again.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001
