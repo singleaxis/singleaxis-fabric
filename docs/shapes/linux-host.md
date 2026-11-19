@@ -37,7 +37,7 @@ Linux:
 | files the agent touched | invisible | `not_instrumented` |
 | network contacts (non-model HTTP) | fix | `fabric init --http-host HOST` |
 | MCP traffic | fix | `fabric init --http-host HOST` |
-| host evidence (kernel sensor) | invisible |  |
+| host evidence (kernel sensor) | recorded |  |
 | permissions and control decisions | recorded |  |
 | end user and session | needs code | `with fabric.wire.run(session_id=..., user_id=...)` |
 | tenant per request (one process, many tenants) | invisible | `not_configured` |

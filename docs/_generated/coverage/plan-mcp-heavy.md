@@ -7,7 +7,7 @@
 | network contacts (non-model HTTP) | fix | `fabric init --http-host HOST` |
 | MCP traffic (stdio server files) | fix | `fabric init --mcp` |
 | MCP traffic (http server search) | fix | `fabric init --http-host mcp.example.com` |
-| host evidence (kernel sensor) | invisible |  |
+| host evidence (kernel sensor) | recorded |  |
 | permissions and control decisions | recorded |  |
 | end user and session | needs code | `with fabric.wire.run(session_id=..., user_id=...)` |
 | tenant per request (one process, many tenants) | invisible | `not_configured` |

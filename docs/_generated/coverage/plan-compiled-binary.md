@@ -6,7 +6,7 @@
 | files the agent touched | invisible | `not_instrumented` |
 | network contacts (non-model HTTP) | invisible | `unsupported_runtime` |
 | MCP traffic | invisible | `unsupported_runtime` |
-| host evidence (kernel sensor) | invisible |  |
+| host evidence (kernel sensor) | recorded |  |
 | permissions and control decisions | invisible | `not_exposed` |
 | end user and session | invisible | `not_exposed` |
 | tenant per request (one process, many tenants) | invisible | `not_configured` |

@@ -1,13 +1,13 @@
 {
   "schema": "fabric.plan-scenarios-result/v1",
-  "network_namespace": false,
+  "network_namespace": true,
   "budget_s": 10,
   "scenarios": [
     {
       "id": "vm-shell-browser",
       "audit": "Agent in a VM with shell and browser tools (Python)",
       "agent_made_by": "venv",
-      "seconds": 0.33,
+      "seconds": 0.83,
       "exit_code": 0,
       "coverage": [
         {
@@ -48,9 +48,9 @@
         },
         {
           "id": "host",
-          "note": "inside a container the sensor cannot load; run fabric up on the host, which observes this container",
+          "note": "eBPF sensor; kernel 7.0.0, BTF; fabric up needs root or a delegated cgroup",
           "row": "host evidence (kernel sensor)",
-          "state": "invisible"
+          "state": "recorded"
         },
         {
           "id": "permissions",
@@ -90,21 +90,18 @@
         }
       ],
       "next": [
-        "/tmp/w/vm-shell-browser/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
+        "/home/runner/work/_temp/f058-plan-scenarios/vm-shell-browser/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
         "fabric up",
-        "fabric run -- /tmp/w/vm-shell-browser/.venv/bin/python agent.py",
+        "fabric run -- /home/runner/work/_temp/f058-plan-scenarios/vm-shell-browser/.venv/bin/python agent.py",
         "fabric verify"
       ],
-      "problems": [
-        "shape 'container', expected 'linux-host'",
-        "host evidence (kernel sensor): invisible (inside a container the sensor cannot load; run fabric up on the host, which observes this container), expected recorded"
-      ]
+      "problems": []
     },
     {
       "id": "remote-sandbox",
       "audit": "Control plane with a remote sandbox",
       "agent_made_by": "venv",
-      "seconds": 0.252,
+      "seconds": 0.433,
       "exit_code": 0,
       "coverage": [
         {
@@ -151,9 +148,9 @@
         },
         {
           "id": "host",
-          "note": "inside a container the sensor cannot load; run fabric up on the host, which observes this container",
+          "note": "eBPF sensor; kernel 7.0.0, BTF; fabric up needs root or a delegated cgroup",
           "row": "host evidence (kernel sensor)",
-          "state": "invisible"
+          "state": "recorded"
         },
         {
           "id": "permissions",
@@ -193,20 +190,18 @@
         }
       ],
       "next": [
-        "/tmp/w/remote-sandbox/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
+        "/home/runner/work/_temp/f058-plan-scenarios/remote-sandbox/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
         "fabric up",
-        "fabric run -- /tmp/w/remote-sandbox/.venv/bin/python agent.py",
+        "fabric run -- /home/runner/work/_temp/f058-plan-scenarios/remote-sandbox/.venv/bin/python agent.py",
         "fabric verify"
       ],
-      "problems": [
-        "shape 'container', expected 'linux-host'"
-      ]
+      "problems": []
     },
     {
       "id": "multi-tenant-service",
       "audit": "Multi-tenant service (one process, many tenants)",
       "agent_made_by": "venv",
-      "seconds": 0.278,
+      "seconds": 0.434,
       "exit_code": 0,
       "coverage": [
         {
@@ -247,9 +242,9 @@
         },
         {
           "id": "host",
-          "note": "inside a container the sensor cannot load; run fabric up on the host, which observes this container",
+          "note": "eBPF sensor; kernel 7.0.0, BTF; fabric up needs root or a delegated cgroup",
           "row": "host evidence (kernel sensor)",
-          "state": "invisible"
+          "state": "recorded"
         },
         {
           "id": "permissions",
@@ -289,20 +284,18 @@
         }
       ],
       "next": [
-        "/tmp/w/multi-tenant-service/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
+        "/home/runner/work/_temp/f058-plan-scenarios/multi-tenant-service/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
         "fabric up",
-        "fabric run -- /tmp/w/multi-tenant-service/.venv/bin/python server.py",
+        "fabric run -- /home/runner/work/_temp/f058-plan-scenarios/multi-tenant-service/.venv/bin/python server.py",
         "fabric verify"
       ],
-      "problems": [
-        "shape 'container', expected 'linux-host'"
-      ]
+      "problems": []
     },
     {
       "id": "compiled-binary",
       "audit": "Compiled agent binary (Go/Rust)",
       "agent_made_by": "go",
-      "seconds": 0.243,
+      "seconds": 0.363,
       "exit_code": 0,
       "coverage": [
         {
@@ -343,9 +336,9 @@
         },
         {
           "id": "host",
-          "note": "inside a container the sensor cannot load; run fabric up on the host, which observes this container",
+          "note": "eBPF sensor; kernel 7.0.0, BTF; fabric up needs root or a delegated cgroup",
           "row": "host evidence (kernel sensor)",
-          "state": "invisible"
+          "state": "recorded"
         },
         {
           "id": "permissions",
@@ -389,16 +382,13 @@
         "fabric run -- ./agent",
         "fabric verify"
       ],
-      "problems": [
-        "shape 'container', expected 'linux-host'",
-        "host evidence (kernel sensor): invisible (inside a container the sensor cannot load; run fabric up on the host, which observes this container), expected recorded"
-      ]
+      "problems": []
     },
     {
       "id": "mcp-heavy",
       "audit": "MCP-heavy agent",
       "agent_made_by": "venv",
-      "seconds": 0.287,
+      "seconds": 0.428,
       "exit_code": 0,
       "coverage": [
         {
@@ -445,9 +435,9 @@
         },
         {
           "id": "host",
-          "note": "inside a container the sensor cannot load; run fabric up on the host, which observes this container",
+          "note": "eBPF sensor; kernel 7.0.0, BTF; fabric up needs root or a delegated cgroup",
           "row": "host evidence (kernel sensor)",
-          "state": "invisible"
+          "state": "recorded"
         },
         {
           "id": "permissions",
@@ -487,14 +477,12 @@
         }
       ],
       "next": [
-        "/tmp/w/mcp-heavy/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
+        "/home/runner/work/_temp/f058-plan-scenarios/mcp-heavy/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
         "fabric up",
-        "fabric run -- /tmp/w/mcp-heavy/.venv/bin/python agent.py",
+        "fabric run -- /home/runner/work/_temp/f058-plan-scenarios/mcp-heavy/.venv/bin/python agent.py",
         "fabric verify"
       ],
-      "problems": [
-        "shape 'container', expected 'linux-host'"
-      ]
+      "problems": []
     }
   ]
 }
