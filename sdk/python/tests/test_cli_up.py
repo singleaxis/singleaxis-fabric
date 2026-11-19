@@ -322,6 +322,44 @@ def test_second_up_applies_nothing_new_and_reports_no_change(project: Path) -> N
     assert len(docker.compose_calls("up")) == 2  # Compose itself decides nothing changed
 
 
+def test_up_provider_is_the_one_flag_of_the_local_path(project: Path) -> None:
+    """G1: a model host in neither the table nor a base-URL variable costs one flag on
+    `up`, not a fourth command: `up --provider URL` is `init --provider URL`, then up."""
+    docker = FakeDocker()
+    url = "http://models.internal.example:8000/v1"
+    report, _lines = _up_once(docker, "--provider", url)
+    assert report.exit_code == 0
+    document = yaml.safe_load((project / "fabric.yaml").read_text("utf-8"))
+    assert document["providers"]["custom"] == [{"url": url}]
+    compiled = (project / ".fabric" / "compiled.env").read_text("utf-8")
+    (endpoints,) = [
+        line.split("=", 1)[1]
+        for line in compiled.splitlines()
+        if line.startswith("FABRIC_WIRE_ENDPOINTS=")
+    ]
+    (matcher,) = json.loads(endpoints)
+    assert matcher["hosts"] == ["models.internal.example"] and matcher["ports"] == [8000]
+    # Again, and on an existing fabric.yaml: idempotent, never a duplicate entry.
+    report, _ = _up_once(docker, "--provider", url)
+    assert report.exit_code == 0 and report.data["changes"] == []
+    document = yaml.safe_load((project / "fabric.yaml").read_text("utf-8"))
+    assert len(document["providers"]["custom"]) == 1
+    # A second host on an existing project is added, as `init --provider` adds it.
+    _up_once(docker, "--provider", "anthropic=https://claude.internal.example/v1")
+    document = yaml.safe_load((project / "fabric.yaml").read_text("utf-8"))
+    assert [entry.get("dialect") for entry in document["providers"]["custom"]] == [
+        None, "anthropic",
+    ]  # fmt: skip
+
+
+def test_up_provider_with_an_unusable_url_changes_nothing(project: Path) -> None:
+    docker = FakeDocker()
+    with pytest.raises(CliError) as caught:
+        _up_once(docker, "--provider", "ftp://models.internal.example/v1")
+    assert [f.id for f in caught.value.findings] == ["FC-008"]
+    assert not (project / "fabric.yaml").exists() and docker.compose_calls("up") == []
+
+
 def test_up_reconciles_a_changed_fabric_yaml_and_prints_the_changes(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -417,7 +455,7 @@ def test_compose_failure_and_an_unhealthy_node_carry_dockers_own_last_lines(proj
     assert "--wait" in finding.entry["fix"]
 
 
-@pytest.mark.parametrize("flag", ["--kubernetes", "--verify-images"])
+@pytest.mark.parametrize("flag", ["--verify-images"])
 def test_up_options_not_built_yet_say_so(flag: str, project: Path) -> None:
     with pytest.raises(CliError) as caught:
         _up_once(FakeDocker(), flag)
@@ -712,9 +750,6 @@ def test_down_without_a_project_or_with_a_failing_compose_says_why(project: Path
     with pytest.raises(CliError) as caught:
         _down(docker)
     assert (caught.value.exit_code, caught.value.findings[0].id) == (1, "FC-021")
-    with pytest.raises(CliError) as caught:
-        _down(FakeDocker(), "--kubernetes")
-    assert caught.value.findings[0].id == "FC-011"
 
 
 @pytest.mark.skipif(os.name != "posix", reason="symlinks")

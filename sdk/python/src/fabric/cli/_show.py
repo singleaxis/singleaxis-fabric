@@ -84,6 +84,8 @@ def _list(project: _project.Project, dest: _read.Destination, report: Report) ->
         following = everything[index - 1] if index > 0 else None
         runs = _read.runs_of(document, record, following, exclude, dest.id_key)
         verdict = _overall(runs, record)
+        if not runs and files and _read.reports_by_code(record):
+            verdict = _reported_verdict(files, record, following)
         rows.append(
             {
                 "label": record.label,
@@ -235,6 +237,51 @@ def _timeline(  # noqa: PLR0912 - one branch per row kind
     return lines
 
 
+def _reported_verdict(files: Sequence[str], record: _runstate.RunRecord,
+                      following: _runstate.RunRecord | None) -> str:  # fmt: skip
+    try:
+        found = _read.reported(files, record, following)
+    except ReconstructInputError:
+        return "no records"
+    return "reported (not verified)" if found else "no records"
+
+
+def _reported_lines(run: Any) -> list[str]:
+    """One reported run (§5.8, G2): each step labelled ``reported``, never as a verified
+    wire record. Content is not on these spans; tool names are the agent's own labels."""
+    lines = [f"{run.summary()}"]
+    for n, step in enumerate(run.steps, start=1):
+        what = "model" if step.kind == "model" else "tool_call"
+        name = step.name or ("model not reported" if step.kind == "model" else "tool")
+        failed = "  (error)" if step.status == "error" else ""
+        lines.append(f"{n:>2}  {what:<9} {name}{failed}  · reported")
+    if not run.steps:
+        lines.append("    no model or tool call was reported under this decision")
+    return lines
+
+
+def _show_reported(files: Sequence[str], record: _runstate.RunRecord,
+                   following: _runstate.RunRecord | None, report: Report,
+                   lines: list[str]) -> tuple[Report, list[str]]:  # fmt: skip
+    """A Node.js agent's explicit-API records (§13.3): shown, labelled reported."""
+    try:
+        shown = _read.reported(files, record, following)
+    except ReconstructInputError as exc:
+        raise CliError([Finding("FC-073", str(exc))], EXIT_FINDINGS) from None
+    verdict = "reported (not verified)" if shown else "no records"
+    lines[0] = lines[0].rsplit("  verdict: ", 1)[0] + f"  verdict: {verdict}"
+    report.data["run"]["verdict"] = verdict
+    report.data["run"]["reported"] = [run.to_json() for run in shown]
+    if not shown:
+        report.findings.append(Finding("FC-164", record.label))
+        report.exit_code = EXIT_FINDINGS
+        return report, lines
+    for run in shown:
+        lines.extend(_reported_lines(run))
+    report.exit_code = EXIT_OK
+    return report, lines
+
+
 def _store(dest: _read.Destination) -> Any:
     if dest.store_root is None or not dest.store_root.is_dir():
         return None
@@ -243,7 +290,7 @@ def _store(dest: _read.Destination) -> Any:
     return LocalFilesystemContentStore(root=str(dest.store_root), tenant_id=dest.tenant)
 
 
-def run(
+def run(  # noqa: PLR0912 - one branch per way a run can be shown
     options: argparse.Namespace,
     environ: Mapping[str, str] | None = None,
     cwd: Path | None = None,
@@ -300,6 +347,8 @@ def run(
         "verdict": verdict,
         "processes": [],
     }
+    if not runs and _read.reports_by_code(record):
+        return _show_reported(files, record, following, report, lines)
     if not runs:
         report.findings.append(
             Finding("FC-067", f"{record.label}: no records of it in the destination yet")

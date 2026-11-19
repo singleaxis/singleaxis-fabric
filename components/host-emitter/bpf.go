@@ -109,7 +109,7 @@ func loadBPF(cfg *Config) (*bpfRuntime, error) {
 	}
 	var objs emitObjects
 	if err := loadEmitObjects(&objs, nil); err != nil {
-		return nil, fmt.Errorf("load eBPF objects (needs CAP_BPF/CAP_PERFMON or privileged + kernel BTF): %w", err)
+		return nil, fmt.Errorf("load eBPF objects (needs CAP_BPF/CAP_PERFMON or privileged + kernel BTF): %w: %w", errNodeNotSupported, err)
 	}
 	rt := &bpfRuntime{objs: objs}
 

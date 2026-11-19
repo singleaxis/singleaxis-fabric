@@ -9,21 +9,21 @@
 This page moved. Configuration files and scripts in `deploy/compose` still
 point here.
 
-- Agent and Node configuration: [deployment](deployment.md); spool disk
+- Agent and Node configuration: [deployment](reference/manual-setup/deployment.md); spool disk
   requirements (`fsync` latency, file locks):
-  [deployment](deployment.md#what-the-agent-needs) ("Spool disk").
+  [deployment](reference/manual-setup/deployment.md#what-the-agent-needs) ("Spool disk").
 - Content canary and verifying a run (formerly section 5):
   [operations](operations/README.md#verify-a-deployment) and
-  [reconstruct](reconstruct.md).
+  [reconstruct](reference/reconstruct.md).
 - Encryption and source authentication:
-  [privacy and security](privacy-and-security.md).
+  [privacy and security](reference/privacy-and-security.md).
 
 ## Redaction service
 
 The redaction-service setup (`FABRIC_REDACTION_ENDPOINT`,
 `FABRIC_REDACTION_TOKEN_FILE`, transformations, bounds and failure
 behaviour) is in
-[privacy and security](privacy-and-security.md#redaction-service). Error
+[privacy and security](reference/privacy-and-security.md#redaction-service). Error
 messages from the SDKs point to this anchor.
 
 ## Delivery rate and short-lived workers

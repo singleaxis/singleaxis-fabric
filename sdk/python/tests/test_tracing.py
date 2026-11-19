@@ -154,5 +154,6 @@ def test_get_tracer_noop_warning_points_at_provider_setup(
         get_tracer()
     messages = [r.message for r in caplog.records if "no OpenTelemetry" in r.message]
     assert messages
-    assert "docs/quickstart.md, section 5 (Record app-level activity)" in messages[0]
+    expected = "docs/reference/manual-setup/quickstart.md, section 5 (Record app-level activity)"
+    assert expected in messages[0]
     assert "step 2" not in messages[0]

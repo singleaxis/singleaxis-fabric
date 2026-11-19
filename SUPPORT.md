@@ -30,6 +30,6 @@ Contact: **fabric@singleaxis.ai** · https://fabric.singleaxis.ai
 
 For a security-team overview of Fabric's protection model, encryption,
 source authentication and limits, see
-[`docs/privacy-and-security.md`](docs/privacy-and-security.md),
-[`docs/deployment.md`](docs/deployment.md) and
+[`docs/reference/privacy-and-security.md`](docs/reference/privacy-and-security.md),
+[`docs/reference/manual-setup/deployment.md`](docs/reference/manual-setup/deployment.md) and
 [`docs/limitations-and-roadmap.md`](docs/limitations-and-roadmap.md).

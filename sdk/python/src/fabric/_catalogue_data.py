@@ -11,7 +11,7 @@ from typing import Any
 
 CATALOGUE: dict[str, Any] = {
     "schema": "fabric.diagnostics/v1",
-    "docs": "docs/diagnostics.md",
+    "docs": "docs/reference/diagnostics.md",
     "comment": "Spec 058 section 13.1. Every diagnostic the fabric CLI (FC-), the SDKs (FW-), the "
     "host emitter (FE-), the reader (FR-) and the Node (FN-) emit, with a stable id, a "
     "fixed text, a fix and a docs anchor. Texts and fixes carry no interpolated value: "
@@ -288,7 +288,7 @@ CATALOGUE: dict[str, Any] = {
             "name": "command_not_built",
             "severity": "error",
             "text": "this command is not part of this release yet",
-            "fix": "upgrade the CLI; until then follow docs/quickstart.md",
+            "fix": "upgrade the CLI; until then follow docs/reference/manual-setup/quickstart.md",
         },
         {
             "id": "FC-011",
@@ -296,8 +296,8 @@ CATALOGUE: dict[str, Any] = {
             "severity": "error",
             "text": "this option is not part of this release yet",
             "fix": "use the local profile's defaults; production, Kubernetes and the other "
-            "destinations follow docs/production-setup.md and docs/deployment.md "
-            "until the CLI builds them",
+            "destinations follow docs/reference/manual-setup/production-setup.md and "
+            "docs/reference/manual-setup/deployment.md until the CLI builds them",
         },
         {
             "id": "FC-012",
@@ -525,8 +525,8 @@ CATALOGUE: dict[str, Any] = {
             "name": "sensor_auditd_available",
             "severity": "info",
             "text": "eBPF cannot load here but auditd is present on this host",
-            "fix": "follow docs/host-sensors.md to run the auditd sensor collector; the CLI "
-            "does not start it in this release",
+            "fix": "follow docs/reference/host-sensors.md to run the auditd sensor "
+            "collector; the CLI does not start it in this release",
         },
         {
             "id": "FC-047",
@@ -819,6 +819,605 @@ CATALOGUE: dict[str, Any] = {
             "severity": "info",
             "text": "no problem found",
             "fix": "nothing to do",
+        },
+        {
+            "id": "FC-098",
+            "name": "launcher_command_unavailable",
+            "severity": "error",
+            "text": "the npm launcher has the `run` and `doctor` commands only; this "
+            "command is in the Python CLI and the fabric-cli container image",
+            "fix": 'install the full CLI with pipx install "singleaxis-fabric[cli]" (or uv '
+            "tool install), or run the image: docker run --rm -it -v "
+            '/var/run/docker.sock:/var/run/docker.sock -v "$PWD:$PWD" -w "$PWD" '
+            "ghcr.io/singleaxis/fabric-cli:VERSION COMMAND",
+        },
+        {
+            "id": "FC-099",
+            "name": "doctor_no_python",
+            "severity": "info",
+            "text": "no Python interpreter was found, so the Python SDK check was skipped",
+            "fix": "nothing to do for a Node.js agent, which records through the explicit "
+            "API; for a Python agent, put its interpreter on PATH or create the "
+            "project's .venv and run `fabric doctor` again",
+        },
+        {
+            "id": "FC-100",
+            "name": "kubectl_missing",
+            "severity": "error",
+            "text": "kubectl is not installed or not on PATH, so the Secrets cannot be "
+            "written to the cluster",
+            "fix": "install kubectl and select the cluster's context (kubectl config "
+            "use-context NAME), or write the Secrets as manifests with `fabric init "
+            "--kubernetes --render DIR` and apply them with your own tooling",
+        },
+        {
+            "id": "FC-101",
+            "name": "kube_namespace_missing",
+            "severity": "error",
+            "text": "a namespace the Secrets belong in does not exist",
+            "fix": "create it (kubectl create namespace NAME) and run the command again; "
+            "neither the chart's secrets Job nor `fabric init --kubernetes` creates "
+            "a namespace",
+        },
+        {
+            "id": "FC-102",
+            "name": "kube_forbidden",
+            "severity": "error",
+            "text": "the Kubernetes API refused the request: the identity may not read or "
+            "create Secrets there",
+            "fix": "use a kube context that may get and create Secrets in the release "
+            "namespace and every agent namespace; for the chart's secrets Job, check "
+            "that every agent namespace is listed in agentNamespaces (its Role is "
+            "created there)",
+        },
+        {
+            "id": "FC-103",
+            "name": "kube_api_unreachable",
+            "severity": "error",
+            "text": "the Kubernetes API server could not be reached",
+            "fix": "check the kube context (kubectl cluster-info); in the chart's secrets "
+            "Job, check that a NetworkPolicy lets the Job reach the API server (set "
+            "secretsJob.apiServer.to and .ports when the chart cannot read them)",
+        },
+        {
+            "id": "FC-104",
+            "name": "kube_secret_incomplete",
+            "severity": "warning",
+            "text": "an existing Secret lacks keys this setup needs; it is kept unchanged",
+            "fix": "delete the Secret the message names and run the command again to "
+            "generate it (a new id key changes the namespace's pseudonyms), or add "
+            "the missing keys it lists yourself",
+        },
+        {
+            "id": "FC-105",
+            "name": "kube_ingress_secret_orphaned",
+            "severity": "error",
+            "text": "an agent namespace's ingress Secret exists in the release namespace "
+            "but its agent Secret does not, so a new token and source id would not "
+            "match it",
+            "fix": "delete the ingress Secret the message names (kubectl delete secret -n "
+            "RELEASE-NAMESPACE NAME) and run the command again; both are then "
+            "generated together",
+        },
+        {
+            "id": "FC-106",
+            "name": "kube_option_needs_kubernetes",
+            "severity": "error",
+            "text": "this option belongs to `fabric init --kubernetes`",
+            "fix": "add --kubernetes, or remove the option",
+        },
+        {
+            "id": "FC-107",
+            "name": "injector_ca_bundle",
+            "severity": "info",
+            "text": "the injector's webhook needs the CA certificate as its caBundle",
+            "fix": "the chart's secrets Job sets it; with secretsJob.enabled=false, set "
+            "injector.caBundle to the ca.crt entry of the CA Secret's data, which is "
+            "base64 already (kubectl get secret fabric-ca -n RELEASE-NAMESPACE -o "
+            "yaml)",
+        },
+        {
+            "id": "FC-108",
+            "name": "kube_webhook_missing",
+            "severity": "error",
+            "text": "the injector's webhook configuration was not found, so its caBundle "
+            "cannot be set",
+            "fix": "install or upgrade the chart with injector.enabled=true first; the "
+            "post-install hook then sets the caBundle",
+        },
+        {
+            "id": "FC-109",
+            "name": "kube_name_invalid",
+            "severity": "error",
+            "text": "a namespace, release, source or Secret name is not valid for Kubernetes",
+            "fix": "use lowercase letters, digits and '-' (at most 63 characters for a "
+            "namespace); a source label may also use '.', '_' and ':'",
+        },
+        {
+            "id": "FC-110",
+            "name": "kube_agent_secret_unusable",
+            "severity": "error",
+            "text": "an agent namespace's existing Secret holds no ingest credential or id "
+            "key this setup can read, so the namespace's ingress Secret cannot be "
+            "made and the Node, which reads it, would not start",
+            "fix": "delete the agent Secret the message names (kubectl delete secret -n "
+            "AGENT-NAMESPACE NAME) and run the command again, or run helm upgrade "
+            "again; the agent Secret and its ingress Secret are then generated "
+            "together (a new id key changes the namespace's pseudonyms; restart its "
+            "agents)",
+        },
+        {
+            "id": "FC-111",
+            "name": "kube_certificate_expiring",
+            "severity": "warning",
+            "text": "a certificate in a Secret expires within 14 days; Secrets are never "
+            "overwritten, so it is not renewed by itself",
+            "fix": "delete the Node's or injector's Secret the message names and rerun the "
+            "command (helm upgrade runs the secrets Job): a new certificate comes "
+            "from the same CA; restart the Node if it was its own. For an agent or "
+            "CA Secret see 'Certificate renewal' in "
+            "docs/reference/manual-setup/deployment.md",
+        },
+        {
+            "id": "FC-112",
+            "name": "kube_certificate_expired",
+            "severity": "error",
+            "text": "a certificate in a Secret has expired, so the connections it secures "
+            "fail: agents cannot deliver to the Node, or the injector's webhook is "
+            "skipped and pods start without capture",
+            "fix": "delete the Node's or injector's Secret the message names and rerun the "
+            "command (helm upgrade runs the secrets Job): a new certificate comes "
+            "from the same CA; restart the Node if it was its own. For an agent or "
+            "CA Secret see 'Certificate renewal' in "
+            "docs/reference/manual-setup/deployment.md",
+        },
+        {
+            "id": "FC-113",
+            "name": "kube_host_sensor_needs_production",
+            "severity": "error",
+            "text": "the host sensor's Secrets need a production Node: each node's sensor "
+            "is an authenticated source with its own ingress group",
+            "fix": "add --profile production (the chart: preset=production-host-sensor), or "
+            "leave --host-sensor out",
+        },
+        {
+            "id": "FC-114",
+            "name": "kube_host_source_id_stale",
+            "severity": "error",
+            "text": "a node's host sensor Secret holds a source id made with another id "
+            "key, so the Node would refuse that sensor's records",
+            "fix": "delete the node's Secret the message names (kubectl delete secret -n "
+            "RELEASE-NAMESPACE NAME) and run the command again (or helm upgrade): it "
+            "is made again from the current id key; then restart the Node",
+        },
+        {
+            "id": "FC-115",
+            "name": "kube_agent_id_key_differs",
+            "severity": "warning",
+            "text": "an agent namespace's Secret holds an id key of its own, not the "
+            "release's shared one, so host sensor records do not join that "
+            "namespace's runs",
+            "fix": "delete the agent Secret and its ingress Secret the message names and "
+            "run the command again (or helm upgrade): both are made again with the "
+            "shared id key; then restart that namespace's agents",
+        },
+        {
+            "id": "FC-120",
+            "name": "kubectl_missing_for_read",
+            "severity": "error",
+            "text": "kubectl is not installed or not on PATH; --kubernetes reads the "
+            "cluster of the current kube context through it",
+            "fix": "install kubectl and select the cluster's context (kubectl config "
+            "use-context NAME), or point KUBECONFIG at its file",
+        },
+        {
+            "id": "FC-121",
+            "name": "helm_missing",
+            "severity": "error",
+            "text": "helm is not installed or not on PATH; `fabric up --kubernetes` "
+            "installs the chart with it",
+            "fix": "install Helm 3.14 or later, or write the values and Secrets for your "
+            "own pipeline with fabric up --kubernetes --render DIR",
+        },
+        {
+            "id": "FC-122",
+            "name": "kube_release_not_found",
+            "severity": "error",
+            "text": "no Fabric release installed with a preset was found in the cluster of "
+            "the current kube context",
+            "fix": "install it (fabric up --kubernetes, or helm install with --set "
+            "preset=...); name its namespace with --namespace when it is not "
+            "fabric-system; check the context with kubectl config current-context",
+        },
+        {
+            "id": "FC-123",
+            "name": "helm_failed",
+            "severity": "error",
+            "text": "Helm could not install or remove the Fabric release",
+            "fix": "read the detail (Helm's own last lines); a chart error names the value "
+            "and its fix, and `fabric doctor --kubernetes` shows the state of what "
+            "is installed",
+        },
+        {
+            "id": "FC-124",
+            "name": "kube_release_applied",
+            "severity": "info",
+            "text": "the Fabric release was installed or upgraded with Helm; no workload "
+            "other than Fabric's own was restarted",
+            "fix": "nothing to do; agent pods get capture at their next start, by your own rollout",
+        },
+        {
+            "id": "FC-125",
+            "name": "kube_secret_missing",
+            "severity": "error",
+            "text": "a Secret the release needs is missing or lacks a key, so the pods that "
+            "mount it do not start or cannot authenticate",
+            "fix": "run helm upgrade (the secrets Job makes each missing Secret) or fabric "
+            "init --kubernetes with the same namespaces; an incomplete Secret is "
+            "never changed: delete it first",
+        },
+        {
+            "id": "FC-126",
+            "name": "kube_node_not_ready",
+            "severity": "error",
+            "text": "the Fabric Node has no ready pod, so no record is accepted",
+            "fix": "the detail holds the pod's state and last log line; kubectl describe "
+            "pod and kubectl logs in the release namespace show more",
+        },
+        {
+            "id": "FC-127",
+            "name": "kube_node_ready",
+            "severity": "info",
+            "text": "the Fabric Node's pods are ready and its health endpoint answers",
+            "fix": "nothing to do",
+        },
+        {
+            "id": "FC-128",
+            "name": "kube_port_forward_failed",
+            "severity": "error",
+            "text": "kubectl could not forward a local port to the Fabric Node",
+            "fix": "check that the Node's pods run and that your identity may create "
+            "pods/portforward in the release namespace",
+        },
+        {
+            "id": "FC-129",
+            "name": "kube_injector_unavailable",
+            "severity": "error",
+            "text": "the pod injector has no ready pod: annotated pods are admitted "
+            "unchanged after the 2 second webhook timeout and run without capture",
+            "fix": "restore it (kubectl describe deployment in the release namespace shows "
+            "why it is down), then recreate the affected pods with your own rollout; "
+            "Fabric never restarts a workload",
+        },
+        {
+            "id": "FC-130",
+            "name": "kube_pod_not_injected",
+            "severity": "warning",
+            "text": "a pod asks for injection with the fabric.singleaxis.ai/inject "
+            "annotation but was not injected, so it runs without capture",
+            "fix": "the detail says why; fix that, then recreate the pod with your own "
+            "rollout: injection happens only when a pod is created",
+        },
+        {
+            "id": "FC-131",
+            "name": "kube_pods_injected",
+            "severity": "info",
+            "text": "annotated pods in the agent namespaces carry the injected annotation",
+            "fix": "nothing to do",
+        },
+        {
+            "id": "FC-132",
+            "name": "kube_namespace_not_labelled",
+            "severity": "warning",
+            "text": "an agent namespace lacks the label "
+            "fabric.singleaxis.ai/injection=enabled, so the injector never sees its "
+            "pods",
+            "fix": "kubectl label namespace NAME fabric.singleaxis.ai/injection=enabled, "
+            "then recreate its annotated pods with your own rollout",
+        },
+        {
+            "id": "FC-133",
+            "name": "kube_sensor_not_running",
+            "severity": "error",
+            "text": "the host sensor is not running on a node it was installed for, so no "
+            "host evidence is recorded there",
+            "fix": "the detail holds the pod's state and last log line; a node without "
+            "Linux 5.8 and BTF cannot run it: keep it off such nodes with "
+            "hostSensor.nodeSelector",
+        },
+        {
+            "id": "FC-134",
+            "name": "kube_pods_unscoped",
+            "severity": "warning",
+            "text": "the host sensor selected pods it cannot observe; the detail gives the "
+            "node, the count and the reason",
+            "fix": "cgroup_not_found: set EMIT_AGENT_CGROUP_ROOTS through hostSensor.env; "
+            "unsupported_runtime (gVisor, Kata): rely on wire capture for that pod "
+            "or use the default runtime; pod_limit: narrow "
+            "hostSensor.agentPodSelector",
+        },
+        {
+            "id": "FC-135",
+            "name": "kube_sensor_export_failing",
+            "severity": "error",
+            "text": "a host sensor cannot deliver its records to the Fabric Node; the "
+            "detail holds the gRPC status code",
+            "fix": "Unavailable: the Node is down or a NetworkPolicy blocks the sensor "
+            "(keep networkPolicy.hostSensorEgress on); Unauthenticated or "
+            "PermissionDenied: run helm upgrade so the node's Secret and ingress "
+            "group agree",
+        },
+        {
+            "id": "FC-136",
+            "name": "kube_sensor_scoped",
+            "severity": "info",
+            "text": "the host sensor runs and reports the agent pods it observes on each node",
+            "fix": "nothing to do",
+        },
+        {
+            "id": "FC-137",
+            "name": "kube_network_policy_blocks",
+            "severity": "warning",
+            "text": "a NetworkPolicy selects Fabric's pods and no rule of the chart allows "
+            "the traffic the detail names",
+            "fix": "keep the chart's own policies on (otel-collector.networkPolicy.enabled, "
+            "hostSensorEgress); for a policy of your own add an allow rule from the "
+            "pods named to the Node's ingress port",
+        },
+        {
+            "id": "FC-138",
+            "name": "kube_runtime_class_unsupported",
+            "severity": "warning",
+            "text": "a RuntimeClass of this cluster uses gVisor or Kata: the host sensor "
+            "cannot observe pods that run under it",
+            "fix": "nothing to change for pods on the default runtime; for a pod under that "
+            "RuntimeClass rely on wire capture in the agent (the injector), and "
+            "expect no host evidence",
+        },
+        {
+            "id": "FC-139",
+            "name": "kube_node_without_sensor",
+            "severity": "warning",
+            "text": "a node cannot run the host sensor or is not in the release's node "
+            "list, so pods on it have no host evidence",
+            "fix": "a serverless, virtual or non-Linux node cannot run it: rely on wire "
+            "capture there; for a node added after the install run helm upgrade so "
+            "it gets its Secret and ingress group",
+        },
+        {
+            "id": "FC-140",
+            "name": "kube_spool_emptydir_one_shot",
+            "severity": "warning",
+            "text": "a pod that runs once (a Job, or restartPolicy Never) has an emptyDir "
+            "spool: records not delivered when it exits are lost with the pod",
+            "fix": "raise FABRIC_WIRE_DRAIN_ON_EXIT_S for it (injector.env), or give it a "
+            "persistent spool with the annotation fabric.singleaxis.ai/spool: pvc",
+        },
+        {
+            "id": "FC-141",
+            "name": "kube_run_not_corroborated",
+            "severity": "warning",
+            "text": "the host sensor is installed but no host record joined this run, so "
+            "nothing independent of the agent corroborates it",
+            "fix": "check that the pod carries the sensor's pod label (the injector adds "
+            "it) and FABRIC_HOST_LABEL, and that `fabric doctor --kubernetes` shows "
+            "the pod scoped on its node",
+        },
+        {
+            "id": "FC-142",
+            "name": "kube_canary_needs_binding",
+            "severity": "info",
+            "text": "the canary was not sent: on a production Node every source has its own "
+            "ingress binding, and this release generates none for the canary",
+            "fix": "nothing to do; the run's own records are read instead (pass --spans "
+            "PATH with your destination's export)",
+        },
+        {
+            "id": "FC-143",
+            "name": "kube_rendered",
+            "severity": "info",
+            "text": "the Helm values and the Secret manifests were written for your own "
+            "pipeline; nothing was installed",
+            "fix": "apply the Secrets first (kubectl create -f DIR/secrets --recursive), "
+            "then helm upgrade --install with the values file; encrypt the manifests "
+            "before they reach a repository",
+        },
+        {
+            "id": "FC-144",
+            "name": "kube_purged",
+            "severity": "info",
+            "text": "the release was removed and the Secrets Fabric generated for it were deleted",
+            "fix": "nothing to do; an agent pod that still runs keeps the files it mounted "
+            "until it stops",
+        },
+        {
+            "id": "FC-145",
+            "name": "kube_webhook_ca_missing",
+            "severity": "error",
+            "text": "the injector's webhook has no caBundle, so the API server cannot "
+            "verify it and admits annotated pods unchanged",
+            "fix": "run helm upgrade (its post-upgrade Job sets the caBundle from the "
+            "generated CA), or set injector.caBundle to the base64 of the CA "
+            "certificate",
+        },
+        {
+            "id": "FC-146",
+            "name": "kube_no_agent_namespace",
+            "severity": "warning",
+            "text": "the release serves no agent namespace, so no agent pod can deliver "
+            "records to this Node",
+            "fix": "name the namespaces of your agents: helm upgrade with --set "
+            "agentNamespaces=NS (or fabric up --kubernetes --agent-namespace NS)",
+        },
+        {
+            "id": "FC-147",
+            "name": "kube_api_forbidden_read",
+            "severity": "warning",
+            "text": "the identity of the kube context may not read something this check "
+            "needs, so that part was skipped",
+            "fix": "the detail names what; ask for get and list on it, or run the command "
+            "with an identity that may read the release namespace and the nodes",
+        },
+        {
+            "id": "FC-148",
+            "name": "kube_plan_ready",
+            "severity": "info",
+            "text": "the cluster was read; nothing was changed",
+            "fix": "follow the next command the plan prints",
+        },
+        {
+            "id": "FC-149",
+            "name": "kube_released_secrets_kept",
+            "severity": "info",
+            "text": "the release was removed; the Secrets Fabric generated are kept, so a "
+            "new install keeps every key and id",
+            "fix": "nothing to do; fabric down --kubernetes --purge deletes them too",
+        },
+        {
+            "id": "FC-150",
+            "name": "kube_host_nodes_needed",
+            "severity": "error",
+            "text": "the host sensor needs the names of the nodes it runs on, and they "
+            "could not be read from the cluster of the current kube context",
+            "fix": "pass --host-node NAME for each node that runs the sensor, oldest first "
+            "(kubectl get nodes --sort-by=.metadata.creationTimestamp)",
+        },
+        {
+            "id": "FC-151",
+            "name": "kube_option_invalid",
+            "severity": "error",
+            "text": "an option given with --kubernetes cannot be used as given; nothing was "
+            "installed or changed",
+            "fix": "the detail names the option and what it takes; `fabric help up` lists "
+            "the options",
+        },
+        {
+            "id": "FC-152",
+            "name": "chart_override",
+            "severity": "warning",
+            "text": "FABRIC_CHART replaces the chart of this CLI release, so the chart "
+            "installed is not the one this release pins",
+            "fix": "unset FABRIC_CHART to install this release's own chart; keep it only to "
+            "test a chart under development",
+        },
+        {
+            "id": "FC-153",
+            "name": "content_reader_missing",
+            "severity": "error",
+            "text": "the release delivers model bodies to an S3 content store, and reading "
+            "them back needs boto3, which this CLI install lacks",
+            "fix": 'pip install "singleaxis-fabric[cli,s3]" on this workstation, then run '
+            "fabric verify --kubernetes again",
+        },
+        {
+            "id": "FC-154",
+            "name": "content_not_readable",
+            "severity": "warning",
+            "text": "the release keeps no model bodies where this workstation can read "
+            "them, so the agent's model decisions cannot be verified and verify "
+            "cannot pass",
+            "fix": "deliver content to an S3 or S3-compatible store: "
+            "otel-collector.content.enabled=true and content.backend=s3 in your "
+            "values (docs/get-started/kubernetes.md); this workstation reads it with "
+            "your AWS configuration",
+        },
+        {
+            "id": "FC-155",
+            "name": "no_capture_policy",
+            "severity": "warning",
+            "text": "the injector gives agents no capture policy, so on this production "
+            "Node they record metadata only: the model bodies the agent's decisions "
+            "are verified against are never kept and verify cannot pass",
+            "fix": "set injector.capturePolicy to your fabric.deployment-policy/v1 document "
+            "in your values (docs/get-started/kubernetes.md), run fabric up "
+            "--kubernetes again, then roll out your agents",
+        },
+        {
+            "id": "FC-156",
+            "name": "sensor_runtime_class_unread",
+            "severity": "warning",
+            "text": "the host sensor could not read the RuntimeClass of some selected pods, "
+            "so a gVisor or Kata pod among them cannot be reported "
+            "unsupported_runtime and may be counted as scoped",
+            "fix": "grant the sensor's service account get on runtimeclasses.node.k8s.io "
+            "(the chart's ClusterRole does: run helm upgrade; for "
+            "deploy/kubernetes/host-emitter-daemonset.yaml apply its current "
+            "ClusterRole), and check that each RuntimeClass the pods name exists",
+        },
+        {
+            "id": "FC-157",
+            "name": "plan_ready",
+            "severity": "info",
+            "text": "this machine and the agent were read; nothing was changed, started or "
+            "contacted",
+            "fix": "follow the next command the plan prints; each fix row names the command "
+            "that closes its gap",
+        },
+        {
+            "id": "FC-158",
+            "name": "plan_sdk_missing",
+            "severity": "info",
+            "text": "the agent's interpreter does not have the Fabric SDK yet, so nothing "
+            "is recorded until it does",
+            "fix": "install it in the agent's own environment with the command in the "
+            "detail (the plan's next line starts with it)",
+        },
+        {
+            "id": "FC-159",
+            "name": "plan_packages_unread",
+            "severity": "warning",
+            "text": "the agent's installed packages could not be listed, so rows that "
+            "depend on a library assume it is present",
+            "fix": "name the agent's interpreter, for example fabric plan -- "
+            ".venv/bin/python app.py, and check that it starts",
+        },
+        {
+            "id": "FC-160",
+            "name": "plan_runtime_unknown",
+            "severity": "warning",
+            "text": "the agent's runtime could not be told: no command was given and the "
+            "directory has no project manifest",
+            "fix": "give the agent command after --, for example fabric plan -- python app.py",
+        },
+        {
+            "id": "FC-161",
+            "name": "plan_mcp_config_unreadable",
+            "severity": "error",
+            "text": "an --mcp-config file is not a JSON object whose mcpServers entries "
+            "have a command or a url",
+            "fix": "pass the MCP client's configuration file: an mcpServers object whose "
+            "entries have a command (a stdio server) or a url (an HTTP server)",
+        },
+        {
+            "id": "FC-162",
+            "name": "coverage_prediction_mismatch",
+            "severity": "warning",
+            "text": "fabric.yaml turns on a capture point that the run's capture manifest "
+            "reports off",
+            "fix": "run fabric doctor for the SDK's reason, and start the agent with fabric "
+            "run in this project so it gets the setting",
+        },
+        {
+            "id": "FC-163",
+            "name": "run_reported_not_verified",
+            "severity": "warning",
+            "text": "the run's records were reported by the agent's code through the "
+            "TypeScript SDK's explicit API, so its model decisions are "
+            "unsupported(unsupported_runtime): reported, never verified",
+            "fix": "nothing to fix in the setup: zero-code capture of Node.js model calls "
+            "is not built yet; fabric show displays the reported records, and the "
+            "host sensor records the process's connections",
+        },
+        {
+            "id": "FC-164",
+            "name": "node_run_nothing_reported",
+            "severity": "error",
+            "text": "no record of this Node.js run reached the destination",
+            "fix": "build the agent's exporter with new "
+            "OTLPTraceExporter(fabricExporterOptions()) from @singleaxis/fabric, "
+            "record each decision with fabric.decision(...), call "
+            "provider.shutdown() before the process exits, and start the agent with "
+            "fabric run",
         },
     ],
 }

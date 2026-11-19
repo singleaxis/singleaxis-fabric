@@ -32,7 +32,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from . import _config, _images, _init, _project, _secrets, _sensor, _templates
+from . import _args, _config, _images, _init, _project, _secrets, _sensor, _templates
 from ._docker import Docker, interactive_echo
 from ._report import EXIT_FINDINGS, CliError, Finding, Report
 
@@ -55,28 +55,39 @@ def _seconds(text: str) -> float:
 def add_up_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-sensor", action="store_true",
                         help="do not start the host sensor")  # fmt: skip
+    # G1 (§3.2): the one flag of the local path when the model host is in neither the
+    # built-in table nor a base-URL variable. It is `init --provider`, applied before up.
+    parser.add_argument(
+        "--provider",
+        action="append",
+        default=[],
+        metavar="[DIALECT=]URL",
+        help="a model endpoint outside the built-in table, by its base URL "
+        "(added to fabric.yaml as `fabric init --provider` adds it)",
+    )
     parser.add_argument(
         "--wait",
         type=_seconds,
-        default=DEFAULT_WAIT_S,
+        default=None,  # DEFAULT_WAIT_S, or the Helm wait with --kubernetes
         metavar="SECONDS",
-        help="how long to wait for the Node to answer (default 60)",
+        help="how long to wait for the Node to answer (default 60; with --kubernetes, "
+        "how long Helm waits for the release, default 300)",
     )
     # Accepted so the answer is FC-011 with the manual route, not an argparse error.
-    parser.add_argument("--kubernetes", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--render", metavar="DIR", help=argparse.SUPPRESS)
     parser.add_argument("--verify-images", action="store_true", help=argparse.SUPPRESS)
+    _args.add_kubernetes_arguments(parser, "up")
 
 
 def add_down_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--purge", action="store_true",
                         help="also delete the project's volumes and .fabric/state "
                              "(never the secrets directory or recorded data)")  # fmt: skip
-    parser.add_argument("--kubernetes", action="store_true", help=argparse.SUPPRESS)
+    _args.add_kubernetes_arguments(parser, "down")
 
 
 def _refuse_unbuilt(options: argparse.Namespace, project: _project.Project | None) -> None:
-    for name in ("kubernetes", "render", "verify_images"):
+    # --render belongs to --kubernetes (§5.4); the Docker shapes have nothing to render.
+    for name in ("render", "verify_images"):
         if getattr(options, name, None):
             raise CliError([Finding("FC-011", "--" + name.replace("_", "-"))])
     if project is None:
@@ -99,11 +110,15 @@ def _load_or_init(options: argparse.Namespace, environ: Mapping[str, str], cwd: 
     located = _config.discover(options.config, environ, cwd)
     lines: list[str] = []
     findings: list[Finding] = []
-    if located.path is None or not located.path.is_file():
+    providers = list(getattr(options, "provider", None) or [])
+    if located.path is None or not located.path.is_file() or providers:
+        if located.path is not None and located.path.is_file():
+            _refuse_other_project(options, _project.load(located, {}, environ))
         defaults = argparse.ArgumentParser()
         _init.add_arguments(defaults)
         init_options = defaults.parse_args([])
         init_options.config, init_options.project = options.config, options.project
+        init_options.provider = providers  # `up --provider` is `init --provider`, then up
         located, document, _, _, findings, lines = _init.write_config(init_options, environ, cwd)
         project = _project.load(located, {}, environ, document)
     else:
@@ -392,6 +407,10 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
     """``fabric up``."""
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
+    if options.kubernetes:
+        from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
+
+        return _kubecmd.run_up(options, environ, cwd)
     _refuse_unbuilt(options, None)
     project, located, findings, lines, secrets_now = _load_or_init(options, environ, cwd)
     report = Report("up", findings=findings, config=located.to_json())
@@ -422,7 +441,8 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
     state_path = project.state_dir / "state" / STATE_FILE
     previous = _read_state(state_path)
     cgroup_made = _record_agent_cgroup(state_path, previous, sensor)
-    _start(docker, project, compose_file, layout, options.wait, probe, sleep, findings)
+    wait = DEFAULT_WAIT_S if options.wait is None else options.wait
+    _start(docker, project, compose_file, layout, wait, probe, sleep, findings)
     if sensor.start:
         _confirm_sensor(sensor, docker, project, compose_file, sleep)
         if not sensor.start:
@@ -538,7 +558,9 @@ def run_down(options: argparse.Namespace, environ: Mapping[str, str] | None = No
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
     if options.kubernetes:
-        raise CliError([Finding("FC-011", "--kubernetes")])
+        from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
+
+        return _kubecmd.run_down(options, environ)
     located = _config.discover(options.config, environ, cwd)
     project = _project.load(located, {}, environ)
     _refuse_other_project(options, project)

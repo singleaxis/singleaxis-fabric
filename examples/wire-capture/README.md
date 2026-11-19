@@ -14,11 +14,11 @@ fully offline. In a deployment the agent runs in **node mode** instead: it
 spools capture events to disk and delivers the bodies to the Fabric Node,
 which is the only writer of the content store (a directory or S3) and holds
 the only store credentials. See
-[Deployment](../../docs/deployment.md).
+[Deployment](../../docs/reference/manual-setup/deployment.md).
 
 ```bash
 # from the repository root, in the environment where the SDK is installed
-# (see docs/quickstart.md)
+# (see docs/reference/manual-setup/quickstart.md)
 python examples/wire-capture/react_agent.py
 ```
 

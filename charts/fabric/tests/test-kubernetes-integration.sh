@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The production Kubernetes path a new user follows (docs/deployment.md, the
+# The production Kubernetes path a new user follows (docs/reference/manual-setup/deployment.md, the
 # host-ingress profile, deploy/kubernetes/):
 #
 # * No profile renders the release namespace: Helm stores the release there

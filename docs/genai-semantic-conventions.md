@@ -47,8 +47,8 @@ The Python governed client rejects conflicting raw-content flags. Its separate
 managed metadata exporter also suppresses raw content unless that exporter
 explicitly opts in; an operation flag alone cannot bypass that protection.
 TypeScript and customer-owned exporters have different boundaries. See
-[Python managed span export](privacy-and-security.md#python-managed-span-export) and
-[content with the decision API](explicit-apis.md#content-with-the-decision-api) before choosing a route.
+[Python managed span export](reference/privacy-and-security.md#python-managed-span-export) and
+[content with the decision API](reference/explicit-apis.md#content-with-the-decision-api) before choosing a route.
 
 ## Python example
 

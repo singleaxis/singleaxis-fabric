@@ -44,6 +44,8 @@ env/
 
 # --- Go ---
 bin/
+# The npm launcher of the TypeScript SDK is source, not a Go build output.
+!sdk/typescript/bin/
 vendor/
 *.test
 *.out

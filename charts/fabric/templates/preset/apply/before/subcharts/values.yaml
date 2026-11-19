@@ -1,0 +1,10 @@
+{{- /*
+Spec 058 §10.1: `preset` and `agentNamespaces` change values of the Collector
+subchart, and a subchart reads its values when its own templates run. Helm
+renders the templates with the longest path first, so this file's depth is
+what makes it run before every template of charts/otel-collector (and before
+the rest of this chart). It renders nothing. If a Helm release ever ordered
+templates differently, "fabric.applyPreset" stops the render instead of
+installing a Collector without the preset (tests/test-presets.sh).
+*/ -}}
+{{- include "fabric.applyPreset" . -}}

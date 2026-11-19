@@ -1,7 +1,7 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Renders docs/diagnostics.md from the catalogue (spec 058 §13.1). The page is generated:
-`python -m tests._diagnostics_doc > ../../docs/diagnostics.md` from sdk/python."""
+"""Renders docs/reference/diagnostics.md from the catalogue (spec 058 §13.1). The page is generated:
+`python -m tests._diagnostics_doc > ../../docs/reference/diagnostics.md` from sdk/python."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import textwrap
 from pathlib import Path
 
 CATALOGUE = Path(__file__).resolve().parents[3] / "contracts/diagnostics/v1/messages-v1.json"
+REASONS = CATALOGUE.with_name("reasons-v1.json")
 _PREFIXES = (
     ("FC", "The fabric CLI"),
     ("FW", "The SDKs (wire capture, status, autoload)"),
@@ -52,7 +53,34 @@ def render() -> str:
                 *_wrap(f"Fix: {entry['fix']}."),
                 "",
             ]
+    lines += _reasons()
     return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _sentence(text: str) -> str:
+    return f"{text[:1].upper()}{text[1:]}."
+
+
+def _reasons() -> list[str]:
+    """Spec 058 WP8-18: every reason a reader verdict can carry, in words with its fix."""
+    document = json.loads(REASONS.read_text("utf-8"))
+    lines = [
+        "## Reasons in reader verdicts",
+        "",
+        *_wrap("`fabric verify`, `fabric show` and the reader name each reason a run or one of "
+               "its chains is not complete. Each entry says what it means and how to fix it; "
+               "a chain that gives a reason its own meaning is listed under it."),
+        "",
+    ]  # fmt: skip
+    for entry in document["reasons"]:
+        lines += [f"### {entry['reason']}", "", *_wrap(_sentence(entry["text"])), "",
+                  *_wrap(f"Fix: {entry['fix']}."), ""]  # fmt: skip
+        for chain, words in (entry.get("chains") or {}).items():
+            lines += [*_wrap(f"On the `{chain}` chain: {words['text']}. Fix: {words['fix']}."), ""]
+    for name, note in (document.get("notes") or {}).items():
+        lines += [f"### {name}", "", *_wrap(_sentence(note["text"])), "",
+                  *_wrap(_sentence(note["fix"])), ""]  # fmt: skip
+    return lines
 
 
 if __name__ == "__main__":
