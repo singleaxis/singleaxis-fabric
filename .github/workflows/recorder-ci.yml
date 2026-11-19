@@ -186,8 +186,10 @@ jobs:
       - name: Install the Python SDK for the cross-language tests
         # Spec 055 §9.5 (055-t5): the epoch registration tests run Python's
         # fabric.wire._registration against the TypeScript one, both ways.
+        # 055-t7: the spool tests read and write sealed (FWSPENC1) records in Python,
+        # whose envelope needs cryptography (the otlp extra).
         run: |
-          scripts/ci/install-python-locked.sh --no-default-groups --group ci
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci --extra otlp
           python -m pip install --no-deps --no-build-isolation -e ./sdk/python
           echo "FABRIC_TEST_PYTHON=$(command -v python)" >> "${GITHUB_ENV}"
       - name: Lint, typecheck, build, and test

@@ -25,7 +25,7 @@ import {
   entryOf,
   native,
   pythonEnv,
-  pythonWithFabric,
+  pythonWithSpoolKey,
   read,
   runPython,
   sized,
@@ -41,7 +41,7 @@ const spools: Spool[] = [];
 const scratch: string[] = [];
 
 beforeAll(() => {
-  pythonWithFabric(); // fails here, with the fix, when no Python can import fabric
+  pythonWithSpoolKey(); // fails here, with the fix, when Python cannot seal records
   lib = native();
   addon = lib.addon;
   writer = bundleFixture("writer");
@@ -318,7 +318,7 @@ describe("two real processes share one bound", () => {
     const go = join(dir, "..", "go");
     const results = await race(() => {
       const python = spawnLines(
-        pythonWithFabric(),
+        pythonWithSpoolKey(),
         ["-c", PY_FILL, dir, String(BOUND), hexKey(KEY), template, go],
         pythonEnv(),
       );

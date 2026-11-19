@@ -10,13 +10,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 
 import { buildSync } from "esbuild";
 
 import { parseJson } from "../../../src/wire/codec.js";
 
 import { REPO, contract } from "../helpers.js";
+
+import { pythonWithFabric } from "../registration/helpers.js";
 
 export { native, pythonWithFabric, runPython, start } from "../registration/helpers.js";
 export type { Native, Running } from "../registration/helpers.js";
@@ -154,6 +156,27 @@ export function spawnLines(
       await exited;
     },
   };
+}
+
+/**
+ * The Python interpreter of the cross-language tests, checked to read and write sealed
+ * (`FWSPENC1`) records: Python's spool envelope needs the `cryptography` package, which
+ * the SDK's `otlp` extra installs. Fails at once, naming the fix, when it is missing.
+ */
+export function pythonWithSpoolKey(): string {
+  const python = pythonWithFabric();
+  const probe = spawnSync(python, ["-c", "import cryptography"], {
+    encoding: "utf8",
+    env: pythonEnv(),
+  });
+  if (probe.status !== 0) {
+    throw new Error(
+      `'${python}' cannot import cryptography, which Python's sealed wire spool ` +
+        "(FWSPENC1) needs. Fix: run 'uv sync --extra otlp' in sdk/python, or install " +
+        "'sdk/python[otlp]' into FABRIC_TEST_PYTHON ('pip install -e \"sdk/python[otlp]\"')",
+    );
+  }
+  return python;
 }
 
 /** The environment a Python child needs to import this repository's `fabric`. */
