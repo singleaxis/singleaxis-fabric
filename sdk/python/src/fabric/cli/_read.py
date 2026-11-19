@@ -187,6 +187,23 @@ def runs_of(
     return selected
 
 
+def reported(files: Sequence[str], record: _runstate.RunRecord,
+             following: _runstate.RunRecord | None) -> list[Any]:  # fmt: skip
+    """The reported runs (explicit-API records, §13.3) one ``fabric run`` produced: those
+    whose decision started between its start and the next recorded run's. Never verified;
+    ``ReconstructInputError`` for unusable input."""
+    from ..reconstruct._reported import in_window, reported_runs  # noqa: PLC0415
+
+    end = following.started_ns if following is not None else None
+    return in_window(reported_runs(files), record.started_ns, end)
+
+
+def reports_by_code(record: _runstate.RunRecord) -> bool:
+    """A Node.js agent records through its explicit API (before zero-code Node capture):
+    its run is ``capture: off`` with only the "not built yet" note, not a failed launch."""
+    return record.runtime == "node" and all(f.get("id") == "FC-053" for f in record.findings)
+
+
 # ---------------------------------------------------------------- reasons in words (§12.4)
 
 #: Kept for the callers that word one reason (the catalogue is ``_coverage``, WP8-18).

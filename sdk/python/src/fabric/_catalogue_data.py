@@ -1397,5 +1397,27 @@ CATALOGUE: dict[str, Any] = {
             "fix": "run fabric doctor for the SDK's reason, and start the agent with fabric "
             "run in this project so it gets the setting",
         },
+        {
+            "id": "FC-163",
+            "name": "run_reported_not_verified",
+            "severity": "warning",
+            "text": "the run's records were reported by the agent's code through the "
+            "TypeScript SDK's explicit API, so its model decisions are "
+            "unsupported(unsupported_runtime): reported, never verified",
+            "fix": "nothing to fix in the setup: zero-code capture of Node.js model calls "
+            "is not built yet; fabric show displays the reported records, and the "
+            "host sensor records the process's connections",
+        },
+        {
+            "id": "FC-164",
+            "name": "node_run_nothing_reported",
+            "severity": "warning",
+            "text": "no record of this Node.js run reached the destination",
+            "fix": "build the agent's exporter with new "
+            "OTLPTraceExporter(fabricExporterOptions()) from @singleaxis/fabric, "
+            "record each decision with fabric.decision(...), call "
+            "provider.shutdown() before the process exits, and start the agent with "
+            "fabric run",
+        },
     ],
 }

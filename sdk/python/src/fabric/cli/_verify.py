@@ -361,7 +361,7 @@ def _user_run(
         f"started {record.started_at}"
     )
     status = _runstate.read_status(record, project.state_dir)
-    if record.capture != "on":
+    if record.capture != "on" and not _read.reports_by_code(record):
         why = ", ".join(f["id"] for f in record.findings) or "capture off"
         findings.append(Finding("FC-070", f"{record.label}: {why} (fabric doctor shows each)"))
         if record.runtime == "python":
@@ -418,6 +418,8 @@ def _user_run(
             f"  {run['run_id']}  {run['verdict']}  {run['counts']['exchanges']} "
             f"exchange(s)  decisions: {chains.get('decisions', {}).get('verdict', '-')}"
         )
+    if record.runtime == "node":
+        _reported(files, record, following, data, findings, lines)
     if not runs and record.runtime == "python":
         findings.append(_nothing_found(record, status))
     elif record.runtime == "python":
@@ -429,6 +431,24 @@ def _user_run(
     lines.append("coverage (observed):")
     lines.extend(row.line() for row in rows)
     return data
+
+
+def _reported(files: Sequence[str], record: _runstate.RunRecord,
+              following: _runstate.RunRecord | None, data: dict[str, Any],
+              findings: list[Finding], lines: list[str]) -> None:  # fmt: skip
+    """§13.3, G2: a Node.js agent's explicit-API records, labelled reported, with the
+    decisions chain stated ``unsupported(unsupported_runtime)``, never judged a pass."""
+    try:
+        shown = _read.reported(files, record, following)
+    except ReconstructInputError as exc:
+        findings.append(Finding("FC-073", _input_error(exc)))
+        return
+    data["reported"] = [run.to_json() for run in shown]
+    lines.extend(f"  {run.summary()}" for run in shown)
+    if shown:
+        findings.append(Finding("FC-163", f"{record.label}: {len(shown)} reported run(s)"))
+    else:
+        findings.append(Finding("FC-164", record.label))
 
 
 # ---------------------------------------------------------------- the command
@@ -501,8 +521,12 @@ def run(
         report.data["run"] = _user_run(project, environ, options, canary_label, findings, lines)
     failing = {"error", "warning"} if options.strict else {"error"}
     report.exit_code = EXIT_FINDINGS if any(f.severity in failing for f in findings) else EXIT_OK
-    lines.append(
-        "result: "
-        + ("no problem found" if report.exit_code == EXIT_OK else "see the findings below")
-    )
+    if report.exit_code != EXIT_OK:
+        result = "see the findings below"
+    elif any(f.id == "FC-163" for f in findings):
+        # G2: the path works, and the run is never presented as verified.
+        result = "the path works; the run's records are reported, not verified (FC-163)"
+    else:
+        result = "no problem found"
+    lines.append(f"result: {result}")
     return report, lines

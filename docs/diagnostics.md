@@ -1000,6 +1000,23 @@ manifest reports off.
 Fix: run fabric doctor for the SDK's reason, and start the agent with fabric run in this project so
 it gets the setting.
 
+### FC-163
+
+`run_reported_not_verified`, warning: the run's records were reported by the agent's code through
+the TypeScript SDK's explicit API, so its model decisions are unsupported(unsupported_runtime):
+reported, never verified.
+
+Fix: nothing to fix in the setup: zero-code capture of Node.js model calls is not built yet; fabric
+show displays the reported records, and the host sensor records the process's connections.
+
+### FC-164
+
+`node_run_nothing_reported`, warning: no record of this Node.js run reached the destination.
+
+Fix: build the agent's exporter with new OTLPTraceExporter(fabricExporterOptions()) from
+@singleaxis/fabric, record each decision with fabric.decision(...), call provider.shutdown() before
+the process exits, and start the agent with fabric run.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001

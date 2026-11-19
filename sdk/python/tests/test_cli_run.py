@@ -206,7 +206,12 @@ def test_node_and_other_runtimes_get_settings_only(tmp_path: Path, env: dict[str
     project = make_project(tmp_path, env)
     _, execvpe, _ = _launch(project, env, ["node", "app.js"], "--run", "n-1")
     added = _added(env, execvpe.calls[0][2])
-    assert set(added) == set(_run.NODE_VARIABLES) and added["FABRIC_RUN_ID"] == "n-1"
+    # The explicit API's variables and Fabric's own OTLP route (§6.4): the local profile
+    # has no client certificate or headers file, so those two stay unset.
+    assert set(added) <= set(_run.NODE_VARIABLES) and added["FABRIC_RUN_ID"] == "n-1"
+    assert {"FABRIC_TENANT_ID", "FABRIC_AGENT_ID", "FABRIC_OTLP_ENDPOINT",
+            "FABRIC_OTLP_CERTIFICATE"} <= set(added)  # fmt: skip
+    assert not any(name.startswith("OTEL_") for name in added)
     _, execvpe, _ = _launch(project, env, ["./server-binary"], "--run", "b-1")
     assert _added(env, execvpe.calls[0][2]) == {"FABRIC_RUN_ID": "b-1"}
     kinds = [(r.label, r.runtime, r.capture) for r in _runstate.load_runs(project / ".fabric")]

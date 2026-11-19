@@ -136,8 +136,11 @@ describe("fabric run (npm launcher) is passive", () => {
                 `only FABRIC_* variables may change, got ${changed}`,
             );
             if (kind === "valid") {
+                // The explicit API's variables and Fabric's own OTLP route (never OTEL_*).
                 assert.deepEqual(changed.sort(), [
                     "FABRIC_AGENT_ID",
+                    "FABRIC_OTLP_CERTIFICATE",
+                    "FABRIC_OTLP_ENDPOINT",
                     "FABRIC_RUN_ID",
                     "FABRIC_TENANT_ID",
                 ]);
