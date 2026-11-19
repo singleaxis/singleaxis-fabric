@@ -127,3 +127,20 @@ describe("FABRIC_OTLP_* route", () => {
     expect(JSON.stringify(status)).not.toContain("secret-token");
   });
 });
+
+describe("FABRIC_WIRE_ID_KEY_FILE", () => {
+  it("reads the key from the file fabric run names, as the Python SDK does", async () => {
+    const { idKeyBytesFromEnv } = await import("../src/id-key-env.js");
+    const keyFile = join(dir, "id.key");
+    writeFileSync(keyFile, "0123456789abcdef0123456789abcdef\n");
+    const bytes = idKeyBytesFromEnv({ FABRIC_WIRE_ID_KEY_FILE: keyFile });
+    expect(Buffer.from(bytes ?? []).toString()).toBe("0123456789abcdef0123456789abcdef");
+    expect(idKeyBytesFromEnv({})).toBeUndefined();
+    expect(() =>
+      idKeyBytesFromEnv({ FABRIC_WIRE_ID_KEY: "x".repeat(32), FABRIC_WIRE_ID_KEY_FILE: keyFile }),
+    ).toThrow("set FABRIC_WIRE_ID_KEY or FABRIC_WIRE_ID_KEY_FILE, not both");
+    expect(() => idKeyBytesFromEnv({ FABRIC_WIRE_ID_KEY_FILE: join(dir, "missing") })).toThrow(
+      "FABRIC_WIRE_ID_KEY_FILE is not readable",
+    );
+  });
+});

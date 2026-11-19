@@ -515,7 +515,8 @@
           "FABRIC_OTLP_CERTIFICATE": "{{dir}}/secrets/ca.crt",
           "FABRIC_OTLP_ENDPOINT": "https://node.example.internal:4318",
           "FABRIC_RUN_ID": "g-8",
-          "FABRIC_TENANT_ID": "acme"
+          "FABRIC_TENANT_ID": "acme",
+          "FABRIC_WIRE_ID_KEY_FILE": "{{dir}}/secrets/id.key"
         },
         "finding_ids": [
           "FC-053"

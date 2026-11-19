@@ -60,6 +60,8 @@ export const NODE_VARIABLES = [
   "FABRIC_OTLP_CLIENT_CERTIFICATE",
   "FABRIC_OTLP_CLIENT_KEY",
   "FABRIC_OTLP_HEADERS_FILE",
+  // The id key, by file (keyed labels, as the Python SDK reads it).
+  "FABRIC_WIRE_ID_KEY_FILE",
 ] as const;
 const PROBE_TIMEOUT_MS = 15_000;
 const MAX_RUNS = 200;

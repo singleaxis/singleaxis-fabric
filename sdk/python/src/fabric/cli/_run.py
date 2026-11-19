@@ -53,7 +53,7 @@ _RUNNERS = frozenset({"uv", "poetry", "pipenv", "pdm", "hatch"})
 NODE_VARIABLES = (
     "FABRIC_TENANT_ID", "FABRIC_AGENT_ID", "FABRIC_RUN_ID", "FABRIC_OTLP_ENDPOINT",
     "FABRIC_OTLP_CERTIFICATE", "FABRIC_OTLP_CLIENT_CERTIFICATE", "FABRIC_OTLP_CLIENT_KEY",
-    "FABRIC_OTLP_HEADERS_FILE",
+    "FABRIC_OTLP_HEADERS_FILE", "FABRIC_WIRE_ID_KEY_FILE",
 )  # fmt: skip
 #: What the interpreter probe runs (``-I``: no PYTHONPATH, no user site, no current
 #: directory on sys.path). It imports nothing of Fabric: it finds the package and the

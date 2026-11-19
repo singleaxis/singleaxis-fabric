@@ -144,6 +144,7 @@ describe("fabric run (npm launcher) is passive", () => {
                     "FABRIC_OTLP_ENDPOINT",
                     "FABRIC_RUN_ID",
                     "FABRIC_TENANT_ID",
+                    "FABRIC_WIRE_ID_KEY_FILE",
                 ]);
             } else {
                 assert.deepEqual(changed, []);
