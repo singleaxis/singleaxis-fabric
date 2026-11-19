@@ -8,3 +8,9 @@
 # bump Helm and Compose when fixed releases ship, and delete the entry.
 CVE-2026-111943 exp:2026-12-15
 CVE-2026-78661 exp:2026-12-15
+# Added 2026-11-20: Go stdlib CVE-2026-97054 (fixed in Go 1.26.11) in the docker CLI and
+# Helm 3.22.1 binaries, the newest released (docker:29-cli built 2026-11-16, Helm 3.22.1
+# 2026-10-16), both before Go 1.26.11 existed. It is a race in HTTP/1 *servers* using
+# MaxBytesReader; both binaries are clients and serve nothing. The Fabric-built Go images
+# (Node, host emitter) moved to the Go 1.26.11 builder instead of ignoring it.
+CVE-2026-97054 exp:2026-12-15
