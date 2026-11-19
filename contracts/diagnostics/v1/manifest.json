@@ -9,11 +9,11 @@
   "files": [
     {
       "path": "messages-v1.json",
-      "sha256": "683db899b62f64911184d8dc50bd7e90e66d5a2361632943220033abce4e945c"
+      "sha256": "0f946f124b539b2406f64e7793486035d4471074b5e20427f882bc4a60c12495"
     },
     {
       "path": "reasons-v1.json",
-      "sha256": "06588a21b26cb0f32bb0614c59e7fe1c491ce90d513b5b98fbc25f5b19cb7bbc"
+      "sha256": "aa677ab9b96ffded12215b06423d392b27f94bec94dd4653dae425e91c4fd163"
     },
     {
       "path": "schema/reasons-v1.schema.json",
