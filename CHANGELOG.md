@@ -15,6 +15,32 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: content protection before anything is
+  written (spec 055, unit 055-t8).** Still not installable from the package,
+  and no Node.js build is released as qualified yet. Fabric's own worker
+  thread now turns each captured model call into one protected spool record:
+  the capture policy decides per content role what is kept (`retain_original`,
+  `metadata_only`, `omit`, `redact` and `masked_only` through your redaction
+  service, `tokenize`), and only then is anything written. A redaction service
+  that times out, redirects, answers with an error, sends too much or a broken
+  reply, or is busy withholds the content (`protection_failed`); raw bytes are
+  never a fallback. A digest of the original body exists only when the policy
+  keeps the original. The `fabric.model_call` record carries the same keys and
+  values as Python's for the same call, and Python's drainer reads it. In the
+  production profile, a missing capture policy, `FABRIC_WIRE_ID_KEY` or spool
+  key turns content off with the same reason Python reports
+  (`missing_capture_policy`, then `missing_id_key`, then
+  `missing_spool_key`), while safe metadata continues. A masking role with no
+  redaction service is reported at install with catalogue id `FW-032`, and
+  content capture without `FABRIC_TENANT_ID` names that variable. Two limits
+  until unit 055-t15: a body over `max_body_bytes` is kept cut
+  (`body_cap`) rather than split into parts, and an `original_plus_masked`
+  role is withheld. New CI job `ts-wire-privacy` plants canaries in prompts,
+  responses, URLs, headers, errors, ids and the environment and fails if any
+  byte Fabric wrote holds one the policy does not allow; the passivity gate
+  gains a large-request step (up to 32 MiB, one synchronous copy of about
+  10 ms on a laptop, ceiling 25 ms).
+
 - **Node.js capture groundwork: the encrypted durable spool (spec 055, unit
   055-t7).** Still not installable from the package, and no Node.js build is
   released as qualified yet. A Node process can now write captured records to

@@ -164,7 +164,11 @@ def test_every_active_tuple_has_its_passed_report_committed() -> None:
         assert report["schema"] == "fabric.node-wire-passivity-report/v1"
         assert report["quick"] is False and report["result"] == "passed"
         assert report["voided_runs"] in (0, 1)
-        assert PASSIVITY_GATES <= set(report["gates"]) <= PASSIVITY_GATES | LATER_PASSIVITY_GATES
+        assert (
+            PASSIVITY_GATES
+            <= set(report["gates"])
+            <= PASSIVITY_GATES | LATER_PASSIVITY_GATES
+        )
         assert all(report["gates"].values()), path.name
         assert report["tuple"] == {
             "point": tuple_["point"],
