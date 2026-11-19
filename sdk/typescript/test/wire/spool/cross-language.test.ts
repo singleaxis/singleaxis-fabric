@@ -14,7 +14,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { encodeJson } from "../../../src/wire/codec.js";
 import type { NativeAddon } from "../../../src/wire/native.js";
 import { ENVELOPE_MAGIC } from "../../../src/wire/spool-codec.js";
-import { Spool, accounted } from "../../../src/wire/spool.js";
+import { LEDGER_BYTES, RESERVE_BYTES, Spool, accounted } from "../../../src/wire/spool.js";
 import { norm } from "../helpers.js";
 import {
   KEY,
@@ -260,6 +260,10 @@ describe("TypeScript reads Python frames", () => {
       );
       spool.rescan();
       expect(spool.bytes).toBe(python.bytes);
+      // Python's spool made the shared loss ledger: it takes its share of the reserve here too.
+      expect(spool.ledgerSeen).toBe(true);
+      expect(read(join(dir, ".ledger")).length).toBe(LEDGER_BYTES);
+      expect(spool.reserveBytes).toBe(RESERVE_BYTES - LEDGER_BYTES);
     }, 60_000);
   }
 });

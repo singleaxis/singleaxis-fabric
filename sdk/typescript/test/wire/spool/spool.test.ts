@@ -30,6 +30,8 @@ import {
 } from "../../../src/wire/spool-codec.js";
 import {
   ADMIT_LOCK,
+  LEDGER,
+  LEDGER_BYTES,
   QUARANTINE_SUFFIX,
   RESERVE_BYTES,
   Spool,
@@ -203,6 +205,37 @@ describe("admission bound", () => {
     expect(spool.write(loss.doc, [], true)).not.toBeNull(); // the reserve
     expect(spool.diskTotal()).toBeLessThanOrEqual(spool.maxBytes + RESERVE_BYTES);
     expect(files(dir).some((name) => name.startsWith(TMP_PREFIX))).toBe(false);
+  });
+
+  it("a shared loss ledger lives inside the reserve: disk stays within bound + 1 MiB", () => {
+    const big = sized(200_000);
+    const fill = (dir: string): number => {
+      const spool = make(dir, { maxBytes: 1000 });
+      let written = 0;
+      while (spool.write(big.doc, big.bodies, true) !== null) written += 1;
+      expect(spool.diskTotal()).toBeLessThanOrEqual(spool.maxBytes + spool.reserveBytes);
+      return written;
+    };
+    // Without a ledger the whole reserve is usable: five 200 KB records fit.
+    expect(fill(spoolDir())).toBe(5);
+    // A Python writer's preallocated ledger (260 KiB) takes its share of the reserve.
+    const dir = spoolDir();
+    mkdirSync(dir, 0o700);
+    writeFileSync(join(dir, LEDGER), Buffer.alloc(LEDGER_BYTES), { mode: 0o600 });
+    expect(fill(dir)).toBe(3);
+    const spool = make(dir, { maxBytes: 1000 });
+    expect(spool.ledgerSeen).toBe(true);
+    expect(spool.reserveBytes).toBe(RESERVE_BYTES - LEDGER_BYTES);
+    expect(spool.diskTotal() + LEDGER_BYTES).toBeLessThanOrEqual(1000 + RESERVE_BYTES);
+  });
+
+  it("a ledger created after the writer opened is seen at the next admission", () => {
+    const dir = spoolDir();
+    const spool = make(dir, { maxBytes: 1000 });
+    expect(spool.reserveBytes).toBe(RESERVE_BYTES);
+    writeFileSync(join(dir, LEDGER), Buffer.alloc(LEDGER_BYTES), { mode: 0o600 });
+    expect(spool.write(loss.doc, [], true)).not.toBeNull();
+    expect(spool.reserveBytes).toBe(RESERVE_BYTES - LEDGER_BYTES);
   });
 
   it("counts other processes' leftovers: temps, quarantined records and receipts", () => {

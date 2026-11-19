@@ -61,6 +61,10 @@ import {
 
 /** Loss and marker records may exceed the bound by this much (the ledger's share included). */
 export const RESERVE_BYTES = 1024 * 1024;
+/** The shared loss ledger (Python `_ledger.LEDGER`), preallocated inside the reserve. */
+export const LEDGER = ".ledger";
+/** The ledger's size: a 4 KiB header and 64 slots of 4 KiB (Python `_ledger`). */
+export const LEDGER_BYTES = 4096 + 64 * 4096;
 /** The shared admission lock every writer of the directory takes (never `.lock`). */
 export const ADMIT_LOCK = ".admit";
 export const DRAIN_LOCK = ".lock";
@@ -74,14 +78,7 @@ export const RECEIPT_OVERHEAD = 128;
 /** Temp files older than this were left by a writer that exited (Python `RECEIPT_TTL_S`). */
 export const STALE_MS = 3600 * 1000;
 /** Names Python's spool owns beside records (`_own_name`), and the native self-test probe. */
-const OWN_NAMES = new Set([
-  DRAIN_LOCK,
-  ADMIT_LOCK,
-  ".barrier",
-  ".ledger",
-  ".epochs",
-  ".exit-backlog",
-]);
+const OWN_NAMES = new Set([DRAIN_LOCK, ADMIT_LOCK, ".barrier", LEDGER, ".epochs", ".exit-backlog"]);
 const OWN_PREFIXES = [TMP_PREFIX, ".ledger-new-", ".fabric-selftest-"];
 const OWN_SUFFIXES = [".rec", ACK_SUFFIX, QUARANTINE_SUFFIX];
 
@@ -363,6 +360,12 @@ export class Spool {
   holder = false;
   /** Names this process wrote, until their outcome is known. */
   readonly mine = new Set<string>();
+  /**
+   * Whether the shared loss ledger exists in the directory (a Python writer creates it):
+   * its 260 KiB then lives inside the reserve, so reserve records get 1 MiB minus that,
+   * as Python's do, and the directory stays within bound + 1 MiB. Once seen, kept.
+   */
+  ledgerSeen = false;
 
   readonly #key: Uint8Array | undefined;
   readonly #addon: NativeAddon;
@@ -501,6 +504,7 @@ export class Spool {
     let unknown = false;
     const stale = Date.now() - STALE_MS;
     for (const name of this.#io.readdir(this.dir)) {
+      if (name === LEDGER) this.ledgerSeen = true;
       const path = this.#path(name);
       const tmp = name.startsWith(TMP_PREFIX) || name.startsWith(".ledger-new-");
       let info: SpoolStat;
@@ -528,6 +532,15 @@ export class Spool {
     this.bytes = 0;
     this.receipts = 0;
     for (const [name, size] of scanned) this.#account(name, size);
+  }
+
+  /** What loss and marker records may use above the bound (Python `_reserve_bytes`). */
+  get reserveBytes(): number {
+    return RESERVE_BYTES - (this.ledgerSeen ? LEDGER_BYTES : 0);
+  }
+
+  #limit(reserve: boolean): number {
+    return this.maxBytes + (reserve ? this.reserveBytes : 0);
   }
 
   // ------------------------------------------------------------------ admission
@@ -565,6 +578,7 @@ export class Spool {
     const disk = new Map<string, number>();
     let total = 0;
     for (const name of this.#io.readdir(this.dir)) {
+      if (name === LEDGER) this.ledgerSeen = true;
       if (accounted(name, 0) === undefined) continue;
       let size = this.#disk.get(name);
       if (
@@ -592,9 +606,10 @@ export class Spool {
    * Shared admission: under one admission lock, admits each `(temp path, size)` only
    * while the on-disk total plus its size stays within `limit`, and reserves it on disk
    * before the lock is released (the temp file is created at its full size, its last
-   * byte written). Per entry: the descriptor, `null` (refused) or the creation error.
+   * byte written). The limit is taken after the scan, which may have found the ledger.
+   * Per entry: the descriptor, `null` (refused) or the creation error.
    */
-  #reserveMany(wanted: readonly [string, number][], limit: number): (number | null | Error)[] {
+  #reserveMany(wanted: readonly [string, number][], reserve: boolean): (number | null | Error)[] {
     const results: (number | null | Error)[] = wanted.map(() => null);
     if (wanted.length === 0) return results;
     try {
@@ -607,6 +622,7 @@ export class Spool {
           return;
         }
         this.sharedBytes = total;
+        const limit = this.#limit(reserve);
         wanted.forEach(([tmp, size], index) => {
           if (total + size > limit) return;
           let fd: number;
@@ -710,7 +726,7 @@ export class Spool {
     );
     const kept = records.flatMap((record, index) => (results[index] === null ? [index] : []));
     const prepared = kept.map((index) => this.#prepare(records[index]!));
-    const limit = this.maxBytes + (reserve ? RESERVE_BYTES : 0);
+    const limit = this.#limit(reserve);
     const live: number[] = [];
     prepared.forEach(({ name, size }, at) => {
       if (this.bytes + size <= limit) {
@@ -734,7 +750,7 @@ export class Spool {
     try {
       const reserved = this.#reserveMany(
         current.map((at) => [this.#path(TMP_PREFIX + prepared[at]!.name), prepared[at]!.size]),
-        limit,
+        reserve,
       );
       const admitted: number[] = [];
       current.forEach((at, index) => {
