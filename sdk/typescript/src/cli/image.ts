@@ -22,9 +22,9 @@
  * Docker the launcher says where the full CLI is (`FC-098`).
  */
 
-import { mkdirSync, statSync } from "node:fs";
+import { mkdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 import { SDK_VERSION } from "../version";
 
@@ -50,6 +50,9 @@ export interface Host {
   gid: number | null;
   /** The group of the Docker socket, when it is a local socket. */
   socketGid: number | null;
+  /** Docker Desktop: the socket containers see is `root:root 0660` in its VM, whatever the
+   * host's socket says, so the command needs group 0 to reach it. */
+  desktop: boolean;
   stdinTty: boolean;
   stdoutTty: boolean;
 }
@@ -119,9 +122,10 @@ export function imageArgs(
   const socket = dockerSocket(env);
   if (socket !== null) {
     out.push("-v", `${socket}:${DEFAULT_SOCKET}`);
-    if (host.socketGid !== null && host.socketGid !== host.gid) {
-      out.push("--group-add", String(host.socketGid));
-    }
+    const groups = new Set<number>();
+    if (host.desktop) groups.add(0);
+    else if (host.socketGid !== null && host.socketGid !== host.gid) groups.add(host.socketGid);
+    for (const group of groups) out.push("--group-add", String(group));
   } else {
     out.push("-e", "DOCKER_HOST");
   }
@@ -151,10 +155,13 @@ export function thisHost(env: Environ): Host {
   const uid = typeof process.getuid === "function" ? process.getuid() : null;
   const gid = typeof process.getgid === "function" ? process.getgid() : null;
   let socketGid: number | null = null;
+  let desktop = process.platform === "darwin" || process.platform === "win32";
   const socket = dockerSocket(env);
   if (socket !== null) {
     try {
       socketGid = statSync(socket).gid;
+      // Docker Desktop on Linux links the socket into ~/.docker/desktop.
+      desktop ||= realpathSync(socket).includes(`${sep}.docker${sep}desktop${sep}`);
     } catch {
       socketGid = null;
     }
@@ -163,6 +170,7 @@ export function thisHost(env: Environ): Host {
     uid,
     gid,
     socketGid,
+    desktop,
     stdinTty: Boolean(process.stdin.isTTY),
     stdoutTty: Boolean(process.stdout.isTTY),
   };

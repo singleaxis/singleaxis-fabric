@@ -384,7 +384,10 @@ export function recordJson(record: RunRecord): Record<string, unknown> {
   return {
     schema: RUN_SCHEMA,
     label: record.label,
-    started_ns: Number(record.startedNs),
+    // A bigint, written with every digit: Number() would round it (a nanosecond clock
+    // passes 2^53), and the Python CLI refuses a record whose started_ns does not
+    // equal its file name's.
+    started_ns: record.startedNs,
     started_at: isoMs(record.startedNs),
     command: record.command,
     runtime: record.runtime,
@@ -427,6 +430,7 @@ function mkdirIfMissing(path: string): void {
 
 function sortedJson(value: unknown, indent = ""): string {
   // Python's json.dumps(indent=2, sort_keys=True), for the record's plain values.
+  if (typeof value === "bigint") return value.toString();
   const next = indent + "  ";
   if (Array.isArray(value)) {
     if (!value.length) return "[]";

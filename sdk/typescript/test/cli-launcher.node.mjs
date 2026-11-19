@@ -26,6 +26,7 @@ import {
     mkdirSync,
     mkdtempSync,
     readFileSync,
+    readdirSync,
     realpathSync,
     rmSync,
     statSync,
@@ -151,6 +152,25 @@ describe("fabric run (npm launcher) is passive", () => {
             }
         });
     }
+
+    it("writes started_ns with every digit, so the Python CLI reads the record", () => {
+        // Regression: Number(bigint) rounded the nanosecond clock, the record's started_ns
+        // no longer equalled its file name's, and verify and show saw no run at all.
+        const dir = project("valid");
+        run(
+            [process.execPath, BIN, "run", "--run", "digits", "--", process.execPath, "-e", "0"],
+            dir,
+        );
+        const runs = join(dir, ".fabric", "state", "runs");
+        const name = readdirSync(runs).find((n) => n.endsWith("-digits.json"));
+        assert.ok(name, "the run is recorded");
+        const ns = name.split("-")[0];
+        const text = readFileSync(join(runs, name), "utf-8");
+        assert.ok(
+            text.includes(`"started_ns": ${ns}\n`) || text.includes(`"started_ns": ${ns},`),
+            text,
+        );
+    });
 
     it("ends by the agent's own signal", () => {
         const directory = project("valid");
