@@ -129,6 +129,12 @@ def _escape(text: str) -> str:
     return text.replace("|", "\\|")
 
 
+def _cell(text: str) -> str:
+    """A table cell of prose: pipes escaped and each bare ``NAME_*`` set as code, so its
+    ``*`` is not read as emphasis (markdownlint MD037)."""
+    return _escape(re.sub(r"(?<![`\w])([A-Z][A-Z0-9_]*_\*)(?!`)", r"`\1`", text))
+
+
 def render_cli() -> str:
     from fabric import cli  # noqa: PLC0415
 
@@ -158,7 +164,7 @@ def render_cli() -> str:
             rows.append((", ".join(f"{o}{metavar}" for o in options), action.help or ""))
         if rows:
             lines += ["| Option | What it does |", "|---|---|"]
-            lines += [f"| `{_escape(o)}` | {_escape(str(h).replace('%%', '%'))} |" for o, h in rows]
+            lines += [f"| `{_escape(o)}` | {_cell(str(h).replace('%%', '%'))} |" for o, h in rows]
             lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -231,7 +237,7 @@ def render_env_vars() -> str:
         if section != group:
             lines += ["", f"## {section}", "", "| Variable | What it does |", "|---|---|"]
             group = section
-        lines.append(f"| `{name}` | {_escape(text)} |")
+        lines.append(f"| `{name}` | {_cell(text)} |")
     lines += ["", "`FABRIC_TOKENIZATION_KEY_FILE` and `FABRIC_WIRE_SPOOL_KEY_FILE` are the file",
               "forms of their keys."]  # fmt: skip
     return "\n".join(line for line in _squeeze(lines)) + "\n"

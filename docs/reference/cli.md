@@ -34,7 +34,7 @@ Write fabric.yaml, generated secrets and the compiled environment.
 | `--http-host HOST` | a non-model HTTP host to record |
 | `--mcp` | record MCP transport messages |
 | `--sensor {auto,ebpf,auditd,off}` |  |
-| `--from-env` | import the FABRIC_* and OTEL_* settings of this shell |
+| `--from-env` | import the `FABRIC_*` and `OTEL_*` settings of this shell |
 | `--import-secrets` | with --from-env: copy the id key and CA into the secrets directory |
 | `--rotate NAME` | rotate a generated secret: node-cert, ca, id-key, or all |
 | `--force` | rewrite fabric.yaml from the defaults and flags (keeps a backup, the project name and where its secrets are) |

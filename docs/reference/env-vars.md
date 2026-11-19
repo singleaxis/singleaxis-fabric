@@ -44,7 +44,7 @@ unless marked TS or Python and TS.
 
 | Variable | What it does |
 |---|---|
-| `FABRIC_OTLP_ENDPOINT` | The Fabric Node's base URL; when any FABRIC_OTLP_* is set, no OTEL_EXPORTER_OTLP_* is read (Python and TS). |
+| `FABRIC_OTLP_ENDPOINT` | The Fabric Node's base URL; when any `FABRIC_OTLP_*` is set, no `OTEL_EXPORTER_OTLP_*` is read (Python and TS). |
 | `FABRIC_OTLP_CERTIFICATE` | The CA file the Node's certificate is checked with (Python and TS). |
 | `FABRIC_OTLP_CLIENT_CERTIFICATE` | A client certificate file for the Node (Python and TS). |
 | `FABRIC_OTLP_CLIENT_KEY` | Its private key file (Python and TS). |
