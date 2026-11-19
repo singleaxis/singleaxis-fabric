@@ -50,7 +50,17 @@ export type Environ = Record<string, string | undefined>;
 export const RUN_SCHEMA = "fabric.cli-run/v1";
 export const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 /** The variables the TypeScript SDK's explicit API reads today (before 055 TS-1U). */
-export const NODE_VARIABLES = ["FABRIC_TENANT_ID", "FABRIC_AGENT_ID", "FABRIC_RUN_ID"] as const;
+export const NODE_VARIABLES = [
+  "FABRIC_TENANT_ID",
+  "FABRIC_AGENT_ID",
+  "FABRIC_RUN_ID",
+  // Fabric's own OTLP route (§6.4), which `fabricExporterOptions()` reads.
+  "FABRIC_OTLP_ENDPOINT",
+  "FABRIC_OTLP_CERTIFICATE",
+  "FABRIC_OTLP_CLIENT_CERTIFICATE",
+  "FABRIC_OTLP_CLIENT_KEY",
+  "FABRIC_OTLP_HEADERS_FILE",
+] as const;
 const PROBE_TIMEOUT_MS = 15_000;
 const MAX_RUNS = 200;
 const RECORD_RE = /^([0-9]{1,20})-([A-Za-z0-9][A-Za-z0-9._-]{0,63})\.json$/;
@@ -275,7 +285,7 @@ export function build(
     plan.findings.push(
       new Finding(
         "FC-053",
-        "Node.js: zero-code capture is not built yet; the explicit API gets the tenant, agent and run label",
+        "Node.js: zero-code capture is not built yet; the explicit API gets the tenant, agent, run label and the Fabric Node",
       ),
     );
   } else {

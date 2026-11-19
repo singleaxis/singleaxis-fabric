@@ -21,8 +21,12 @@ export {
 export {
   DIAGNOSTICS_ENV,
   captureStatus,
+  FABRIC_OTLP_NAMES,
+  fabricExporterOptions,
+  fabricOtlpSelected,
   otlpTraceTransport,
   type CaptureStatus,
+  type FabricExporterOptions,
   type OtlpTraceTransport,
 } from "./otlp-transport.js";
 export {

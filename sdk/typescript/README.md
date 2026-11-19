@@ -98,11 +98,13 @@ Save as `agent.mjs` (it is also valid TypeScript):
 import { BatchSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
-import { Fabric, installDefaultProvider } from "@singleaxis/fabric";
+import { Fabric, fabricExporterOptions, installDefaultProvider } from "@singleaxis/fabric";
 
 // Your provider and exporter: Fabric never installs one silently.
+// fabricExporterOptions() is {} unless `fabric run` set FABRIC_OTLP_*.
+const exporter = new OTLPTraceExporter(fabricExporterOptions());
 const provider = new TracerProvider({
-  spanProcessors: [new BatchSpanProcessor({ exporter: new OTLPTraceExporter() })],
+  spanProcessors: [new BatchSpanProcessor({ exporter })],
 });
 // Registers the provider globally plus the context manager that keeps span
 // parenting correct across `await`.
@@ -139,6 +141,13 @@ export FABRIC_TENANT_ID=acme FABRIC_AGENT_ID=support-agent
 node agent.mjs
 ```
 
+With `fabric run` (below) you set nothing: it gives the agent
+`FABRIC_OTLP_ENDPOINT` and `FABRIC_OTLP_CERTIFICATE` (the Fabric Node and its
+CA), and `fabricExporterOptions()` turns them into the exporter's `url` and
+`httpAgentOptions`; production adds `FABRIC_OTLP_HEADERS_FILE` and the client
+certificate pair. When any `FABRIC_OTLP_*` variable is set, Fabric reads none of
+the `OTEL_EXPORTER_OTLP_*` ones, so your own OpenTelemetry export is never
+redirected. Without them, `fabricExporterOptions()` is `{}` and
 `OTLPTraceExporter` reads the standard variables (`OTEL_EXPORTER_OTLP_ENDPOINT`,
 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
 `OTEL_EXPORTER_OTLP_CERTIFICATE`), so the Node is selected by environment.
@@ -167,8 +176,8 @@ It prints `{"capture":"enabled"}`, or `{"capture":"disabled","reason":...,"fix":
 naming the variable and the fix (never its value). In code,
 `fabric.captureStatus()` returns the same for that client. Set
 `FABRIC_WIRE_DIAGNOSTICS=stderr` to have the client print it once on stderr.
-To fix it, use `https://` with `OTEL_EXPORTER_OTLP_CERTIFICATE` for a private
-CA, or reach the Node through a loopback address (a port forward or a
+To fix it, use `https://` with `FABRIC_OTLP_CERTIFICATE` (or
+`OTEL_EXPORTER_OTLP_CERTIFICATE`) for a private CA, or reach the Node through a loopback address (a port forward or a
 sidecar). The check reads the environment: an exporter you construct with an
 explicit `url` is not checked.
 

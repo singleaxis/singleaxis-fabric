@@ -500,7 +500,7 @@
       }
     },
     {
-      "name": "node-agent-gets-the-explicit-api-variables",
+      "name": "node-agent-gets-the-explicit-api-variables-and-the-fabric-otlp-route",
       "project": "external",
       "environ": {},
       "command": [
@@ -512,6 +512,8 @@
       "expect": {
         "added": {
           "FABRIC_AGENT_ID": "support-agent",
+          "FABRIC_OTLP_CERTIFICATE": "{{dir}}/secrets/ca.crt",
+          "FABRIC_OTLP_ENDPOINT": "https://node.example.internal:4318",
           "FABRIC_RUN_ID": "g-8",
           "FABRIC_TENANT_ID": "acme"
         },
