@@ -5,8 +5,8 @@
 started page for Node.js, executed as written in a fresh ``node:24`` container with no
 Python, then held to G2.
 
-Before the clock (the prerequisites of §3.1 and the user's own agent): a ``node:24``
-container on the host network with Docker reachable, the agent's own project (a
+Before the clock (the prerequisites of §3.1 and the user's own agent): a ``node:24`` (slim)
+container with no Python, on the host network with Docker reachable, the agent's own project (a
 ``package.json`` and the fixture agent, ``scripts/ttfr/agents/fetch_tool_loop.mjs``), a
 fixture model server on ``my-llm.example.com`` over TLS (the agent trusts its CA with
 ``NODE_EXTRA_CA_CERTS``, an agent setting that exists without Fabric), and no Fabric Node
@@ -44,7 +44,9 @@ import ttfr  # noqa: E402 - this directory's harness helpers
 
 ROOT = ttfr.ROOT
 PAGE = ROOT / "docs" / "get-started" / "node.md"
-NODE_IMAGE = "node:24-bookworm@sha256:9d266751ca3d7fdbe651c878ffd5ad0a42fed49a18c283509267c97f025b7496"
+#: The slim variant: the full ``node:24-bookworm`` image ships Python 3, which G2's "no
+#: Python" environment must not have (checked before the clock, ``no_python``).
+NODE_IMAGE = "node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54"
 PATH_NAME = "laptop-node"
 #: G2 sets no time budget before zero-code Node.js capture; this bound only catches a hang.
 BUDGET_S = 600.0
@@ -81,6 +83,20 @@ def agent_project(project: Path) -> None:
     shutil.copy(HERE / "agents" / "fetch_tool_loop.mjs", project / "agent.mjs")
 
 
+#: The interpreters a Node.js-only machine does not have (§3.3: ``node:24``, no Python).
+PYTHONS = ("python3", "python")
+
+
+def no_python(container: str) -> None:
+    """Before the clock: the agent's environment has no Python, so nothing on the page can
+    lean on one (the npm launcher runs the full CLI from its image)."""
+    probe = " ; ".join(f"command -v {name}" for name in PYTHONS)
+    found = ttfr._sh(["docker", "exec", container, "sh", "-c", probe], check=False)
+    if found.stdout.strip():
+        raise ttfr.TtfrError(f"the Node.js image has Python ({found.stdout.strip()}); G2 "
+                             "runs without one: use a node image that ships none")  # fmt: skip
+
+
 def g2_checks(report: dict[str, Any], plan_output: str) -> list[str]:
     """What G2 asks beyond the steps passing."""
     failures: list[str] = []
@@ -89,7 +105,9 @@ def g2_checks(report: dict[str, Any], plan_output: str) -> list[str]:
     for command, text in G2_OUTPUTS:
         if text not in output:
             failures.append(f"{command} did not say {text!r}")
-    if "complete_for_declared_scope" in output and "FC-069" in output:
+    if ("complete_for_declared_scope" in output and "FC-069" in output) or (
+        "result: no problem found" in output
+    ):
         failures.append("verify reported the Node.js run as verified (a false pass)")
     if "unsupported_runtime" not in plan_output:
         failures.append("plan did not state the model-calls row unsupported_runtime")
@@ -141,6 +159,7 @@ def run_container(options: argparse.Namespace, work: Path) -> dict[str, Any]:
                   "-v", "/var/run/docker.sock:/var/run/docker.sock",
                   "-v", f"{work}:{work}", "-v", f"{tools}/docker:/usr/local/bin/docker:ro",
                   *flags, "-w", str(project), options.image, "sleep", "infinity"])  # fmt: skip
+        no_python(name)
         evicted = ttfr.evict_images(ttfr.pinned_fabric_images())
         report_file = work / "steps.json"
         done = subprocess.run(  # noqa: S603 - the docs runner of this repository

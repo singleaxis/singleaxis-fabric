@@ -416,10 +416,38 @@ def test_g2_needs_fc163_and_never_a_false_pass() -> None:
         for f in ttfr_node.g2_checks(false_pass, "unsupported_runtime")
     )
     assert any("plan" in f for f in ttfr_node.g2_checks(ok, "recorded"))
+    # verify's own pass line on a Node.js run is a false pass too.
+    passed = {"ok": True, "steps": [{"output_tail": "FC-163\nresult: no problem found"}]}
+    assert any("false pass" in f for f in ttfr_node.g2_checks(passed, "unsupported_runtime"))
     assert (
         ttfr_node.NODE_IMAGE.startswith("node:24")
         and "@sha256:" in ttfr_node.NODE_IMAGE
     )
+
+
+def test_g2_runs_in_a_node_image_without_python(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§3.3: ``node:24``, no Python. The full ``node:24-bookworm`` image ships Python 3
+    (regression: the job ran there), so the harness uses the slim image and refuses to
+    start the clock in an image that has one."""
+    assert "-slim@" in ttfr_node.NODE_IMAGE
+    calls: list[list[str]] = []
+
+    def found(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, "/usr/bin/python3\n", "")
+
+    monkeypatch.setattr(ttfr_node.ttfr, "_sh", found)
+    with pytest.raises(ttfr_node.ttfr.TtfrError, match="has Python"):
+        ttfr_node.no_python("c1")
+    assert calls[0][:3] == ["docker", "exec", "c1"]
+
+    def none(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(argv, 1, "", "")
+
+    monkeypatch.setattr(ttfr_node.ttfr, "_sh", none)
+    ttfr_node.no_python("c1")
 
 
 def test_ci_runs_the_node_page_and_keeps_ttfr_json() -> None:
