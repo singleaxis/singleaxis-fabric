@@ -4,8 +4,12 @@ One host runs the agent, the Fabric Node (with ingress groups and the content
 store) and the eBPF sensor in production mode, with Docker Compose.
 
 1. **Prerequisites and layout:** [what you need](../reference/manual-setup/production-setup.md#1-what-you-need).
-2. **Keys, tokens and certificates:** [generate them](../reference/manual-setup/production-setup.md#2-keys-tokens-and-certificates),
-   one token per ingress group, files readable by the Node's user only.
+2. **Keys, tokens and certificates, and the capture policy:**
+   `fabric init --production` with a [destination](destinations.md) generates
+   them, one token and client certificate per ingress group, writes the
+   capture policy into your project, and compiles the agent's settings and
+   the Node's (`.fabric/node.env`). By hand:
+   [generate them](../reference/manual-setup/production-setup.md#2-keys-tokens-and-certificates).
 3. **The Node:** [configure and start it](../reference/manual-setup/production-setup.md#3-the-node)
    behind the preflight check, with a destination of your own
    ([destinations](destinations.md)).
