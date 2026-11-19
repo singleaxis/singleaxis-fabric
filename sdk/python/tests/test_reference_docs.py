@@ -7,6 +7,8 @@ and settings table, and the variable table, and the variable table names exactly
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from fabric import cli
@@ -30,6 +32,9 @@ def test_every_variable_the_sdk_reads_is_documented_and_no_other() -> None:
     )
     for name in typescript_only:
         assert f'"{name}"' in typescript, name
+    # Every variable the TypeScript SDK or the npm launcher reads is documented as well.
+    read_by_typescript = set(re.findall(r"[\"'`](FABRIC_[A-Z0-9_]+)[\"'`]", typescript))
+    assert read_by_typescript <= documented, sorted(read_by_typescript - documented)
 
 
 def test_every_cli_command_has_a_section() -> None:
