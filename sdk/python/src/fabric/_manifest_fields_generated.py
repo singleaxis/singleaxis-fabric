@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-FIELD_REGISTRY_REVISION = "fabric.field-registry/v1@13"
+FIELD_REGISTRY_REVISION = "fabric.field-registry/v1@14"
 
 MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
     "fabric.self": (
@@ -55,7 +55,30 @@ MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
         "N07",
         "D31",
     ),
-    "wire.ts.undici": ("N01",),
+    "wire.ts.undici": (
+        "X08",
+        "X40",
+        "C34",
+        "C37",
+        "S10",
+        "S11",
+        "S29",
+        "N01",
+        "N07",
+        "D31",
+    ),
+    "wire.ts.node_http": (
+        "X08",
+        "X40",
+        "C34",
+        "C37",
+        "S10",
+        "S11",
+        "S29",
+        "N01",
+        "N07",
+        "D31",
+    ),
     "explicit.call_recorder": (
         "S10",
         "N01",

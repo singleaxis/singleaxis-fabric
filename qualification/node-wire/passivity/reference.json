@@ -1,0 +1,45 @@
+{
+  "schema": "fabric.node-wire-passivity-reference/v1",
+  "comment": "Spec 055 §9.2. The calibration reference, the gate budgets and the memory-bound parameters of the ts-wire-passivity job. reference_ns is the minimum of 30 runs of lib/common.mjs workload(), the median of three fresh processes, on the reference machine. A change to it, to the workload, to a budget or to a memory parameter is a reviewed diff, never a silent recalibration.",
+  "calibration": {
+    "workload": "20,000 Map.set and property updates and integer-to-string conversions (lib/common.mjs workload)",
+    "runs": 30,
+    "reference_ns": 930000,
+    "reference_machine": "Apple M5 laptop, Node 24.4.0, darwin-arm64",
+    "max_scale": 4,
+    "void_ratio": 2
+  },
+  "budgets": {
+    "hook_cost_ns": {
+      "matched": 50000,
+      "chunk": 2000,
+      "unmatched": 5000
+    },
+    "event_loop": {
+      "p99_ms": 2,
+      "max_ms": 25,
+      "utilization_delta": 0.05
+    }
+  },
+  "trials": {
+    "hook_cost": 30,
+    "self_test": 10
+  },
+  "memory": {
+    "comment": "Small configured bounds so that saturation is reached. Each arm runs `batches` equal batches; the first `warmup_batches` are warm-up. Per batch, the excess is the arm's RSS over the baseline arm's at the same batch. Bound on the excess: the shared buffers' maximum length plus entry_bytes per exchange slot (the hook's WeakMap entry and state object), the Fabric worker's isolate and slack for allocator noise. Linear growth: the last batch's excess may exceed the highest excess of the first half after warm-up by at most growth_bytes (a one-time allocator step that stays flat is not growth); the main thread's heap after GC may grow by at most heap_growth_bytes.",
+    "runtime": {
+      "maxInflightBytes": 16777216,
+      "maxRetainBytes": 1048576,
+      "initialPayloadBytes": 1048576,
+      "queueMaxItems": 512,
+      "maxExchanges": 2048
+    },
+    "entry_bytes": 512,
+    "worker_isolate_bytes": 25165824,
+    "slack_bytes": 16777216,
+    "growth_bytes": 8388608,
+    "batches": 10,
+    "warmup_batches": 2,
+    "heap_growth_bytes": 4194304
+  }
+}
