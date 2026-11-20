@@ -297,9 +297,19 @@ export class WireRuntime {
    * the change took effect, so a manifest effective after it never covers a position
    * allocated under the old state's promise. Allocation is one `Atomics.add`, so the read
    * is ordered with every isolate's allocations; nothing waits.
+   *
+   * The guarantee covers a hook that reads the state after it allocates (as the boundary
+   * test's producers do); a hook that read the old state before allocating above the cut
+   * recorded under the old promise, which a change to a lesser state only understates.
+   * A `change` that throws is no change: `undefined`, and nothing reaches the caller
+   * (it may be the agent's thread at install or uninstall).
    */
-  cut(change?: () => void): bigint {
-    change?.();
+  cut(change?: () => void): bigint | undefined {
+    try {
+      change?.();
+    } catch {
+      return undefined;
+    }
     return Atomics.add(this.i64, C_NEXT, 0n) - 1n;
   }
 

@@ -79,14 +79,14 @@ describe("manifest 0 and the chain on the allocator", () => {
     const { runtime, chain, epoch } = setup();
     const markers = [chain.initial(epoch)];
     for (let n = 0; n < 5; n++) runtime.allocate();
-    markers.push(chain.pointChanged(epoch, "mcp.client", "active", undefined, runtime.cut()));
+    markers.push(chain.pointChanged(epoch, "mcp.client", "active", undefined, runtime.cut()!));
     for (let n = 0; n < 3; n++) runtime.allocate(0);
     markers.push(
-      chain.pointChanged(epoch, "wire.py.httpx", "failed", "internal_error", runtime.cut()),
+      chain.pointChanged(epoch, "wire.py.httpx", "failed", "internal_error", runtime.cut()!),
     );
     // No allocation in between: the next change shares the cut, never goes back.
     markers.push(
-      chain.pointChanged(epoch, "mcp.client", "disabled", "hook_disabled", runtime.cut()),
+      chain.pointChanged(epoch, "mcp.client", "disabled", "hook_disabled", runtime.cut()!),
     );
     const docs = markers.map(manifestOf);
     expect(docs.map((d) => d.manifest_seq)).toEqual([0, 1, 2, 3]);
@@ -135,6 +135,33 @@ describe("manifest 0 and the chain on the allocator", () => {
     expect(chain.pointChanged(epoch, "mcp.client", "failed", "because", 1n)).toBe(undefined);
     expect(chain.internalErrors).toBe(3);
     expect(chain.ref!.manifestSeq).toBe(0);
+  });
+
+  it("keeps no state change that no manifest stated", () => {
+    const { chain, epoch } = setup();
+    chain.initial(epoch);
+    // An epoch outside int64 cannot be assembled: the change is refused, not kept.
+    const bad = 1n << 63n;
+    expect(chain.pointChanged(bad, "mcp.client", "active", undefined, 3n)).toBe(undefined);
+    expect(chain.classUncaptured(bad, "node_worker_unattached", 3n)).toBe(undefined);
+    expect(chain.internalErrors).toBe(2);
+    const later = manifestOf(
+      chain.pointChanged(epoch, "wire.py.httpx", "failed", "internal_error", 9n),
+    );
+    const mcp = later.capture_points.find((p: any) => p.id === "mcp.client");
+    expect([mcp.state, mcp.reason]).toEqual(["disabled", "hook_disabled"]); // as manifest 0
+    expect(later.uncaptured_classes).not.toContain("node_worker_unattached");
+  });
+
+  it("a change that throws is no cut and never reaches the caller", () => {
+    const { runtime } = setup();
+    runtime.allocate();
+    const cut = runtime.cut(() => {
+      throw new Error("state word unavailable");
+    });
+    expect(cut).toBe(undefined);
+    expect(runtime.nextSequence).toBe(1n); // the read-modify-write never ran
+    expect(runtime.cut()).toBe(0n);
   });
 
   it("orders uncaptured classes as the manifest lists them", () => {
@@ -198,7 +225,7 @@ describe("state changes at exact boundaries under concurrent producer isolates",
     Atomics.store(words, 0, 1);
     // Let the producers run, then change the state while they allocate.
     while (runtime.nextSequence < 40_000n) await new Promise((r) => setImmediate(r));
-    const cut = runtime.cut(() => Atomics.store(new Int32Array(state), 0, 1));
+    const cut = runtime.cut(() => Atomics.store(new Int32Array(state), 0, 1))!;
     const marker = chain.pointChanged(11n, "wire.py.httpx", "failed", "internal_error", cut);
     const results = await Promise.all(producers);
 

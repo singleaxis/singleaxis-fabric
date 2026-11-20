@@ -869,8 +869,15 @@ export class ManifestChain {
       ) {
         return undefined;
       }
-      this.states = { ...this.states, [point]: [state, reason] };
-      return this.#next(epoch, cut);
+      const previous = this.states;
+      this.states = { ...previous, [point]: [state, reason] };
+      try {
+        return this.#next(epoch, cut);
+      } catch (error) {
+        // No manifest states the change: a later one must not carry it from a later cut.
+        this.states = previous;
+        throw error;
+      }
     } catch {
       this.internalErrors++;
       return undefined;
@@ -887,8 +894,14 @@ export class ManifestChain {
       if (!CLASS_ORDER.includes(cls))
         throw new ManifestError("uncaptured class outside the vocabulary");
       if (this.uncaptured.includes(cls) && this.ref?.epoch === epoch) return undefined;
-      this.uncaptured = withClass(this.uncaptured, cls);
-      return this.#next(epoch, cut);
+      const previous = this.uncaptured;
+      this.uncaptured = withClass(previous, cls);
+      try {
+        return this.#next(epoch, cut);
+      } catch (error) {
+        this.uncaptured = previous; // as pointChanged
+        throw error;
+      }
     } catch {
       this.internalErrors++;
       return undefined;
