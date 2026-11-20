@@ -28,9 +28,10 @@ it never makes, applies, waits for or returns one.
   that did not load Fabric); the limits, privacy settings and key ids in
   force; and which earlier runs of this agent ended without closing their
   record. Manifests and the final heartbeat are written to the spool in the
-  format Python's drainer reads; periodic heartbeats every 30 seconds name
-  the latest manifest. No manifest field holds a path, a key, a token, a host
-  name or a list of installed packages.
+  format Python's drainer reads. Periodic heartbeats are built every 30
+  seconds and name the latest manifest; they are held until the Node.js
+  sender (a later unit) delivers them. No manifest field holds a path, a key,
+  a token, a host name or a list of installed packages.
 - **Node.js capture groundwork: content protection before anything is
   written (spec 055, unit 055-t8).** Still not installable from the package,
   and no Node.js build is released as qualified yet. Fabric's own worker
