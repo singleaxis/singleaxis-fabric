@@ -73,6 +73,10 @@ TARGETS: Mapping[str, Target] = {
     # plan, verify and show state what is reported. G2 sets no command budget; this
     # bound (up, run, verify, show) keeps the page from growing.
     "laptop-node": Target(commands=4, flags=0, lines=110),
+    # G3: 1 install + at most 4 commands (init --production, up, run, verify --production),
+    # the only inputs identifiers the customer owns, given as flags, and a production page
+    # of at most 200 lines to the first verified record.
+    "host-production": Target(commands=4, flags=3, lines=200),
     # Other languages, the shape pages: the install, then the read-only or offline
     # commands they show (plan, init, --print-env, --render), executed by the docs-pages
     # job of recorder CI. No budget of section 3.2 applies; these bounds keep them short.

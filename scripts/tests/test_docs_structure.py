@@ -62,10 +62,12 @@ EXECUTED_BY = {
     "laptop-python-provider": ".github/workflows/recorder-ci.yml",
     "laptop-node": ".github/workflows/recorder-ci.yml",
     "kubernetes": ".github/workflows/e2e.yml",
+    "host-production": ".github/workflows/e2e.yml",
 }
 #: The harness each Get started path runs in.
 SCRIPTS = {"laptop-node": "scripts/ttfr/ttfr_node.py",
-           "kubernetes": "scripts/ttfr/kubernetes/ttfr_kubernetes.py"}  # fmt: skip
+           "kubernetes": "scripts/ttfr/kubernetes/ttfr_kubernetes.py",
+           "host-production": "scripts/ttfr/ttfr_host_production.py"}  # fmt: skip
 LINK = re.compile(r"\]\(([^)\s]+)\)|^\[[^\]]+\]:\s*(\S+)", re.MULTILINE)
 
 

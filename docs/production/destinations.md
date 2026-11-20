@@ -16,7 +16,12 @@ credentials file you name by path.
 | `otlp` | your OTLP/HTTP collector | nowhere: model bodies are not kept, so decisions cannot be checked against them (`FC-173`) | `--otlp-endpoint`; optional `--otlp-ca-file`, `--otlp-headers-file` |
 
 The Node exports spans over OTLP only, so the S3 presets also name the
-collector spans go to. A file named by a flag must exist and be readable, and
+collector spans go to. Fabric cannot read spans back from your collector:
+`fabric verify` reads its canary through a small, bounded tap on the Node
+that only the canary's own ingress group writes to (never an agent's), and
+reads your runs from an export you give it with `--spans PATH`. Model bodies
+are read back from the S3 store with the credentials file you named (or the
+host's own identity for AWS S3). A file named by a flag must exist and be readable, and
 a credentials or headers file must be closed to other users (`FC-174`).
 Azure Blob and Google Cloud Storage are reached today through the `otlp`
 preset, to a collector of yours that writes there.
