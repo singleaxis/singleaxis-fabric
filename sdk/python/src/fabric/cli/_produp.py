@@ -83,7 +83,12 @@ def _service_certs(project: _project.Project, layout_preset: str, content: bool
 def _layout(project: _project.Project, facts: _sensor.HostFacts, sensor: _sensor.SensorPlan,
             prepared: _init.Prepared, header: bool) -> _prodtemplates.ProdLayout:  # fmt: skip
     """The production project's directories (the operator's own, 0700) and bindings."""
-    user, share_key = up._container_user(facts)
+    user, _ = up._container_user(facts)
+    if facts.euid == 0:
+        # Root runs `up`: the Node reads root's 0600 files (its tokens, the content key, a
+        # credentials file the customer named) as container root with every capability
+        # dropped, so no file of the customer's is re-owned or opened to a group.
+        user = "0:0"
     state = project.state_dir / "state"
     queue_dir = up._private_dir(state / "node-queue")
     destination = project.destination
@@ -91,14 +96,6 @@ def _layout(project: _project.Project, facts: _sensor.HostFacts, sensor: _sensor
     content = bool(project.resolved["capture.content"]) and preset in _project.CONTENT_PRESETS
     content_dirs = ({group: up._private_dir(state / f"node-content-queue-{group}")
                      for group in ("agent", "canary")} if content else {})  # fmt: skip
-    if share_key:
-        try:
-            for directory in (queue_dir, *content_dirs.values()):
-                os.chown(directory, _templates.NODE_IMAGE_GID, _templates.NODE_IMAGE_GID)
-            _secrets.share_node_key_with_image_group(project.secrets_dir,
-                                                     _templates.NODE_IMAGE_GID)  # fmt: skip
-        except OSError:
-            user = "0:0"  # root without chown (a user namespace): container root reads 0600
     up._private_dir(project.data_dir)
     (project.data_dir / "spans").mkdir(exist_ok=True)
     tap_dir = up._private_dir(state / "canary-tap")
