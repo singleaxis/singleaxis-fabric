@@ -35,6 +35,13 @@ import { SDK_VERSION } from "../version.js";
 import { type PayloadArena, SlotPool } from "./arena.js";
 import { ExchangeTable, JOB_EXCHANGE, JOB_RELEASING, type ExchangeJob } from "./exchange.js";
 import {
+  Heartbeats,
+  ManifestChain,
+  type ManifestTemplate,
+  MarkerQueue,
+  type PointState,
+} from "./manifest.js";
+import {
   type ContentGate,
   Protector,
   ROLE_REQUEST,
@@ -218,6 +225,11 @@ export interface FabricWorkerHandlers {
    * without a reason (`lossesUnattributed`).
    */
   loss?(loss: RuntimeLoss, context: FabricWorkerContext): void | Promise<void>;
+  /**
+   * Called once per loop pass (at least every {@link WORKER_TICK_MS}): the manifests'
+   * and heartbeats' clock. A handler that throws is ignored until the next pass.
+   */
+  tick?(context: FabricWorkerContext): void | Promise<void>;
 }
 
 /**
@@ -299,6 +311,13 @@ async function consume(
       }
     }
     growPools(pools);
+    if (handlers.tick !== undefined) {
+      try {
+        await handlers.tick(context);
+      } catch {
+        // the next pass tries again
+      }
+    }
     if (runtime.stopRequested) return;
     const waited = waitAsync(jobs.wakeWords, jobs.wakeIndex, seen, WORKER_TICK_MS);
     if (!waited.async) continue;
@@ -359,6 +378,15 @@ export interface PipelineConfig {
   /** The endpoints in the order the hook was given them (its slots store the index). */
   readonly endpoints: readonly { readonly endpointId: string; readonly providerName: string }[];
   readonly enrichment: Enrichment;
+  /**
+   * The capture manifest of this install (spec 055 §7.2): the template read once at
+   * install and the prior unsealed epochs the registration scan declared (manifest 0 of
+   * the registered epoch lists them). Absent: this pipeline spools no manifest.
+   */
+  readonly manifest?: {
+    readonly template: ManifestTemplate;
+    readonly unsealed: { readonly epochs: readonly bigint[]; readonly count: number };
+  };
 }
 
 const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
@@ -473,6 +501,17 @@ export interface PipelineStats {
   readonly outcomes: Readonly<Record<AdmitOutcome, number>>;
   readonly unreadable: number;
   readonly protection: ReturnType<Protector["stats"]> | undefined;
+  /** The manifest in force and the marker counters, when the pipeline has manifests. */
+  readonly manifests:
+    | {
+        readonly manifestSeq: number | undefined;
+        readonly held: number;
+        readonly spooled: number;
+        readonly dropped: number;
+        readonly beatsPending: number;
+        readonly internalErrors: number;
+      }
+    | undefined;
 }
 
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
@@ -503,11 +542,21 @@ export class CapturePipeline {
   /** A masking role has no service or transformation: its content is withheld (FW-032). */
   readonly #maskedWithheld: boolean = false;
   #unreadable = 0;
+  /** The install's manifests (spec 055 §7.2), when configured. */
+  readonly manifests: ManifestChain | undefined;
+  readonly heartbeats: Heartbeats | undefined;
+  /** Manifests and `final` waiting for the spool, written in order ahead of exchanges. */
+  readonly markers = new MarkerQueue();
+  #unsealed: { readonly epochs: readonly bigint[]; readonly count: number } | undefined;
 
   constructor(config: PipelineConfig, spool: Spool, sink: PipelineSink) {
     this.#config = config;
     this.#spool = spool;
     this.#sink = sink;
+    this.manifests =
+      config.manifest === undefined ? undefined : new ManifestChain(config.manifest.template);
+    this.heartbeats = this.manifests === undefined ? undefined : new Heartbeats(this.manifests);
+    this.#unsealed = config.manifest?.unsealed;
     const policy = config.policy === undefined ? undefined : new DeploymentPolicy(config.policy);
     this.gate = decideGate({
       node: config.node,
@@ -546,11 +595,100 @@ export class CapturePipeline {
   }
 
   stats(): PipelineStats {
+    const chain = this.manifests;
     return {
       outcomes: { ...this.#outcomes },
       unreadable: this.#unreadable,
       protection: this.protector?.stats(),
+      manifests:
+        chain === undefined
+          ? undefined
+          : {
+              manifestSeq: chain.ref?.manifestSeq,
+              held: this.markers.held.length,
+              spooled: this.markers.spooled,
+              dropped: this.markers.dropped,
+              beatsPending: this.heartbeats?.pending.length ?? 0,
+              internalErrors: chain.internalErrors,
+            },
     };
+  }
+
+  // ------------------------------------------------------------------ manifests (§7.2)
+
+  /**
+   * Manifest 0 of `epoch`, once, queued ahead of anything else this pipeline spools in
+   * that epoch (`after_source_sequence = -1`: it precedes position 0 whatever was
+   * allocated meanwhile). Only the registered epoch's manifest 0 declares the prior
+   * unsealed epochs.
+   */
+  #ensureManifest(epoch: bigint): void {
+    const chain = this.manifests;
+    if (chain === undefined || chain.ref?.epoch === epoch) return;
+    const unsealed = this.#unsealed;
+    this.#unsealed = undefined;
+    this.markers.queue(chain.initial(epoch, unsealed));
+  }
+
+  /**
+   * The Fabric worker's tick (at most every 100 ms): manifest 0 when the epoch has none,
+   * a periodic heartbeat when one is due (`last`: the last allocated position), and any
+   * held marker to the spool. Never throws.
+   */
+  tick(epoch: bigint, last: bigint): void {
+    try {
+      this.#ensureManifest(epoch);
+      this.heartbeats?.tick(epoch, last);
+      this.markers.pump(this.#spool);
+    } catch {
+      // a manifest not written leaves its epoch unverified; never the agent's problem
+    }
+  }
+
+  /**
+   * A capture point changed state, effective after `cut` (`WireRuntime.cut`): the next
+   * chained manifest is spooled. Never throws.
+   */
+  pointChanged(
+    epoch: bigint,
+    point: string,
+    state: PointState,
+    reason: string | undefined,
+    cut: bigint,
+  ): void {
+    try {
+      this.#ensureManifest(epoch);
+      this.markers.queue(this.manifests?.pointChanged(epoch, point, state, reason, cut));
+      this.markers.pump(this.#spool);
+    } catch {
+      // as tick
+    }
+  }
+
+  /** A model-traffic class became uncaptured after `cut` (`node_worker_unattached`). */
+  classUncaptured(epoch: bigint, cls: string, cut: bigint): void {
+    try {
+      this.#ensureManifest(epoch);
+      this.markers.queue(this.manifests?.classUncaptured(epoch, cls, cut));
+      this.markers.pump(this.#spool);
+    } catch {
+      // as tick
+    }
+  }
+
+  /**
+   * The `final` heartbeat of `epoch` at `last`, after every position is settled (orderly
+   * close only). `true` when it and every earlier marker are spooled.
+   */
+  final(epoch: bigint, last: bigint): boolean {
+    try {
+      this.#ensureManifest(epoch);
+      this.markers.queue(this.heartbeats?.final(epoch, last));
+      this.markers.pump(this.#spool);
+      return this.markers.held.length === 0 && this.markers.dropped === 0;
+    } catch {
+      return false;
+    }
   }
 
   async close(): Promise<void> {
@@ -627,6 +765,9 @@ export class CapturePipeline {
         this.#unreadable += 1;
       } else {
         this.#noticeDisabled(epoch);
+        // The epoch's manifests go to the spool ahead of its exchanges.
+        this.#ensureManifest(epoch);
+        this.markers.pump(this.#spool);
         const prepared = await prepareExchange(
           captured,
           {
@@ -639,7 +780,10 @@ export class CapturePipeline {
         );
         const entry = exchangeEntry(captured.sourceId, epoch, this.#config.serviceName, prepared);
         outcome = admitEntries(this.#spool, [entry])[0]!;
-        if (outcome === "spooled") this.#sink.written?.(captured, prepared.span);
+        if (outcome === "spooled") {
+          this.heartbeats?.noteActivity();
+          this.#sink.written?.(captured, prepared.span);
+        }
       }
     } catch {
       outcome = "internal_error";
@@ -680,13 +824,15 @@ function rootTraceId(): string {
 /**
  * The Fabric worker's handlers for a pipeline: each completed exchange goes through
  * {@link CapturePipeline.handle} under the runtime's current epoch; its losses go to the
- * runtime's loss ring.
+ * runtime's loss ring; each loop pass ticks the manifests and heartbeats at the last
+ * allocated position.
  */
 export function pipelineHandlers(pipeline: CapturePipeline): FabricWorkerHandlers {
   return {
     job: async (job, context) => {
       await pipeline.handle(job, context.exchanges.arena, context.runtime.epoch);
     },
+    tick: ({ runtime }) => pipeline.tick(runtime.epoch, runtime.nextSequence - 1n),
   };
 }
 
