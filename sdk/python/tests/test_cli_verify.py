@@ -320,8 +320,10 @@ def test_verify_failures_name_the_cause(lab: dict[str, Any]) -> None:
     assert code == 1 and "FC-050" in finding["detail"]
     code, _, report = _verify_now(lab, "no-such-run")
     assert code == 1 and "FC-067" in _ids(report)
-    with pytest.raises(Exception, match="FC-011"):
+    # --production on a local project names the two commands that make it production.
+    with pytest.raises(Exception, match="FC-004") as refused:
         _verify.run(parse(["verify", "--production"]), lab["shell"], lab["project"])
+    assert "fabric init --production" in str(refused.value.findings[0].detail)  # type: ignore[attr-defined]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")

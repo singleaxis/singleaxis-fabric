@@ -363,7 +363,14 @@ def test_the_canary_binding_is_its_own_source_token_and_certificate(
         "FABRIC_OTLP_HEADERS_FILE",
         "FABRIC_OTLP_CLIENT_CERTIFICATE",
         "FABRIC_OTLP_CLIENT_KEY",
+        # Its own ingress group's listeners and its own spool (never the agent's).
+        "FABRIC_OTLP_ENDPOINT",
+        "FABRIC_WIRE_CONTENT_ENDPOINT",
+        "FABRIC_WIRE_SPOOL_DIR",
     }
+    assert canary["FABRIC_OTLP_ENDPOINT"] == "https://localhost:4320"
+    assert canary["FABRIC_WIRE_CONTENT_ENDPOINT"] == "https://localhost:4321/v1/logs"
+    assert canary["FABRIC_WIRE_SPOOL_DIR"] == str(project / ".fabric" / "state" / "canary-spool")
     assert canary["FABRIC_SOURCE_ID"] == "fabric-canary"
     assert canary["FABRIC_OTLP_HEADERS_FILE"] == str(secrets / "canary.headers")
     _, settings = _node_env(project)
@@ -568,17 +575,17 @@ def test_end_of_input_at_the_prompt_stops_init_and_writes_nothing(
     assert not (project / "fabric.yaml").exists()
 
 
-def test_doctor_on_a_production_project_does_not_send_the_operator_to_fabric_up(
+def test_doctor_and_init_send_a_production_project_to_fabric_up(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`fabric up` refuses the production profile in this release (FC-011), so `doctor`
-    names the manual route instead of FC-048's `run fabric up`."""
-    _json(["init", "--production"], capsys)
+    """`fabric up` starts the single-host production shape (WP8-24): `init` names it as the
+    next command and `doctor` says the Node is not started yet (FC-048's `fabric up`)."""
+    _, out, err = _run(["init", "--production"], capsys)
+    assert "next: fabric up" in out + err
+    assert "fabric verify --production" in out + err
     _, out, err = _run(["doctor"], capsys)
-    assert "FC-048" not in out + err
-    assert "production-setup.md" in out + err
-    up = _json(["up"], capsys)
-    assert "FC-011" in _ids(up)
+    assert "FC-048" in out + err
+    assert "production-setup.md" not in out + err
 
 
 # ---------------------------------------------------------------- rotation (§7.3)
