@@ -74,17 +74,19 @@ def parse_authorization(text: str, path: Path) -> tuple[str | None, list[Finding
     return found, []
 
 
+def service_cert_stems(preset: str, content: bool) -> list[str]:
+    """The server certificates (file stems) of the services `up` runs beside the Node for
+    this destination: the trial receiver and store, or the canary tap."""
+    if preset == "trial":
+        return ["trial-otlp", "trial-s3"] if content else ["trial-otlp"]
+    return ["canary-tap"]
+
+
 def _service_certs(project: _project.Project, layout_preset: str, content: bool
                    ) -> list[_secrets.SecretInfo]:  # fmt: skip
     """The server certificates of the services beside the Node, kept current."""
-    stems = []
-    if layout_preset == "trial":
-        stems.append("trial-otlp")
-        if content:
-            stems.append("trial-s3")
-    else:
-        stems.append("canary-tap")
-    return [_secrets.ensure_service_cert(project.secrets_dir, stem) for stem in stems]
+    return [_secrets.ensure_service_cert(project.secrets_dir, stem)
+            for stem in service_cert_stems(layout_preset, content)]  # fmt: skip
 
 
 def _layout(project: _project.Project, facts: _sensor.HostFacts, sensor: _sensor.SensorPlan,

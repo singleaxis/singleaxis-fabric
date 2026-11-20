@@ -511,6 +511,19 @@ def test_certificates_warn_before_expiry_and_fail_after(project: Path) -> None:
     ]
 
 
+def test_only_the_certificates_of_services_in_use_are_checked(project: Path) -> None:
+    """A service certificate an earlier destination left behind is used by nothing and
+    `fabric up` (FC-190's fix) does not renew it, so it must not age into a FAIL."""
+    _init("--destination", "trial")
+    loaded = _load(project)
+    _secrets.ensure_service_cert(loaded.secrets_dir, "trial-otlp")
+    _secrets.ensure_service_cert(loaded.secrets_dir, "canary-tap")  # left by another preset
+    soon = dt.datetime.now(dt.UTC) + dt.timedelta(days=80)
+    labels = {c.detail.split(" ")[0] for c in _prodchecks._certificates(loaded, soon)}
+    assert "trial-otlp-cert" in labels
+    assert "canary-tap-cert" not in labels
+
+
 def test_the_clock_check_reads_the_kernel_only_on_linux(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "platform", "darwin")
     assert _prodchecks.clock_synchronized() is None

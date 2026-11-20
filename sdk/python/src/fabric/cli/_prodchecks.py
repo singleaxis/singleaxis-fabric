@@ -257,11 +257,19 @@ def _content(project: _project.Project, env: Mapping[str, str]) -> list[Check]:
 
 
 def _certificates(project: _project.Project, now: dt.datetime) -> list[Check]:
+    from . import _produp  # noqa: PLC0415 - the services `up` runs for this destination
+
     directory = project.secrets_dir
     names = [(_secrets.CA_CERT, "ca"), (_secrets.NODE_CERT, "node-cert")]
     names += [(_secrets.client_pair(source)[0], f"{source}-client-cert")
               for source in _secrets.SOURCES]  # fmt: skip
-    names += [(f"{stem}.crt", label) for stem, _, label in _secrets.SERVICE_CERTS]
+    # Only the services this destination runs: a certificate an earlier preset left behind
+    # is used by nothing, and `fabric up` (the fix) renews only the ones in use.
+    preset = str(project.destination.get("preset"))
+    content = bool(project.resolved["capture.content"]) and preset in _project.CONTENT_PRESETS
+    in_use = set(_produp.service_cert_stems(preset, content))
+    names += [(f"{stem}.crt", label) for stem, _, label in _secrets.SERVICE_CERTS
+              if stem in in_use]  # fmt: skip
     out = []
     for name, label in names:
         path = directory / name
