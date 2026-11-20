@@ -926,7 +926,11 @@ def _ask_on_tty(options: argparse.Namespace) -> Ask | None:
     def ask(prompt: str) -> str:
         sys.stderr.write(prompt)
         sys.stderr.flush()
-        return sys.stdin.readline()
+        line = sys.stdin.readline()
+        if not line:  # end of input (Ctrl-D): stop asking, write nothing
+            sys.stderr.write("\n")
+            raise CliError([Finding("FC-165", "no answer was given on the terminal")])
+        return line
 
     return ask
 

@@ -11,6 +11,7 @@ import argparse
 import base64
 import hashlib
 import hmac
+import io
 import json
 import os
 import re
@@ -27,6 +28,7 @@ from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from fabric import cli
 from fabric.cli import _config, _init, _project, _secrets
+from fabric.cli._report import CliError
 from fabric.deployment_policy import DeploymentPolicy
 
 from ._cli_support import mode
@@ -541,6 +543,42 @@ def test_on_a_tty_init_asks_for_the_destination_and_its_identifiers_only(
         "otlp_endpoint": "https://otel.acme.example",
     }
     assert "FC-172" not in [f.id for f in report.findings]
+
+
+def test_end_of_input_at_the_prompt_stops_init_and_writes_nothing(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ctrl-D at an identifier prompt ends `init` with the destination flags named,
+    instead of asking forever."""
+
+    class _Tty(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr(sys, "stdin", _Tty("s3\n"))  # then end of input at the bucket
+    monkeypatch.setattr(sys, "stderr", _Tty())
+    parser = argparse.ArgumentParser()
+    _init.add_arguments(parser)
+    options = parser.parse_args(["--production"])
+    options.config = options.project = None
+    options.json = options.quiet = False
+    with pytest.raises(CliError) as raised:
+        _init.run(options)
+    assert [f.id for f in raised.value.findings] == ["FC-165"]
+    assert not (project / "fabric.yaml").exists()
+
+
+def test_doctor_on_a_production_project_does_not_send_the_operator_to_fabric_up(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`fabric up` refuses the production profile in this release (FC-011), so `doctor`
+    names the manual route instead of FC-048's `run fabric up`."""
+    _json(["init", "--production"], capsys)
+    _, out, err = _run(["doctor"], capsys)
+    assert "FC-048" not in out + err
+    assert "production-setup.md" in out + err
+    up = _json(["up"], capsys)
+    assert "FC-011" in _ids(up)
 
 
 # ---------------------------------------------------------------- rotation (§7.3)
