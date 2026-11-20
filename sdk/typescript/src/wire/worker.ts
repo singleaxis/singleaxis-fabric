@@ -226,8 +226,9 @@ export interface FabricWorkerHandlers {
    */
   loss?(loss: RuntimeLoss, context: FabricWorkerContext): void | Promise<void>;
   /**
-   * Called once per loop pass (at least every {@link WORKER_TICK_MS}): the manifests'
-   * and heartbeats' clock. A handler that throws is ignored until the next pass.
+   * Called once per loop pass, and between jobs whenever {@link WORKER_TICK_MS} passed
+   * since the last call, so a sustained job stream cannot starve it: the manifests' and
+   * heartbeats' clock. A handler that throws is ignored until the next call.
    */
   tick?(context: FabricWorkerContext): void | Promise<void>;
 }
@@ -276,6 +277,19 @@ async function consume(
   const { runtime, exchanges } = context;
   const jobs = runtime.jobs;
   const pools = [exchanges.arena.slabs, exchanges.arena.vectors, exchanges.pool];
+  let lastTick = performance.now();
+  // The manifests' and heartbeats' clock: once per loop pass, and every WORKER_TICK_MS
+  // while a sustained job stream keeps the pass from ending, so a busy source still
+  // beats and its held markers still reach the spool.
+  const tick = async (): Promise<void> => {
+    lastTick = performance.now();
+    if (handlers.tick === undefined) return;
+    try {
+      await handlers.tick(context);
+    } catch {
+      // the next pass tries again
+    }
+  };
   for (;;) {
     const seen = Atomics.load(jobs.wakeWords, jobs.wakeIndex);
     for (let record = jobs.peek(); record !== undefined; record = jobs.peek()) {
@@ -299,6 +313,7 @@ async function consume(
       }
       jobs.commit();
       growPools(pools);
+      if (performance.now() - lastTick >= WORKER_TICK_MS) await tick();
     }
     if (handlers.loss !== undefined) {
       for (let loss = runtime.peekLoss(); loss !== undefined; loss = runtime.peekLoss()) {
@@ -311,13 +326,7 @@ async function consume(
       }
     }
     growPools(pools);
-    if (handlers.tick !== undefined) {
-      try {
-        await handlers.tick(context);
-      } catch {
-        // the next pass tries again
-      }
-    }
+    await tick();
     if (runtime.stopRequested) return;
     const waited = waitAsync(jobs.wakeWords, jobs.wakeIndex, seen, WORKER_TICK_MS);
     if (!waited.async) continue;

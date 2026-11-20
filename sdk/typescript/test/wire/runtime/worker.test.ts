@@ -128,6 +128,17 @@ describe("starting the Fabric worker", () => {
     expect(stats.workerRestarts).toBe(0); // a failing handler does not crash the worker
   });
 
+  it("ticks the manifests' clock when idle and through a sustained job stream", async () => {
+    const { fabric, table, report } = start();
+    fabric.start();
+    await until(() => Atomics.load(report, 14) >= 2); // idle: once per loop pass
+    // 20 jobs of 25 ms each keep the queue non-empty for about 500 ms: the loop pass
+    // never ends, yet the tick still runs between jobs every WORKER_TICK_MS.
+    for (let n = 0; n < 20; n++) send(table, 0xd0);
+    await until(() => Atomics.load(report, 0) === 20, 10_000);
+    expect(Atomics.load(report, 15)).toBeGreaterThanOrEqual(2);
+  });
+
   it("is not the Fabric worker anywhere else: the loop does not start", () => {
     expect(isFabricWorkerThread()).toBe(false);
     expect(runFabricWorker()).toBeUndefined();

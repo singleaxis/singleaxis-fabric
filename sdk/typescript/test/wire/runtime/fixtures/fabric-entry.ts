@@ -12,6 +12,8 @@ import { isFabricWorkerThread, runFabricWorker } from "../../../../src/wire/work
 
 const CRASH_ONCE = 0xee;
 const CRASH_ALWAYS = 0xef;
+/** A job the handler takes 25 ms over: a run of them is a sustained job stream. */
+const SLOW = 0xd0;
 
 function crash(): Promise<void> {
   setImmediate(() => {
@@ -21,11 +23,12 @@ function crash(): Promise<void> {
 }
 
 void runFabricWorker({
-  job(job, { runtime, exchanges, snapshot }) {
+  async job(job, { runtime, exchanges, snapshot }) {
     const report = new Int32Array((snapshot as { report: SharedArrayBuffer }).report);
     const generation = runtime.workerGeneration;
     if (job.meta[0] === CRASH_ALWAYS) return crash();
     if (job.meta[0] === CRASH_ONCE && generation === 1) return crash();
+    if (job.meta[0] === SLOW) await new Promise((resolve) => setTimeout(resolve, 25));
     // A stray line from the worker must never reach the agent's stdout or stderr.
     console.log("f055-t4 stray stdout line");
     console.error("f055-t4 stray stderr line");
@@ -51,5 +54,11 @@ void runFabricWorker({
     Atomics.store(report, 12, Number(loss.segmentLo));
     Atomics.store(report, 13, loss.reason === "queue_full" ? 1 : 0);
     Atomics.add(report, 10, 1);
+  },
+  tick({ runtime, snapshot }) {
+    const report = new Int32Array((snapshot as { report: SharedArrayBuffer }).report);
+    Atomics.add(report, 14, 1);
+    // A tick while jobs wait: the job stream did not starve the clock.
+    if (runtime.stats().queuedJobs > 0) Atomics.add(report, 15, 1);
   },
 });
