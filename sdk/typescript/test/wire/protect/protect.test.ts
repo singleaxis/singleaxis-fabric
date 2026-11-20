@@ -351,6 +351,27 @@ describe("redaction service failures withhold (protection_failed)", () => {
     });
   }
 
+  it("masked_only withholds on the same failures (no golden: the descriptors differ only in mode)", async () => {
+    for (const [, handler, extra] of cases) {
+      const failing = await service(handler);
+      const prepared = await run("masked_only", {
+        maxBodyBytes: 4096,
+        transformations: transforms,
+        redaction: { endpoint: failing.endpoint, ...extra },
+      });
+      expect(prepared.objects.map((o) => o.descriptor.status_reason)).toEqual([
+        "protection_failed",
+        "protection_failed",
+      ]);
+      expect(prepared.objects.map((o) => o.descriptor.privacy_mode)).toEqual([
+        "masked_only",
+        "masked_only",
+      ]);
+      expect(prepared.objects.every((o) => o.data.byteLength === 0)).toBe(true);
+      expectNoOriginal(prepared);
+    }
+  });
+
   it("connection error", async () => {
     const prepared = await run("redact", {
       transformations: transforms,

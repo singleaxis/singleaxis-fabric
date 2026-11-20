@@ -96,6 +96,7 @@ describe("isolation of PROTECT", () => {
         expect(bytes, path).not.toContain(canary);
       }
     },
+    60_000, // the child's own 30 s wait must not outlive vitest's 5 s default
   );
 
   it("a CPU-bound Fabric worker does not move the hook medians", async () => {
