@@ -15,7 +15,7 @@ ARG GO_VERSION=1.26
 # ---------- builder ---------------------------------------------------------
 
 # Pinned by digest: a moved tag must not silently change the builder toolchain.
-FROM golang:${GO_VERSION}-bookworm@sha256:fe3da92a5cb2881e4aa75e625cb0b7c50571632fb4cf340cbe53e6ccdcffdd51 AS builder
+FROM golang:${GO_VERSION}-bookworm@sha256:dc40a13b61304647ed7e5d581d246b86413dfc29d63c6d018310feb93cd98fc0 AS builder
 
 # A digest takes precedence over the tag, so changing GO_VERSION alone would
 # otherwise still select the pinned image while misreporting the toolchain.

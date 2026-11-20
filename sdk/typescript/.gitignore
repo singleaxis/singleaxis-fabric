@@ -3,3 +3,4 @@ dist/
 dist-package/
 *.tsbuildinfo
 coverage/
+prebuilds-build/
