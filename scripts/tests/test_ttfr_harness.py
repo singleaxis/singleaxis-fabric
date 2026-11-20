@@ -484,4 +484,9 @@ def test_host_production_fails_on_a_verify_failure_or_the_sensor_off() -> None:
     verdict = {"failures": [], "ok": True}
     host._judge(verdict, host.production_summary(report), require_sensor=False)
     assert verdict["ok"] is False and "FC-181" in str(verdict["failures"])
+    # No JSON report (a crash or refusal), or a non-zero exit, is never a pass.
+    for broken in ({"exit_code": 2, "error": "Traceback ..."}, {"exit_code": 1}):
+        verdict = {"failures": [], "ok": True}
+        host._judge(verdict, host.production_summary(broken), require_sensor=False)
+        assert verdict["ok"] is False, broken
     assert host.BUDGET_S == 420.0 and host.PATH_NAME == "host-production"

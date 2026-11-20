@@ -110,9 +110,12 @@ def production_summary(report: Mapping[str, Any]) -> dict[str, Any]:
         for f in report.get("findings") or []
         if f.get("severity") == "error"
     ]
-    return {"exit_code": report.get("exit_code"), "outcomes": outcomes, "findings": findings,
-            "errors": errors,
-            "failed_checks": sorted(k for k, v in outcomes.items() if v == "fail")}  # fmt: skip
+    summary = {"exit_code": report.get("exit_code"), "outcomes": outcomes, "findings": findings,
+               "errors": errors,
+               "failed_checks": sorted(k for k, v in outcomes.items() if v == "fail")}  # fmt: skip
+    if "error" in report:  # the CLI printed no JSON report (a crash, a refusal)
+        summary["error"] = str(report["error"])
+    return summary
 
 
 def run_page(options: argparse.Namespace, work: Path) -> dict[str, Any]:
@@ -178,6 +181,12 @@ def run_page(options: argparse.Namespace, work: Path) -> dict[str, Any]:
 def _judge(summary: dict[str, Any], production: Mapping[str, Any], *,
            require_sensor: bool) -> None:  # fmt: skip
     failures = summary["failures"]
+    if production.get("error"):
+        failures.append(
+            "verify --production --json gave no report: " + production["error"]
+        )
+    elif production["exit_code"] != 0:
+        failures.append(f"verify --production exited {production['exit_code']}")
     if production["failed_checks"] or production["errors"]:
         failures.append(
             "verify --production reported a FAIL: "
