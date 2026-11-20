@@ -1108,6 +1108,157 @@ exists, and fabric init never rewrites it.
 Fix: set deployment.image_digest in the policy file the detail names to the digest you passed (the
 file is yours to edit), then run `fabric init` again to check it.
 
+### FC-176
+
+`export_authorization_missing`, error: the span destination is given no Authorization header, so the
+Node would deliver records unauthenticated.
+
+Fix: give your collector's headers file, one line Authorization=Bearer%20TOKEN in a 0600 file:
+`fabric init --otlp-headers-file PATH`, then `fabric up`.
+
+### FC-177
+
+`sensor_id_key_mode`, warning: the host sensor reads its id key only as a file of mode 0400 or 0440;
+the referenced id key has another mode, so the sensor stays off.
+
+Fix: chmod 0400 the id key file the detail names (it stays yours), then run `fabric up` again.
+
+### FC-180
+
+`production_export_endpoint`, error: the span destination is not a valid https URL; production
+egress requires https.
+
+Fix: set your collector's https:// URL, without user info, query or fragment: `fabric init
+--otlp-endpoint URL`, then `fabric up`.
+
+### FC-181
+
+`production_token_file`, error: an ingress group's token file is missing, empty, holds more than one
+line or ends with a newline, or other users can read it.
+
+Fix: run `fabric init` to generate a missing token, or `fabric init --rotate tokens`; a token file
+is one line with no trailing newline, mode 0600.
+
+### FC-182
+
+`production_tokens_shared`, error: two ingress groups hold the same token bytes, so one group's
+sender could present as another's source.
+
+Fix: give every group its own token: `fabric init --rotate tokens`, then `fabric up`, and restart
+agents and the sensor.
+
+### FC-183
+
+`production_source_id`, error: an ingress group's source id is missing or not an s- pseudonym of 32
+hex characters.
+
+Fix: run `fabric init` again: it derives every source id from the id key and the source labels.
+
+### FC-184
+
+`production_source_ids_shared`, error: two ingress groups bind the same source id, so the Node could
+not tell their records apart.
+
+Fix: give the agent an id of its own (`fabric init --agent ID`, not the canary's or the sensor's
+label), then `fabric up`.
+
+### FC-185
+
+`production_tenant`, error: the bound tenant id is missing or not a safe id.
+
+Fix: set the tenant to letters, digits, dot, underscore or dash, at most 128: `fabric init --tenant
+ID`, then `fabric up`.
+
+### FC-186
+
+`production_receiver_tls`, error: an ingress-group listener of the rendered Node configuration
+serves no TLS.
+
+Fix: run `fabric up` again to render the Node configuration; never edit .fabric/compose by hand.
+
+### FC-187
+
+`production_content_key`, error: the Node content key is missing or does not hold a 32-byte key (raw
+or base64).
+
+Fix: move the bad file aside and run `fabric init` to generate a new content key; content sealed
+with the old key needs it to be read.
+
+### FC-188
+
+`production_content_store`, error: the content store settings are unusable: the bucket name, the
+region, an https endpoint or server-side encryption (aws:kms or AES256).
+
+Fix: correct them with `fabric init --bucket NAME --region REGION` (and `--endpoint https://...` for
+an S3-compatible store), then `fabric up`.
+
+### FC-189
+
+`production_spool_key`, error: the agent's spool key is missing or does not hold a 32-byte key, so
+the spool cannot be encrypted.
+
+Fix: move the bad file aside and run `fabric init` to generate a new spool key (records still
+spooled under the old key are lost).
+
+### FC-190
+
+`certificate_expires_soon`, warning: a generated certificate expires within 14 days.
+
+Fix: run `fabric up` (it renews the Node's and its services' certificates); for client certificates
+`fabric init --rotate client-certs`, then restart agents and the sensor.
+
+### FC-191
+
+`certificate_expired`, error: a generated certificate has expired, so TLS with it fails.
+
+Fix: run `fabric up` to renew the Node's and its services' certificates, or `fabric init --rotate
+client-certs` (`--rotate ca` for the CA), then restart agents and the sensor.
+
+### FC-192
+
+`production_node_image_skew`, warning: the running Fabric Node's image is not the one this CLI
+release pins.
+
+Fix: run `fabric up` to apply this release's pinned images (unset FABRIC_NODE_IMAGE unless you are
+testing your own build).
+
+### FC-193
+
+`production_sensor_off`, warning: the host sensor is not running in production mode bound to its own
+ingress group, so host evidence is not recorded.
+
+Fix: on Linux with eBPF, run `fabric up` as root or with a delegated cgroup; `fabric doctor` says
+why the sensor did not start.
+
+### FC-194
+
+`clock_unsynchronized`, warning: this host's clock is not synchronized, so record times may be off
+and ordering across hosts uncertain.
+
+Fix: turn on time synchronization (systemd-timesyncd, chrony or ntpd) and check it with
+`timedatectl`.
+
+### FC-195
+
+`production_not_started`, error: this project's production Node was not started by `fabric up`, so
+its configuration cannot be checked.
+
+Fix: run `fabric up`, then `fabric verify --production`.
+
+### FC-196
+
+`production_checks_passed`, info: every production check passed.
+
+Fix: none needed.
+
+### FC-197
+
+`canary_tap_empty`, error: the canary's spans did not reach the canary tap, so delivery through the
+Node cannot be read back.
+
+Fix: read the Node's log (`docker logs` of the project's fabric-node container), then run `fabric
+up` again; `fabric doctor` names known errors.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001
