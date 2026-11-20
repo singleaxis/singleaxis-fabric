@@ -215,7 +215,53 @@ function roleTable() {
     );
 }
 
+/**
+ * The capture manifest's per-build tables (spec 050 §3.8, spec 055 §7.2), as Python's
+ * `_manifest_fields_generated.py` (scripts/contracts/generate_p0_contracts.py
+ * `build_supplies`): each point's registry `supplies` restricted to fields whose phase
+ * starts with `built`, and each point's fixed manifest columns (Python `_manifest.POINTS`).
+ */
+function manifestFields() {
+    const pointsSource =
+        "contracts/coverage/v1/registry/capture-points-v1.json";
+    const fieldsSource =
+        "contracts/coverage/v1/registry/field-registry-v1.json";
+    const points = readJson(pointsSource);
+    const fields = readJson(fieldsSource);
+    const built = new Set(
+        fields.fields
+            .filter((f) => f.phase.startsWith("built"))
+            .map((f) => f.id),
+    );
+    const supplies = {};
+    const specs = {};
+    for (const point of points.capture_points) {
+        supplies[point.id] = point.supplies.filter((id) => built.has(id));
+        specs[point.id] = {
+            kind: point.kind,
+            process_global: point.process_global.startsWith("yes"),
+            opt_in: point.activation.includes("opt-in"),
+        };
+    }
+    return (
+        HEADER +
+        `// Sources: ${pointsSource} and ${fieldsSource}.\n` +
+        "// The capture manifest's per-build tables (spec 050 §3.8, spec 055 §7.2): what each\n" +
+        "// capture point supplies in this build (the registry's `supplies`, a superset, restricted\n" +
+        "// to fields whose phase is `built`; Python's _manifest_fields_generated.py) and each\n" +
+        "// point's fixed manifest columns. A test keeps it equal to the registries and to Python.\n\n" +
+        `export const FIELD_REGISTRY_REVISION = ${JSON.stringify(`fabric.field-registry/v1@${fields.registry_revision}`)};\n\n` +
+        "/** Point id -> the field ids this build supplies through it. */\n" +
+        `export const MANIFEST_FIELDS: Readonly<Record<string, readonly string[]>> = ${literal(supplies)};\n\n` +
+        "/** Point id -> its manifest `kind`, `process_global` and `opt_in` columns. */\n" +
+        "export const MANIFEST_POINTS: Readonly<\n" +
+        "  Record<string, { readonly kind: string; readonly process_global: boolean; readonly opt_in: boolean }>\n" +
+        `> = ${literal(specs)};\n`
+    );
+}
+
 const OUTPUTS = {
+    "manifest-fields.generated.ts": manifestFields,
     "roles.generated.ts": roleTable,
     "endpoint-table.generated.ts": endpointTable,
     "catalogue.generated.ts": catalogue,
