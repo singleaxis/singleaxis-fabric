@@ -242,8 +242,13 @@ function largeShapes() {
     const result = child("large.mjs", common).json;
     const ceilingMs = REFERENCE.budgets.large_shapes.max_single_ms;
     let worst = 0;
-    for (const deliveries of Object.values(result.shapes)) {
-        for (const row of Object.values(deliveries)) worst = Math.max(worst, row.max_single_ms);
+    // A shape whose chunks the hook refused was never snapshotted: its time proves nothing.
+    const notSnapshotted = [];
+    for (const [label, deliveries] of Object.entries(result.shapes)) {
+        for (const [delivery, row] of Object.entries(deliveries)) {
+            worst = Math.max(worst, row.max_single_ms);
+            if (row.chunks_not_retained !== 0 || row.chunks_retained === 0) notSnapshotted.push(`${label}/${delivery}`);
+        }
     }
     return (scale) => ({
         large_shapes: {
@@ -251,8 +256,10 @@ function largeShapes() {
             losses: result.losses,
             worst_single_ms: round(worst, 3),
             ceiling_ms: round(ceilingMs * scale, 3),
+            not_snapshotted: notSnapshotted,
             passed:
                 worst <= ceilingMs * scale &&
+                notSnapshotted.length === 0 &&
                 Object.values(result.losses).every((count) => count === 0),
         },
     });
