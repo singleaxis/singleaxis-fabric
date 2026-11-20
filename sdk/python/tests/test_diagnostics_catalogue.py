@@ -22,6 +22,8 @@ from ._diagnostics_doc import render
 REPO = Path(__file__).resolve().parents[3]
 CONTRACT = REPO / "contracts" / "diagnostics" / "v1"
 SOURCE = REPO / "sdk" / "python" / "src" / "fabric"
+#: The npm launcher (spec 058 §1.4) prints catalogue ids of its own (FC-098, FC-099).
+LAUNCHER = REPO / "sdk" / "typescript" / "src" / "cli"
 _ID = re.compile(r"\bF[CWERN]-[0-9]{3}\b")
 
 
@@ -35,6 +37,8 @@ def _emitted_ids() -> set[str]:
     for path in SOURCE.rglob("*.py"):
         if path.name != "_catalogue_data.py":  # the catalogue itself, not an emitter
             ids.update(_ID.findall(path.read_text("utf-8")))
+    for path in LAUNCHER.glob("*.ts"):
+        ids.update(_ID.findall(path.read_text("utf-8")))
     return ids
 
 
@@ -79,7 +83,7 @@ def test_catalogue_texts_carry_no_interpolated_values() -> None:
 def test_docs_page_is_generated_from_the_catalogue() -> None:
     page = REPO / str(_catalogue_document()["docs"])
     assert page.read_text("utf-8") == render(), (
-        "docs/diagnostics.md is stale: run `python -m tests._diagnostics_doc > "
+        "docs/reference/diagnostics.md is stale: run `python -m tests._diagnostics_doc > "
         "../../docs/diagnostics.md` from sdk/python"
     )
     for message_id in _catalogue.messages():

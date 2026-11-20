@@ -5697,8 +5697,9 @@ HOST_VECTORS = {
     "fixtures/host/host-state-envelope-v1.json",
     "fixtures/ingress-groups/index.json",
 }
-# Spec 057 WP7-0: coverage 1.4.0, capture 1.9.0, content 2.4.0 (three roles).
-VERSIONS = {COVERAGE: "1.4.0", CAPTURE: "1.9.0", CONTENT: "2.4.0"}
+# Spec 057 WP7-0: coverage 1.4.0, capture 1.9.0, content 2.4.0 (three roles); spec 058
+# WP8-17: coverage 1.5.0 (the integration rows registry).
+VERSIONS = {COVERAGE: "1.5.0", CAPTURE: "1.9.0", CONTENT: "2.4.0"}
 
 
 def _expectation(family: Path, rel: str) -> tuple[str, str | None]:

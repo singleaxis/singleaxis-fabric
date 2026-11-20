@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/schemas/fabric/diagnostics/v1/reasons-v1.schema.json",
+  "title": "Fabric reader reasons in words (spec 058 WP8-18)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "docs", "reasons"],
+  "$defs": {
+    "words": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "fix"],
+      "properties": {
+        "text": {"type": "string", "minLength": 1, "maxLength": 200},
+        "fix": {"type": "string", "minLength": 1, "maxLength": 300}
+      }
+    }
+  },
+  "properties": {
+    "schema": {"const": "fabric.reason-words/v1"},
+    "docs": {"type": "string", "pattern": "^docs/[a-z0-9/_-]+\\.md$"},
+    "comment": {"type": "string"},
+    "notes": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{0,63}$"},
+      "additionalProperties": {"$ref": "#/$defs/words"}
+    },
+    "reasons": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason", "text", "fix"],
+        "properties": {
+          "reason": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+          "text": {"type": "string", "minLength": 1, "maxLength": 200},
+          "fix": {"type": "string", "minLength": 1, "maxLength": 300},
+          "chains": {
+            "type": "object",
+            "propertyNames": {"enum": ["decisions", "actions", "effects", "corroboration", "controls"]},
+            "additionalProperties": {"$ref": "#/$defs/words"}
+          }
+        }
+      }
+    }
+  }
+}

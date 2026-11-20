@@ -12,8 +12,8 @@ batch to one authenticated source in the production profile, buffers both in
 persistent queues, and delivers telemetry to a customer-selected OTLP/HTTP
 destination and content to a customer-owned directory or S3 bucket. No
 SingleAxis service is required. Operator documentation:
-[deployment](../../docs/deployment.md),
-[privacy and security](../../docs/privacy-and-security.md),
+[deployment](../../docs/reference/manual-setup/deployment.md),
+[privacy and security](../../docs/reference/privacy-and-security.md),
 [operations](../../docs/operations/README.md).
 
 ## Included components

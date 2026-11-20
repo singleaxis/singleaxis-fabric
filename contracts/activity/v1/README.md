@@ -44,7 +44,7 @@ schema elements below are deprecated in Fabric v0.9 because Fabric records activ
 does not evaluate it. Each carries JSON Schema `"deprecated": true` and a description;
 validation is unchanged, so every document that is valid today stays valid against v1.
 
-Contract schemas are immutable (see [API stability](../../../docs/api-stability.md)), so
+Contract schemas are immutable (see [API stability](../../../docs/reference/api-stability.md)), so
 Fabric v1.0 does not edit v1 in place. It drops these elements by retiring activity v1,
 which v2 already supersedes; v2 carries none of them.
 

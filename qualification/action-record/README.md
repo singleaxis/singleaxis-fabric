@@ -4,7 +4,7 @@
 > milestone M1, WP6-06). In CI, hermetic mode passes on macOS and Linux, and
 > live mode passes on Linux with the eBPF sensor; the auditd fallback is
 > written but not run live in CI. See
-> [docs/action-reconstruction.md](../../docs/action-reconstruction.md) for the
+> [docs/reference/action-reconstruction.md](../../docs/reference/action-reconstruction.md) for the
 > feature itself. [AR-1 production](#ar-1-production-m2) (milestone M2,
 > WP6-10) is the harness for code released in v0.11.0; its CI jobs pass:
 > `production-replay` (macOS and Linux), `production-live` (Linux, eBPF
@@ -174,7 +174,8 @@ emitter built for the kernel. The `systemd` driver is this harness's setup
 emitter: with the `cgroupfs` driver, `--cgroup-parent=/fabric-agents` and
 `EMIT_AGENT_CGROUP_ROOTS=/sys/fs/cgroup/fabric-agents` scope the agent the
 same way (the v0.11.0 UAT ran so on Docker Desktop;
-[production setup](../../docs/production-setup.md#4-the-ebpf-emitter)). It installs `fabric-agents.slice` and
+[production setup](../../docs/reference/manual-setup/production-setup.md#4-the-ebpf-emitter)).
+It installs `fabric-agents.slice` and
 `fabric-sandboxes.slice` as runtime units, relaxes
 `kernel.apparmor_restrict_unprivileged_userns` for the run when it is set,
 checks `print-source-id` against the label pseudonym, and fails the run

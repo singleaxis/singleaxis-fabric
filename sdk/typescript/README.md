@@ -62,7 +62,7 @@ exit 1 with `fabric.reconstruct: no runs reconstructed`. There is no
 completeness or gap verdict, no action view and no corroboration with host
 sensors for a TypeScript agent today. The spans are ordinary OTLP: you can
 read them in the destination the Node delivers to, but Fabric does not
-verify them. See [the verifier's scope](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reconstruct.md#scope-of-the-verifier)
+verify them. See [the verifier's scope](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reference/reconstruct.md#scope-of-the-verifier)
 and [limitations](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/limitations-and-roadmap.md).
 
 ## Quick start
@@ -98,11 +98,13 @@ Save as `agent.mjs` (it is also valid TypeScript):
 import { BatchSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
-import { Fabric, installDefaultProvider } from "@singleaxis/fabric";
+import { Fabric, fabricExporterOptions, installDefaultProvider } from "@singleaxis/fabric";
 
 // Your provider and exporter: Fabric never installs one silently.
+// fabricExporterOptions() is {} unless `fabric run` set FABRIC_OTLP_*.
+const exporter = new OTLPTraceExporter(fabricExporterOptions());
 const provider = new TracerProvider({
-  spanProcessors: [new BatchSpanProcessor({ exporter: new OTLPTraceExporter() })],
+  spanProcessors: [new BatchSpanProcessor({ exporter })],
 });
 // Registers the provider globally plus the context manager that keeps span
 // parenting correct across `await`.
@@ -130,7 +132,7 @@ await provider.shutdown(); // flush before the process exits
 ```
 
 Run it against a Fabric Node (the local Node from the
-[quickstart](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/quickstart.md)
+[quickstart](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reference/manual-setup/quickstart.md)
 listens on loopback port 4318):
 
 ```bash
@@ -139,6 +141,13 @@ export FABRIC_TENANT_ID=acme FABRIC_AGENT_ID=support-agent
 node agent.mjs
 ```
 
+With `fabric run` (below) you set nothing: it gives the agent
+`FABRIC_OTLP_ENDPOINT` and `FABRIC_OTLP_CERTIFICATE` (the Fabric Node and its
+CA), and `fabricExporterOptions()` turns them into the exporter's `url` and
+`httpAgentOptions`; production adds `FABRIC_OTLP_HEADERS_FILE` and the client
+certificate pair. When any `FABRIC_OTLP_*` variable is set, Fabric reads none of
+the `OTEL_EXPORTER_OTLP_*` ones, so your own OpenTelemetry export is never
+redirected. Without them, `fabricExporterOptions()` is `{}` and
 `OTLPTraceExporter` reads the standard variables (`OTEL_EXPORTER_OTLP_ENDPOINT`,
 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
 `OTEL_EXPORTER_OTLP_CERTIFICATE`), so the Node is selected by environment.
@@ -151,7 +160,7 @@ yourself through `@opentelemetry/api` is equivalent.
 
 The endpoint those variables select must be `https://`, or plain `http://`
 to a loopback host (`localhost`, `127.0.0.1`, `[::1]`), the same rule as the
-Python SDK ([span delivery rule](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/privacy-and-security.md#span-delivery-rule)).
+Python SDK ([span delivery rule](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reference/privacy-and-security.md#span-delivery-rule)).
 With `http://fabric-node:4318`, for example, the `Fabric` client turns
 capture off: your agent runs unchanged, nothing is thrown, and no Fabric span
 or content object is produced. Fabric does not print this on your agent's
@@ -167,8 +176,8 @@ It prints `{"capture":"enabled"}`, or `{"capture":"disabled","reason":...,"fix":
 naming the variable and the fix (never its value). In code,
 `fabric.captureStatus()` returns the same for that client. Set
 `FABRIC_WIRE_DIAGNOSTICS=stderr` to have the client print it once on stderr.
-To fix it, use `https://` with `OTEL_EXPORTER_OTLP_CERTIFICATE` for a private
-CA, or reach the Node through a loopback address (a port forward or a
+To fix it, use `https://` with `FABRIC_OTLP_CERTIFICATE` (or
+`OTEL_EXPORTER_OTLP_CERTIFICATE`) for a private CA, or reach the Node through a loopback address (a port forward or a
 sidecar). The check reads the environment: an exporter you construct with an
 explicit `url` is not checked.
 
@@ -179,6 +188,26 @@ metrics in this version, but if a future version adds them they require a
 Each stable release is published to npm as `latest`; release candidates go to
 the `next` dist-tag. The SDK's maturity is still beta (see its connector
 manifest): the dist-tag says which release you get, not how stable the API is.
+
+## The `fabric` launcher
+
+The package also installs a `fabric` command with two subcommands, for
+machines without Python:
+
+- `npx fabric run -- node agent.js` starts the agent with the project's
+  tenant, agent id and a run label (`FABRIC_TENANT_ID`, `FABRIC_AGENT_ID`,
+  `FABRIC_RUN_ID`), which the explicit API above reads. It never changes the
+  agent's arguments, input, output or exit code, never sets an `OTEL_*`
+  variable, and starts the agent unchanged if anything is wrong. A Python
+  agent started this way gets the same zero-code capture as with the Python
+  CLI.
+- `npx fabric doctor` checks the project and names each problem with its fix.
+
+Both read `.fabric/compiled.env`, which `fabric init` (or `fabric up`) writes
+beside `fabric.yaml`. Those commands, and `verify` and `show`, are in the full
+CLI: `pipx install "singleaxis-fabric[cli]"`, or the container image
+`ghcr.io/singleaxis/fabric-cli`. Zero-code capture of a Node.js agent's model
+calls is not built yet; record them with the API above.
 
 ## Capture options
 
@@ -409,4 +438,4 @@ The deployment-policy, privacy and byte path is shared. Python's wire capture,
 `CallRecorder`, byte-boundary adapters, source journal, encrypted durable byte
 spool, restartable metadata sender, governed local backend, metadata-only span
 export and qualified-run mode have no TypeScript equivalent. See
-[explicit APIs](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/explicit-apis.md).
+[explicit APIs](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reference/explicit-apis.md).

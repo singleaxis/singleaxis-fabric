@@ -228,6 +228,31 @@ hierarchies searched. A pod that is still starting has no cgroup yet; a
 difference that stays means a layout the emitter does not know, and the
 fallback is `EMIT_AGENT_CGROUP_ROOTS`.
 
+**Pods it cannot see.** Every pod the selector matched on this node is either
+scoped or counted with one reason. The health line carries `pods_selected=`,
+`pods_scoped=`, `pods_unscoped=` and one counter per reason:
+
+| Counter | Meaning | Fix |
+|---|---|---|
+| `pods_unscoped_cgroup_not_found=` | No cgroup of the pod is in any kubelet hierarchy searched. A pod still starting has none yet. | If it stays: set `EMIT_AGENT_CGROUP_ROOTS` to the kubelet's pod slices. |
+| `pods_unscoped_unsupported_runtime=` | The pod's RuntimeClass handler is gVisor (`runsc`, `gvisor`) or a Kata handler (`kata`, `kata-*`): its system calls never reach this node's kernel tracepoints. Its cgroup is never installed as a root. | Record it with wire capture in the agent, or run it under the default runtime. |
+| `pods_unscoped_pod_limit=` | 64 pod roots are already installed on this node. | Narrow `EMIT_AGENT_POD_SELECTOR`, or spread the pods over more nodes. |
+| `pods_unscoped_node_not_supported=` | Always 0 on a running emitter. When the BPF programs cannot load (kernel older than 5.8, no BTF, capabilities refused) the emitter logs `health node_supported=false pods_unscoped_reason=node_not_supported` with the fix and exits: no pod on that node is captured. | Keep the DaemonSet off such nodes and rely on wire capture there. |
+
+A change of these counters is logged at once (`pod scope pods_selected=...`),
+and while any pod is unscoped a `WARN pod scope` line names each reason, its
+count and its fix. It never names a pod. The RuntimeClass handler is read
+with `get` on `runtimeclasses` (`node.k8s.io`); without that permission (or
+for a class that does not exist) the read is retried at most once a minute,
+at the pod's next change, the pod is counted in `pods_runtime_unknown=` and a
+`WARN pod scope` line names the missing permission: until the class is read
+such a pod is scoped or unscoped like any other, so a gVisor or Kata pod among
+them may be counted as scoped. A root installed before its class read as
+gVisor or Kata is removed. `pod_selector_matched=` and
+`pod_cgroups_found=` keep their meaning. These counter names are shared with
+the process-exit and syscall-result classes of the same health line (every
+counter is `snake_case=<integer>`, a reason is a suffix, never a label).
+
 **Export failures.** A failed export is logged with its gRPC status code,
 the status message (control characters removed, at most 240 characters,
 bearer credentials and long opaque strings replaced with `[redacted]`) and

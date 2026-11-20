@@ -853,7 +853,7 @@ fi
 
 # --- site overlays (FABRIC_COMPOSE_EXTRA) -------------------------------------
 # The shipped test-only S3 store must never hold real content, so say so on every
-# run that enables it (a warning, not a failure: docs/production-setup.md uses it to
+# run that enables it (a warning, not a failure: docs/reference/manual-setup/production-setup.md uses it to
 # try the production Node). Only the fixed file name is printed, after it matched.
 FABRIC_COMPOSE_EXTRA="$(envget FABRIC_COMPOSE_EXTRA)"
 test_store=0

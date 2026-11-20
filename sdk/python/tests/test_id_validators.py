@@ -336,7 +336,7 @@ _ACCEPTED = [
     # opaque / generated
     "01HXYZABC123DEF456GHJ789K",
     "t_9f8e7d6c5b4a",
-    # docs/quickstart.md ships this as a worked example value — the
+    # docs/reference/manual-setup/quickstart.md ships this as a worked example value — the
     # project's own documented happy path must not warn
     "my-agent",
     # single character — used ~80 times across this suite

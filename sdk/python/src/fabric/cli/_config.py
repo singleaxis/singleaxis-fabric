@@ -133,9 +133,32 @@ def _auto_or(rule: Rule, what: str) -> Rule:
     return check
 
 
-def _positive_int(path: str, value: Any) -> None:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise _bad(path, "must be a positive integer")
+#: A size as a person writes it: bytes, or a number with a unit (``20GiB``, ``500 MB``).
+SIZE_PATTERN = r"^[0-9]+(\.[0-9]+)? ?([kKMGT]i?B|B)?$"
+_SIZE_RE = re.compile(SIZE_PATTERN)
+_UNITS = {"B": 1, "kB": 10**3, "KB": 10**3, "MB": 10**6, "GB": 10**9, "TB": 10**12,
+          "KiB": 2**10, "kiB": 2**10, "MiB": 2**20, "GiB": 2**30, "TiB": 2**40}  # fmt: skip
+
+
+def parse_size(value: Any) -> int | None:
+    """``node.queue_size`` as bytes: an integer, or a number with a unit (``20GiB``);
+    ``None`` when it is neither (or less than one byte)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 1 else None
+    if not isinstance(value, str) or not _SIZE_RE.fullmatch(value.strip()):
+        return None
+    match = re.fullmatch(r"([0-9.]+) ?([A-Za-z]*)", value.strip())
+    if match is None or match.group(2) not in ("", *_UNITS):
+        return None
+    size = int(float(match.group(1)) * _UNITS.get(match.group(2) or "B", 1))
+    return size if size >= 1 else None
+
+
+def _size(path: str, value: Any) -> None:
+    if parse_size(value) is None:
+        raise _bad(path, "must be a number of bytes, or a size such as 20GiB or 500MB")
 
 
 def _hosts(path: str, value: Any) -> None:
@@ -179,7 +202,7 @@ SCHEMA = _Object({
     "node": _Object({
         "mode": _enum("docker", "helm", "external"),
         "endpoint": _auto_or(_url("https", "http"), "an http(s) URL"),
-        "queue_size": _auto_or(_positive_int, "a positive number of bytes"),
+        "queue_size": _auto_or(_size, "a size in bytes (20GiB, 500MB, 2147483648)"),
     }),
     "destination": _Object({
         "preset": _enum(*DESTINATION_PRESETS), "path": _path_or(),
@@ -198,13 +221,18 @@ SCHEMA = _Object({
 }, required=("schema",))  # fmt: skip
 
 # The destination keys each preset accepts (spec 058 §9.1), beyond preset itself.
+#: The span target the content presets combine with (§9.1: spans need an OTLP target).
+SPAN_KEYS = frozenset({"otlp_endpoint", "otlp_ca_file", "otlp_headers_file"})
 PRESET_KEYS: Mapping[str, frozenset[str]] = {
     "local-dir": frozenset({"path"}),
     "trial": frozenset({"path"}),
-    "s3": frozenset({"bucket", "region", "sse_kms_key"}),
-    "s3-compatible": frozenset({"endpoint", "bucket", "ca_file", "credentials_file", "region"}),
-    "otlp": frozenset({"otlp_endpoint", "otlp_ca_file", "otlp_headers_file"}),
+    "s3": frozenset({"bucket", "region", "sse_kms_key"}) | SPAN_KEYS,
+    "s3-compatible": frozenset({"endpoint", "bucket", "ca_file", "credentials_file", "region"})
+    | SPAN_KEYS,
+    "otlp": SPAN_KEYS,
 }
+#: The presets a production Node delivers to (local-dir is the local profile's).
+PRODUCTION_PRESETS = ("trial", "s3", "s3-compatible", "otlp")
 PRESET_REQUIRED: Mapping[str, tuple[str, ...]] = {
     "s3": ("bucket", "region"), "s3-compatible": ("endpoint", "bucket"),
     "otlp": ("otlp_endpoint",),

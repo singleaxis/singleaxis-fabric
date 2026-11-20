@@ -19,7 +19,8 @@ from .._sequence import id_key_from_env
 from ..reconstruct._ids import report_run_id
 from ..reconstruct._inputs import SPAN_FILE_SUFFIXES
 from ..reconstruct._select import run_start_ns
-from . import _project, _runstate
+from . import _coverage, _project, _runstate
+from ._report import Finding
 
 #: How far before a run's start a span file may have been written and still hold it
 #: (the sink's clock and this machine's may differ under a VM's file sharing).
@@ -123,14 +124,38 @@ def read(
 
 def http_requests(reader: Any, runs: Sequence[Mapping[str, Any]]) -> int:
     """The non-model HTTP requests (``http.nonmodel``) the action reader found in ``runs``."""
+    return observations(reader, runs).http
+
+
+@dataclass(frozen=True)
+class Observed:
+    """What the action reader saw of the runs of one ``fabric run`` (§12.4 steps 1 and 2):
+    the effect capture points their manifests declare (``active`` or ``disabled``), the
+    non-model HTTP requests, the MCP messages and the startup effects."""
+
+    channels: Mapping[str, str]
+    http: int = 0
+    mcp: int = 0
+    startup: int = 0
+
+
+def observations(reader: Any, runs: Sequence[Mapping[str, Any]]) -> Observed:
     from ..reconstruct._attribute import action_rows  # noqa: PLC0415
 
     wanted = {run["run_id"] for run in runs}
-    return sum(
-        int(action_rows(view).get("http_requests_unattributed") or 0)
-        for view in reader.runs
-        if view.run_id in wanted
-    )
+    channels: dict[str, str] = {}
+    http = mcp = startup = 0
+    for view in getattr(reader, "runs", ()):
+        if view.run_id not in wanted:
+            continue
+        for point, state in (view.input.get("effect_channels") or {}).items():
+            if channels.get(point) != "active":
+                channels[point] = str(state)
+        rows = action_rows(view)
+        http += int(rows.get("http_requests_unattributed") or 0)
+        mcp += sum(1 for row in rows.get("rows") or () if row.get("kind") == "mcp_call")
+        startup += len(rows.get("startup_effects") or ())
+    return Observed(channels, http, mcp, startup)
 
 
 def canary_ids(labels: Iterable[str], key: bytes | None) -> set[str]:
@@ -162,95 +187,62 @@ def runs_of(
     return selected
 
 
+def reported(files: Sequence[str], record: _runstate.RunRecord,
+             following: _runstate.RunRecord | None) -> list[Any]:  # fmt: skip
+    """The reported runs (explicit-API records, §13.3) one ``fabric run`` produced: those
+    whose decision started between its start and the next recorded run's. Never verified;
+    ``ReconstructInputError`` for unusable input."""
+    from ..reconstruct._reported import in_window, reported_runs  # noqa: PLC0415
+
+    end = following.started_ns if following is not None else None
+    return in_window(reported_runs(files), record.started_ns, end)
+
+
+def reports_by_code(record: _runstate.RunRecord) -> bool:
+    """A Node.js agent records through its explicit API (before zero-code Node capture):
+    its run is ``capture: off`` with the "not built yet" note (and any sensor notes), not
+    a failed launch; only ``--no-capture`` (``FC-058``) means nothing was meant to record."""
+    return record.runtime == "node" and not any(f.get("id") == "FC-058" for f in record.findings)
+
+
 # ---------------------------------------------------------------- reasons in words (§12.4)
 
-#: The reader's reasons (gap types and chain reasons) in words, each with its fix. The
-#: full catalogue of every chain reason is spec 058 WP8-18 (E3); a reason missing here is
-#: shown by name with the reader's command.
-REASON_WORDS: Mapping[str, tuple[str, str]] = {
-    "sequence_gap": (
-        "records are missing between two that arrived (a process killed before "
-        "its spool drained, or delivery still in progress)",
-        "let the agent exit normally and run fabric verify again; "
-        "`python -m fabric.wire drain --until-empty` delivers a spool left behind",
-    ),
-    "tail_unverified": (
-        "the run's last records cannot be proven complete (no final "
-        "heartbeat: the process was killed, or is still running)",
-        "let the agent exit normally; a batch worker can raise FABRIC_WIRE_DRAIN_ON_EXIT_S",
-    ),
-    "missing_object": (
-        "a request or response body is not in the content store",
-        "content may still be on its way: run fabric verify again; check that "
-        "the agent's FABRIC_WIRE_STORE is the project's store",
-    ),
-    "digest_mismatch": (
-        "a stored body does not match the digest its record carries",
-        "the store was changed after capture: keep the store read-only to everyone but the agent",
-    ),
-    "loss": (
-        "the SDK reported records it could not keep (a full spool or queue)",
-        "give the spool more room (FABRIC_WIRE_SPOOL_MAX_BYTES) or start the Node",
-    ),
-    "truncated": (
-        "a body was larger than the capture limit and was cut",
-        "raise the body limit in the capture policy if you need the whole body",
-    ),
-    "unparsed_exchange": (
-        "a model exchange could not be parsed in its dialect",
-        "check the endpoint's dialect (anthropic=URL for the Messages API)",
-    ),
-    "unmatched_tool_call": (
-        "a tool call has no result fed back to the model",
-        "nothing to fix when the agent stopped early; otherwise the "
-        "result went through a client Fabric does not hook",
-    ),
-    "run_open": ("the run had not ended when it was read", "run fabric verify after it exits"),
-    "run_unterminated": ("the run never closed", "let the agent exit normally"),
-    "unattributed_effect": (
-        "a command ran that no tool call explains",
-        "a command the agent runs on its own; record the decision with control_check if it was one",
-    ),
-    "ambiguous_attribution": (
-        "commands are withheld by your privacy policy, so effects of "
-        "parallel tool calls cannot be told apart",
-        "retain terminal.argv as a digest in the capture policy to allow matching",
-    ),
-    "channel_disabled": (
-        "this capture point is off",
-        "the coverage report names the line that turns it on",
-    ),
-    "not_configured": ("nothing is configured to record this", "see the coverage report"),
-    "source_unauthenticated": (
-        "records are not authenticated by the Node",
-        "the production profile needs the Node's ingress binding",
-    ),
-    "clock_uncertain": (
-        "record clocks disagree more than allowed",
-        "keep the agent's and the Node's clocks synchronized (NTP)",
-    ),
-}
+#: Kept for the callers that word one reason (the catalogue is ``_coverage``, WP8-18).
+Row = _coverage.Row
 
 
-def words(reason: str) -> str:
-    known = REASON_WORDS.get(reason)
-    if known is None:
-        return f"{reason} (see `python -m fabric.reconstruct --json` for this reason)"
-    return f"{reason}: {known[0]}; fix: {known[1]}"
+def words(reason: str, chain: str | None = None) -> str:
+    """One reader reason in plain words with its fix (``contracts/diagnostics/v1/
+    reasons-v1.json``); a reason the catalogue lacks is named with the reader's command."""
+    return _coverage.words(reason, chain)
 
 
 def run_reasons(run: Mapping[str, Any]) -> list[str]:
     """The run's gap types and its chains' reasons, without repeats, in report order."""
     reasons = [str(gap["gap_type"]) for gap in run.get("gaps") or [] if gap.get("effect") != "info"]
-    for name, chain in (run.get("chains") or {}).items():
-        if name in ("decisions",) and chain.get("verdict") not in ("complete", None):
-            reasons += [str(r) for r in chain.get("reasons") or [f"decisions_{chain['verdict']}"]]
+    reasons += [reason for _chain, reason in _coverage.chain_reasons(run)]
     return list(dict.fromkeys(reasons))
+
+
+def explain_run(run: Mapping[str, Any]) -> list[str]:
+    """Every reason a run is not complete, in words with its fix (F10): its gaps, then each
+    chain's reasons as that chain means them, then its startup effects as a fact."""
+    pairs = [("decisions", str(gap["gap_type"])) for gap in run.get("gaps") or []
+             if gap.get("effect") != "info"]  # fmt: skip
+    pairs += _coverage.chain_reasons(run)
+    lines = [line.split(": ", 1)[1] if line.startswith("decisions: ") else line
+             for line in _coverage.explain(pairs)]  # fmt: skip
+    if (run.get("attribution") or {}).get("startup_effects"):
+        text, fix = _coverage.note_words("startup_effects")
+        lines.append(f"startup effects: {text}; {fix}")
+    return lines
 
 
 # ---------------------------------------------------------------- coverage report (§12)
 
 _SCHEME = re.compile(r'"schemes":\s*\["(https?)"')
+#: A diagnostics catalogue id, as a status file names one (13.1).
+_ID = re.compile(r"F[CWERN]-[0-9]{3}")
 
 
 def provider_url(entry: Mapping[str, Any]) -> str:
@@ -265,21 +257,6 @@ def provider_url(entry: Mapping[str, Any]) -> str:
     return f"{scheme}://{where}/v1"
 
 
-@dataclass(frozen=True)
-class Row:
-    """One coverage row: the question, its state, and the evidence or the fix."""
-
-    question: str
-    state: str  # recorded | fix | needs code | invisible | partial | not observed
-    note: str
-
-    def to_json(self) -> dict[str, str]:
-        return {"row": self.question, "state": self.state, "note": self.note}
-
-    def line(self) -> str:
-        return f"  {self.question:<38} {self.state:<12} {self.note}"
-
-
 def _chain(runs: Sequence[Mapping[str, Any]], name: str) -> str | None:
     verdicts = {str((run.get("chains") or {}).get(name, {}).get("verdict")) for run in runs}
     verdicts.discard("None")
@@ -289,96 +266,197 @@ def _chain(runs: Sequence[Mapping[str, Any]], name: str) -> str | None:
     return None
 
 
+def _chain_words(runs: Sequence[Mapping[str, Any]], name: str) -> str:
+    """The reasons of chain ``name`` across ``runs``, each in words with its fix."""
+    reasons: list[str] = []
+    for run in runs:
+        chain = (run.get("chains") or {}).get(name) or {}
+        if chain.get("verdict") not in ("complete", "not_observed", None):
+            reasons += [str(r) for r in chain.get("reasons") or ()]
+    return "; ".join(_coverage.words(r, name) for r in dict.fromkeys(reasons))
+
+
+def _from_chain(question: str, runs: Sequence[Mapping[str, Any]], name: str, evidence: str,
+                row_id: str | None) -> Row:  # fmt: skip
+    state = _state(_chain(runs, name))
+    why = _chain_words(runs, name) if state == "partial" else ""
+    return Row(question, state, f"{evidence}; {why}" if why else evidence, row_id)
+
+
+def prediction_context(resolved: Any, record: _runstate.RunRecord) -> _coverage.Context:
+    """§12.4 starts from the prediction for the run as it was started: its runtime, the
+    project's switches as the agent got them, and the sensor scope ``run`` recorded."""
+    runtime = record.runtime if record.runtime in ("python", "node") else "other"
+    reason = None
+    if record.sensor == "not_scoped":
+        reason = ("the sensor runs in the Docker VM and sees containers only (FC-042)"
+                  if any(f["id"] == "FC-042" for f in record.findings)
+                  else "the agent could not join the sensor's cgroup (FC-054)")  # fmt: skip
+    switches = {
+        "capture.exec": bool(resolved["capture.exec"]),
+        "capture.http_hosts": bool(resolved["capture.http_hosts"]),
+        "capture.mcp": bool(resolved["capture.mcp"]),
+        "sensor": record.sensor == "scoped",
+    }
+    point = "host.ebpf" if record.sensor != "not_scoped" else None
+    return _coverage.Context(runtime, None, None, switches, point, reason)
+
+
+@dataclass(frozen=True)
+class _Run:
+    """One ``fabric run`` as §12.4 reads it."""
+
+    resolved: Any
+    record: _runstate.RunRecord
+    runs: Sequence[Mapping[str, Any]]
+    status: Mapping[str, Any] | None
+    observed: Observed
+    exchanges: int
+    findings: list[Finding] | None
+
+    @property
+    def python(self) -> bool:
+        return self.record.runtime == "python"
+
+
+def _model_calls(base: Row, run: _Run) -> Row:
+    if not run.python:
+        return base
+    if run.exchanges:
+        return Row(base.question, "recorded", f"{run.exchanges} exchange(s)", base.row_id)
+    hosts = [h for h in (run.status or {}).get("unmatched_model_hosts") or []
+             if isinstance(h, Mapping) and h.get("host")]  # fmt: skip
+    if hosts:
+        fix = f"fix: fabric init --provider {provider_url(hosts[0])}"
+        return Row(base.question, "fix", fix, base.row_id)
+    return Row(base.question, "not observed", "no model call was recorded", base.row_id)
+
+
+def _commands(base: Row, run: _Run) -> Row:
+    if not (run.python and run.resolved["capture.exec"]):
+        return base
+    if run.observed.channels.get("exec.subprocess") == "disabled":
+        if run.findings is not None:
+            # §12.4 step 4: the cause, as the run's status file names it (FW-* ids).
+            status = run.status or {}
+            ids = [status.get("reason_id"), *(status.get("warning_ids") or ())]
+            named = list(dict.fromkeys(i for i in ids if isinstance(i, str) and _ID.fullmatch(i)))
+            cause = (f"the SDK reported {', '.join(named)}" if named
+                     else "fabric doctor says why")  # fmt: skip
+            run.findings.append(Finding("FC-162", "capture.exec: true, but exec.subprocess was "
+                                        f"off in the run ({cause})"))  # fmt: skip
+        why = "the run's capture manifest reports the exec hook off"
+        return Row(base.question, "not observed", why, base.row_id)
+    return _from_chain(base.question, run.runs, "effects", "exec hook", base.row_id)
+
+
+def _network(base: Row, run: _Run) -> Row:
+    if not (run.python and run.resolved["capture.http_hosts"]):
+        return base
+    watched = ", ".join(run.resolved["capture.http_hosts"] or [])
+    if run.observed.http:  # configured, but none in this run: say so, never assume it
+        return Row(base.question, "recorded", f"{run.observed.http} request(s); {watched}",
+                   base.row_id)  # fmt: skip
+    return Row(base.question, "not observed", f"no request to {watched}", base.row_id)
+
+
+def _mcp(base: Row, run: _Run) -> Row:
+    if not (run.python and run.resolved["capture.mcp"]):
+        return base
+    if run.observed.mcp:
+        return Row(base.question, "recorded", f"{run.observed.mcp} MCP message(s)", base.row_id)
+    return Row(base.question, "not observed", "no MCP message in this run", base.row_id)
+
+
+def _host(base: Row, run: _Run) -> Row:
+    if run.record.sensor == "scoped":
+        return _from_chain(base.question, run.runs, "corroboration", "agent cgroup joined",
+                           base.row_id)  # fmt: skip
+    if run.record.sensor == "not_scoped":
+        return base
+    return Row(base.question, "fix", "fabric up (sensor.kind: auto)", base.row_id)
+
+
+def _tool_calls(base: Row, run: _Run) -> Row:
+    if not run.python:
+        return base
+    if _chain(run.runs, "decisions"):
+        return _from_chain(base.question, run.runs, "decisions", "parsed from the model bodies",
+                           base.row_id)  # fmt: skip
+    return Row(base.question, "not observed", "no model call", base.row_id)
+
+
+def _permissions(base: Row, run: _Run) -> Row:
+    if _chain(run.runs, "controls"):
+        return _from_chain(base.question, run.runs, "controls", "controls chain", base.row_id)
+    if run.python and not run.exchanges:
+        return Row(base.question, "not observed", "no model call", base.row_id)
+    return base
+
+
+#: Run ids no ``fabric.wire.run()`` scope gave: the source fallback, and the id taken from
+#: an OpenTelemetry trace that was active around the call (``wire/_stream.py``).
+_UNSCOPED_RUN_IDS = ("source:", "trace:")
+
+
+def _run_identity(base: Row, run: _Run) -> Row:
+    if any(not str(r["run_id"]).startswith(_UNSCOPED_RUN_IDS) for r in run.runs):
+        return Row(base.question, "recorded", "fabric.wire.run() scopes", base.row_id)
+    return base
+
+
+def _remote_sandbox(run: _Run) -> Row:
+    """The remote sandbox row, which plan shows for a sandbox library and verify for a run
+    whose capture manifests declare the remote sandbox hook (its library is not read)."""
+    entry = _coverage.row("remote_sandbox")
+    question = str(entry["question"])
+    if run.observed.channels.get("remote.sandbox") == "active":
+        return _from_chain(question, run.runs, "effects", "remote sandbox hook (E2B)",
+                           "remote_sandbox")  # fmt: skip
+    fix = str(_coverage.point("remote_sandbox", "remote.sandbox")["fix"])
+    return Row(question, "fix", fix, "remote_sandbox")
+
+
+_OBSERVE = {
+    "model_calls": _model_calls, "tool_calls": _tool_calls, "commands": _commands,
+    "network": _network, "mcp": _mcp, "host": _host, "permissions": _permissions,
+    "run_identity": _run_identity,
+}  # fmt: skip
+
+
 def coverage(
     resolved: Any,
     record: _runstate.RunRecord,
     runs: Sequence[Mapping[str, Any]],
     status: Mapping[str, Any] | None,
     http: int | None = None,
+    observed: Observed | None = None,
+    findings: list[Finding] | None = None,
 ) -> list[Row]:
-    """§12.4, for the rows built so far: what this run recorded, from the reader's report
-    and the run's own record, with the line that turns on what is off. ``resolved``: the
-    settings as the agent got them (fabric.yaml, and this shell's variables over it,
-    §6.2). ``http``: the non-model HTTP requests the reader found in these runs."""
-    exchanges = sum(int(run["counts"]["exchanges"]) for run in runs)
+    """§12.4: the report ``fabric plan`` predicts (the registry's rows), with each row the
+    run's records can speak to replaced by what they show: the reader's report, the
+    effect capture points the run's capture manifests declare, and the run's own record.
+    ``resolved``: the settings as the agent got them (fabric.yaml, and this shell's
+    variables over it, §6.2). ``http``: the non-model HTTP requests the reader found.
+    Where the prediction said ``recorded`` and a manifest says the point was off, a
+    ``FC-162`` finding goes to ``findings`` (step 4). A ``partial`` row names each reason
+    in words with its fix; rows nothing in the run speaks to keep the prediction."""
+    if observed is None:
+        observed = Observed({}, http or 0)
+    elif http is not None:
+        observed = Observed(observed.channels, http, observed.mcp, observed.startup)
+    exchanges = sum(int(r["counts"]["exchanges"]) for r in runs)
+    run = _Run(resolved, record, runs, status, observed, exchanges, findings)
     rows: list[Row] = []
-    if record.runtime != "python":
-        rows.append(
-            Row(
-                "model calls (requests and responses)",
-                "invisible",
-                "unsupported_runtime: zero-code capture is Python-only in this release; "
-                "the explicit API's records are reported, not verified",
-            )
-        )
-    elif exchanges:
-        rows.append(
-            Row("model calls (requests and responses)", "recorded", f"{exchanges} exchange(s)")
-        )
-    else:
-        hosts = [
-            h
-            for h in (status or {}).get("unmatched_model_hosts") or []
-            if isinstance(h, Mapping) and h.get("host")
-        ]
-        fix = (
-            f"fix: fabric init --provider {provider_url(hosts[0])}"
-            if hosts
-            else "no model call was recorded"
-        )
-        rows.append(
-            Row("model calls (requests and responses)", "fix" if hosts else "not observed", fix)
-        )
-    decisions = _chain(runs, "decisions")
-    rows.append(
-        Row(
-            "tool calls and results",
-            _state(decisions),
-            "parsed from the model bodies" if decisions else "no model call",
-        )
-    )
-    if not resolved["capture.exec"]:
-        rows.append(Row("commands the agent ran", "fix", "fabric init --exec"))
-    else:
-        rows.append(Row("commands the agent ran", _state(_chain(runs, "effects")), "exec hook"))
-    watched = ", ".join(resolved["capture.http_hosts"] or [])
-    if not watched:
-        rows.append(Row("network contacts (non-model HTTP)", "fix", "fabric init --http-host HOST"))
-    elif http:
-        rows.append(
-            Row("network contacts (non-model HTTP)", "recorded", f"{http} request(s); {watched}")
-        )
-    else:  # configured, but this run shows none: say so, never assume it was recorded
-        rows.append(
-            Row("network contacts (non-model HTTP)", "not observed", f"no request to {watched}")
-        )
-    if record.sensor == "scoped":
-        rows.append(
-            Row(
-                "host evidence (kernel sensor)",
-                _state(_chain(runs, "corroboration")),
-                "agent cgroup joined",
-            )
-        )
-    elif record.sensor == "not_scoped":
-        rows.append(
-            Row(
-                "host evidence (kernel sensor)",
-                "invisible",
-                "the sensor runs in the Docker VM and sees containers only (FC-042)"
-                if any(f["id"] == "FC-042" for f in record.findings)
-                else "the agent could not join the sensor's cgroup (FC-054)",
-            )
-        )
-    else:
-        rows.append(Row("host evidence (kernel sensor)", "fix", "fabric up (sensor.kind: auto)"))
-    rows.append(
-        Row(
-            "end user and session",
-            "needs code",
-            "with fabric.wire.run(session_id=..., user_id=...)",
-        )
-    )
+    for base in _coverage.predict(prediction_context(resolved, record)):
+        observe = _OBSERVE.get(base.row_id or "")
+        rows.append(observe(base, run) if observe else base)
+        if base.row_id == "commands" and "remote.sandbox" in observed.channels:
+            rows.append(_remote_sandbox(run))
+    if observed.startup:
+        text, _fix = _coverage.note_words("startup_effects")
+        rows.append(Row("commands before the first model call", "recorded",
+                        f"{observed.startup}: {text}", "commands.startup"))  # fmt: skip
     return rows
 
 

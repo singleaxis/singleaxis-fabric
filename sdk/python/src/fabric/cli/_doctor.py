@@ -179,6 +179,13 @@ def _docker_checks(
     lines: list[str],
 ) -> None:
     state = _run._up_state(project)
+    if not state.get("node_image") and project.production:
+        # `fabric up` for the production shape is not in this release (it answers FC-011),
+        # so FC-048's "run `fabric up`" would send the operator to a refusal.
+        lines.append("node: the production Node is started from .fabric/node.env as "
+                     "docs/reference/manual-setup/production-setup.md shows; `fabric up` "
+                     "for it is not part of this release")  # fmt: skip
+        return
     if not state.get("node_image"):
         findings.append(Finding("FC-048"))
         lines.append("node: not started by `fabric up`")
@@ -232,7 +239,9 @@ def run(
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
     if options.kubernetes:
-        raise CliError([Finding("FC-011", "--kubernetes")])
+        from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
+
+        return _kubecmd.run_doctor(options, environ)
     findings: list[Finding] = []
     lines: list[str] = []
     _path_check(lambda name: which(name, path=environ.get("PATH", os.defpath)), findings)

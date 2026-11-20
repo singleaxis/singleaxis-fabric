@@ -1,7 +1,7 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Driver of the I4 (no phone-home) tests for every E1 command: ``init``, ``up``, ``run``,
-``verify``, ``show``, ``doctor`` and ``down``.
+"""Driver of the I4 (no phone-home) tests for every local command: ``plan``, ``init``,
+``up``, ``run``, ``verify``, ``show``, ``doctor`` and ``down``, and ``init --production``.
 
 Runs the commands in this process with every socket use recorded by an audit hook,
 against a fake ``docker`` command and a fake Fabric Node (a loopback TLS server with the
@@ -146,7 +146,17 @@ def main(argv: list[str]) -> int:  # noqa: PLR0915 - one statement per command i
     sys.addaudithook(record)
     from fabric.cli import main as fabric  # noqa: PLC0415
 
-    codes = {"init": fabric(["init", "--quiet"])}
+    # Spec 058 I4: `plan` makes no network connection at all (it runs before anything
+    # else, so every attempt recorded here would be its own).
+    (project / "agent.py").write_text("print('never run')\n")
+    plan_code = fabric(["plan", "--quiet", "--", sys.executable, "agent.py"])
+    plan_attempts = sum(len(v) for v in attempts.values())
+    codes = {"plan": plan_code, "init": fabric(["init", "--quiet"])}
+    # Spec 058 §10.2: rendering Kubernetes Secrets for GitOps touches no cluster and no network.
+    codes["init --kubernetes --render"] = fabric(
+        ["init", "--kubernetes", "--render", str(work / "render"), "--agent-namespace",
+         "agents", "--profile", "production", "--quiet"]
+    )  # fmt: skip
     (secrets,) = (work / "xdg" / "fabric").iterdir()
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -165,11 +175,19 @@ def main(argv: list[str]) -> int:  # noqa: PLR0915 - one statement per command i
     codes["doctor"] = fabric(["doctor", "--quiet"])
     codes["down"] = fabric(["down", "--quiet"])
     codes["down --purge"] = fabric(["down", "--purge", "--quiet"])
+    # Spec 058 WP8-22: a production project's secrets, policy and Node settings are made
+    # on this machine; nothing is fetched or sent.
+    production = work / "production"
+    production.mkdir()
+    os.chdir(production)
+    codes["init --production"] = fabric(["init", "--production", "--quiet"])
+    codes["init --rotate all"] = fabric(["init", "--rotate", "all", "--quiet"])
     server.shutdown()
     interfaces = _interfaces_up() if netns else []
     commands = [json.loads(line) for line in docker_log.read_text().splitlines()]
     sys.stdout.write(json.dumps({"codes": codes, "port": port, "attempts": attempts,
-                                 "docker": commands, "interfaces": interfaces}) + "\n")  # fmt: skip
+                                 "docker": commands, "interfaces": interfaces,
+                                 "plan_attempts": plan_attempts}) + "\n")  # fmt: skip
     return 0
 
 

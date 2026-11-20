@@ -1,6 +1,6 @@
 {
   "contract": "singleaxis.fabric.diagnostics",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "digest_scope": "exact_file_bytes",
   "schema": {
     "path": "schema/messages-v1.schema.json",
@@ -9,7 +9,15 @@
   "files": [
     {
       "path": "messages-v1.json",
-      "sha256": "dfcde9c63a6bc297694413aec2d7638c35455eb08ecc899a9625fab6cdda59bb"
+      "sha256": "cb84e8605c9cd088173af0ca3e725bf480f93bb4f36ec6d3c43623ea18e45727"
+    },
+    {
+      "path": "reasons-v1.json",
+      "sha256": "aa677ab9b96ffded12215b06423d392b27f94bec94dd4653dae425e91c4fd163"
+    },
+    {
+      "path": "schema/reasons-v1.schema.json",
+      "sha256": "8b74846ac4d621c2bd43f9da1f8eaaec811753ac9359aff1e28d70fefa7c6161"
     }
   ]
 }

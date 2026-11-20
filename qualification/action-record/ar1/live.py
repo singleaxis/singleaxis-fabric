@@ -5,7 +5,7 @@ the ``systemd`` cgroup driver (cgroup v2), passwordless ``sudo`` and the eBPF em
 built for this kernel (``go generate ./... && go build`` in ``components/host-emitter``).
 The ``systemd`` driver is this harness's setup (its slices are systemd units), not the
 emitter's requirement: on the ``cgroupfs`` driver a ``--cgroup-parent=/fabric-agents``
-directory scopes the agent as well (docs/production-setup.md).
+directory scopes the agent as well (docs/reference/manual-setup/production-setup.md).
 
 Per variant:
 

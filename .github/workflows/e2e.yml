@@ -48,6 +48,11 @@ jobs:
               - 'scripts/qualification/synthetic_agent_tool.py'
               - 'scripts/qualification/verify_synthetic_sink_readback.py'
               - 'examples/agent-orchestration/**'
+              - 'components/fabric-cli/**'
+              - 'scripts/ttfr/**'
+              - 'components/host-emitter/**'
+              - 'docs/get-started/kubernetes.md'
+              - 'scripts/docs_as_tests/**'
               - '.github/workflows/e2e.yml'
       # Manual dispatch has no diff context for paths-filter — always run the
       # smoke rather than silently skipping the only end-to-end gate.
@@ -386,3 +391,213 @@ jobs:
           kubectl logs --namespace "${NAMESPACE}" \
             -l app=fabric-test-sink --tail=500 || true
           kubectl get events --namespace "${NAMESPACE}" --sort-by=.lastTimestamp || true
+
+  kind-secrets-injector:
+    # Spec 058 E2 (WP8-11 to WP8-13): the chart's secrets hook Job, the opt-in pod
+    # injector and the webhook outage case on a real cluster, with the Node, CLI and
+    # agent images built from this change (charts/fabric/tests/kind/).
+    name: kind secrets Job, injector and webhook outage
+    needs: detect
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KIND_CLUSTER: f058-e2-${{ github.run_id }}-${{ github.run_attempt }}
+      NODE_IMAGE: fabric-otelcol:e2e
+      CLI_IMAGE: fabric-cli:e2e
+      AGENT_IMAGE: fabric-agent:e2e
+    steps:
+      - name: Short-circuit unrelated changes
+        if: needs.detect.outputs.relevant != 'true'
+        run: echo "No chart, CLI or SDK changes; not required."
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        if: needs.detect.outputs.relevant == 'true'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: needs.detect.outputs.relevant == 'true'
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+        if: needs.detect.outputs.relevant == 'true'
+      - name: Install the CLI under test (workstation route)
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          scripts/ci/install-python-locked.sh --extra cli --no-default-groups --group ci
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: needs.detect.outputs.relevant == 'true'
+      - name: Build the Node image
+        if: needs.detect.outputs.relevant == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: components/otel-collector-fabric
+          file: components/otel-collector-fabric/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.NODE_IMAGE }}
+          cache-from: type=gha
+      - name: Build the CLI image
+        if: needs.detect.outputs.relevant == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: components/fabric-cli/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.CLI_IMAGE }}
+          cache-from: type=gha,scope=fabric-cli-image
+      - name: Build the test agent image
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          charts/fabric/tests/kind/build-agent-context.sh "${RUNNER_TEMP}/agent"
+          docker build -q -f charts/fabric/tests/kind/agent.Dockerfile -t "${AGENT_IMAGE}" "${RUNNER_TEMP}/agent"
+      - name: Create kind cluster
+        if: needs.detect.outputs.relevant == 'true'
+        uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with:
+          cluster_name: ${{ env.KIND_CLUSTER }}
+          node_image: kindest/node:v1.30.0
+          version: v0.23.0
+          kubectl_version: v1.30.0
+          wait: 120s
+      - name: Set up Helm
+        if: needs.detect.outputs.relevant == 'true'
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.15.0
+      - name: Secrets Job, injector and webhook outage
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          export KUBECONFIG="${RUNNER_TEMP}/kubeconfig"
+          kind get kubeconfig --name "${KIND_CLUSTER}" > "${KUBECONFIG}"
+          bash charts/fabric/tests/kind/e2e-secrets-injector.sh
+      - name: Diagnostics
+        if: failure() && needs.detect.outputs.relevant == 'true'
+        run: |
+          kubectl get pods,jobs,secrets -A -o wide || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -80 || true
+          kubectl logs -n fabric-system -l app.kubernetes.io/name=fabric-injector --tail=200 || true
+          kubectl logs -n fabric-system -l app.kubernetes.io/name=otel-collector --tail=200 || true
+
+  ttfr-kubernetes:
+    # Spec 058 §3.3 and §16.3 (WP8-14 to WP8-16): the Get started -> Kubernetes page
+    # executed as written on a fresh kind cluster with the production-host-sensor preset
+    # (G4: TTFR <= 600 s, one install with a preset, one label, one annotation, 0
+    # hand-made Secrets, `fabric verify --kubernetes` exit 0 with corroboration: complete),
+    # then the E2 acceptance on the same cluster: the audit's three workarounds as
+    # regression tests, a gVisor RuntimeClass pod reported unsupported_runtime and the
+    # webhook outage. The kind node image's CNI enforces NetworkPolicy (kind >= v0.24), so
+    # the default-deny case is real; the script checks that with a negative probe.
+    name: ttfr-kubernetes and E2 acceptance
+    needs: detect
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      KIND_CLUSTER: f058-ttfr-k8s-${{ github.run_id }}-${{ github.run_attempt }}
+      NODE_IMAGE: fabric-otelcol:e2e
+      CLI_IMAGE: fabric-cli:e2e
+      SENSOR_IMAGE: fabric-host-emitter:e2e
+      AGENT_IMAGE: fabric-agent:e2e
+      KIND_NODE_IMAGE: kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f
+    steps:
+      - name: Short-circuit unrelated changes
+        if: needs.detect.outputs.relevant != 'true'
+        run: echo "No chart, CLI, sensor, SDK or page changes; not required."
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        if: needs.detect.outputs.relevant == 'true'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: needs.detect.outputs.relevant == 'true'
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+        if: needs.detect.outputs.relevant == 'true'
+      - name: Harness dependencies (PyYAML, cryptography, the build backend)
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          scripts/ci/install-python-locked.sh --extra cli --no-default-groups --group ci
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: needs.detect.outputs.relevant == 'true'
+      - name: Build the Node image
+        if: needs.detect.outputs.relevant == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: components/otel-collector-fabric
+          file: components/otel-collector-fabric/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.NODE_IMAGE }}
+          cache-from: type=gha
+      - name: Build the CLI image
+        if: needs.detect.outputs.relevant == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: components/fabric-cli/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.CLI_IMAGE }}
+          cache-from: type=gha,scope=fabric-cli-image
+      - name: Build the host sensor image
+        if: needs.detect.outputs.relevant == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          # Context components/: the emitter links the host-records library.
+          context: components
+          file: components/host-emitter/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.SENSOR_IMAGE }}
+      - name: Build the test agent image and the wheel under test
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          charts/fabric/tests/kind/build-agent-context.sh "${RUNNER_TEMP}/agent"
+          docker build -q -f charts/fabric/tests/kind/agent.Dockerfile -t "${AGENT_IMAGE}" "${RUNNER_TEMP}/agent"
+      - name: Install kind and kubectl
+        if: needs.detect.outputs.relevant == 'true'
+        uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with:
+          install_only: true
+          version: v0.31.0
+          kubectl_version: v1.35.0
+      - name: Set up Helm
+        if: needs.detect.outputs.relevant == 'true'
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.15.0
+      - name: ttfr-kubernetes (the page, timed)
+        if: needs.detect.outputs.relevant == 'true'
+        run: >-
+          python scripts/ttfr/kubernetes/ttfr_kubernetes.py
+          --cluster "${KIND_CLUSTER}" --keep-cluster --kind-node-image "${KIND_NODE_IMAGE}"
+          --node-image "${NODE_IMAGE}" --cli-image "${CLI_IMAGE}"
+          --sensor-image "${SENSOR_IMAGE}" --agent-image "${AGENT_IMAGE}"
+          --wheel-dir "${RUNNER_TEMP}/agent/wheels" --work "${RUNNER_TEMP}/f058-ttfr-k8s"
+          --out ttfr.json
+      - name: E2 acceptance (workarounds, gVisor, webhook outage)
+        if: needs.detect.outputs.relevant == 'true'
+        env:
+          WORK: ${{ runner.temp }}/f058-ttfr-k8s
+        run: bash charts/fabric/tests/kind/e2e-kubernetes.sh
+      - name: Keep the TTFR report
+        if: always() && needs.detect.outputs.relevant == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ttfr-kubernetes
+          path: |
+            ttfr.json
+            ${{ runner.temp }}/f058-ttfr-k8s/steps.json
+            ${{ runner.temp }}/f058-ttfr-k8s/diagnostics.txt
+          if-no-files-found: ignore
+      - name: Diagnostics
+        if: failure() && needs.detect.outputs.relevant == 'true'
+        env:
+          KUBECONFIG: ${{ runner.temp }}/f058-ttfr-k8s/kubeconfig
+        run: |
+          kubectl get pods,jobs,networkpolicies -A -o wide || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -80 || true
+          for app in otel-collector fabric-host-emitter fabric-injector; do
+            kubectl logs -n fabric-system -l "app.kubernetes.io/name=${app}" --tail=150 || true
+          done
+          kubectl logs -n agents deployment/support-agent --tail=60 || true
+      - name: Delete the cluster
+        if: always() && needs.detect.outputs.relevant == 'true'
+        run: kind delete cluster --name "${KIND_CLUSTER}" || true

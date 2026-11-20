@@ -3,7 +3,7 @@
 """Stable Prometheus metric names on the production Node.
 
 Operators alert on ``fabric_delivery_*_total`` and
-``otelcol_exporter_send_failed_*_total`` (docs/production-setup.md). Since
+``otelcol_exporter_send_failed_*_total`` (docs/reference/manual-setup/production-setup.md). Since
 collector v0.151 a configuration that declares its own Prometheus reader gets
 ``without_type_suffix``, ``without_units`` and ``without_scope_info`` defaulted
 to true, which silently drops the ``_total`` suffix from every counter. Every

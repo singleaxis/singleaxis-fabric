@@ -49,6 +49,7 @@ release policy), each signed with Sigstore:
 |---|---|
 | `ghcr.io/<owner>/fabric-otelcol` | Fabric Node image (OTel Collector recorder distribution) |
 | `ghcr.io/<owner>/fabric-host-emitter` | eBPF host sensor image |
+| `ghcr.io/<owner>/fabric-cli` | Operator CLI image (`fabric`, with Docker Compose and Helm) for machines without Python |
 | `ghcr.io/<owner>/charts/fabric` | Helm chart (OCI) |
 
 Outside GHCR, a release publishes the Python SDK `singleaxis-fabric` to
@@ -116,6 +117,10 @@ cosign verify ghcr.io/singleaxis/fabric-host-emitter@sha256:EMITTER_DIGEST \
   --certificate-identity="https://github.com/singleaxis/singleaxis-fabric/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}" \
   --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
 
+cosign verify ghcr.io/singleaxis/fabric-cli@sha256:CLI_IMAGE_DIGEST \
+  --certificate-identity="https://github.com/singleaxis/singleaxis-fabric/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}" \
+  --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
+
 cosign verify ghcr.io/singleaxis/charts/fabric:VERSION@sha256:CHART_DIGEST \
   --certificate-identity="https://github.com/singleaxis/singleaxis-fabric/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}" \
   --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
@@ -131,6 +136,10 @@ gh attestation verify \
 
 gh attestation verify \
   oci://ghcr.io/singleaxis/fabric-host-emitter@sha256:EMITTER_DIGEST \
+  --repo singleaxis/singleaxis-fabric
+
+gh attestation verify \
+  oci://ghcr.io/singleaxis/fabric-cli@sha256:CLI_IMAGE_DIGEST \
   --repo singleaxis/singleaxis-fabric
 
 gh attestation verify fabricctl_VERSION_linux_amd64.tar.gz \

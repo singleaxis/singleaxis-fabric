@@ -1,0 +1,488 @@
+{
+  "schema": "fabric.plan-scenarios-result/v1",
+  "network_namespace": true,
+  "budget_s": 10,
+  "scenarios": [
+    {
+      "id": "vm-shell-browser",
+      "audit": "Agent in a VM with shell and browser tools (Python)",
+      "agent_made_by": "venv",
+      "seconds": 0.83,
+      "exit_code": 0,
+      "coverage": [
+        {
+          "id": "model_calls",
+          "note": "httpx; built-in endpoint table (openai key set)",
+          "row": "model calls (requests and responses)",
+          "state": "recorded"
+        },
+        {
+          "id": "tool_calls",
+          "note": "parsed from the model bodies",
+          "row": "tool calls and results",
+          "state": "recorded"
+        },
+        {
+          "id": "commands",
+          "note": "fabric init --exec",
+          "row": "commands the agent runs",
+          "state": "fix"
+        },
+        {
+          "id": "files",
+          "note": "not_instrumented: no file capture point is built in this release; instead: commands that change files show in the commands row (fabric init --exec)",
+          "row": "files the agent touched",
+          "state": "invisible"
+        },
+        {
+          "id": "network",
+          "note": "fabric init --http-host HOST",
+          "row": "network contacts (non-model HTTP)",
+          "state": "fix"
+        },
+        {
+          "id": "mcp",
+          "note": "fabric init --http-host HOST",
+          "row": "MCP traffic",
+          "state": "fix"
+        },
+        {
+          "id": "host",
+          "note": "eBPF sensor; kernel 7.0.0, BTF; fabric up needs root or a delegated cgroup",
+          "row": "host evidence (kernel sensor)",
+          "state": "recorded"
+        },
+        {
+          "id": "permissions",
+          "note": "tools offered and refusals, parsed from the model bodies; a decision your code makes needs control_check",
+          "row": "permissions and control decisions",
+          "state": "recorded"
+        },
+        {
+          "id": "run_identity",
+          "note": "with fabric.wire.run(session_id=..., user_id=...)",
+          "row": "end user and session",
+          "state": "needs code"
+        },
+        {
+          "id": "tenant_per_request",
+          "note": "not_configured: the tenant is set per process (FABRIC_TENANT_ID); one process serving many tenants records them all under one; instead: run one agent process per tenant",
+          "row": "tenant per request (one process, many tenants)",
+          "state": "invisible"
+        },
+        {
+          "id": "subagents",
+          "note": "with fabric.wire.run(...) in each sub-agent (a Python process the agent starts is already its own run)",
+          "row": "sub-agents and delegation",
+          "state": "needs code"
+        },
+        {
+          "id": "browser",
+          "note": "not_instrumented: page content and UI actions are not recorded (no UI automation capture point is built); instead: the browser's launch is a command (fabric init --exec) and its connections are host evidence",
+          "row": "browser and UI automation",
+          "state": "invisible"
+        },
+        {
+          "id": "realtime",
+          "note": "not_instrumented: WebSocket and realtime sessions are not recorded (no capture point is built)",
+          "row": "realtime and voice",
+          "state": "invisible"
+        }
+      ],
+      "next": [
+        "/home/runner/work/_temp/f058-plan-scenarios/vm-shell-browser/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
+        "fabric up",
+        "fabric run -- /home/runner/work/_temp/f058-plan-scenarios/vm-shell-browser/.venv/bin/python agent.py",
+        "fabric verify"
+      ],
+      "problems": []
+    },
+    {
+      "id": "remote-sandbox",
+      "audit": "Control plane with a remote sandbox",
+      "agent_made_by": "venv",
+      "seconds": 0.433,
+      "exit_code": 0,
+      "coverage": [
+        {
+          "id": "model_calls",
+          "note": "httpx; built-in endpoint table (anthropic key set)",
+          "row": "model calls (requests and responses)",
+          "state": "recorded"
+        },
+        {
+          "id": "tool_calls",
+          "note": "parsed from the model bodies",
+          "row": "tool calls and results",
+          "state": "recorded"
+        },
+        {
+          "id": "commands",
+          "note": "fabric init --exec",
+          "row": "commands the agent runs",
+          "state": "fix"
+        },
+        {
+          "id": "remote_sandbox",
+          "note": "FABRIC_WIRE_REMOTE_SANDBOX=e2b fabric run -- CMD",
+          "row": "commands in a remote sandbox",
+          "state": "fix"
+        },
+        {
+          "id": "files",
+          "note": "not_instrumented: no file capture point is built in this release; instead: commands that change files show in the commands row (fabric init --exec)",
+          "row": "files the agent touched",
+          "state": "invisible"
+        },
+        {
+          "id": "network",
+          "note": "fabric init --http-host HOST",
+          "row": "network contacts (non-model HTTP)",
+          "state": "fix"
+        },
+        {
+          "id": "mcp",
+          "note": "fabric init --http-host HOST",
+          "row": "MCP traffic",
+          "state": "fix"
+        },
+        {
+          "id": "host",
+          "note": "eBPF sensor; kernel 7.0.0, BTF; fabric up needs root or a delegated cgroup",
+          "row": "host evidence (kernel sensor)",
+          "state": "recorded"
+        },
+        {
+          "id": "permissions",
+          "note": "tools offered and refusals, parsed from the model bodies; a decision your code makes needs control_check",
+          "row": "permissions and control decisions",
+          "state": "recorded"
+        },
+        {
+          "id": "run_identity",
+          "note": "with fabric.wire.run(session_id=..., user_id=...)",
+          "row": "end user and session",
+          "state": "needs code"
+        },
+        {
+          "id": "tenant_per_request",
+          "note": "not_configured: the tenant is set per process (FABRIC_TENANT_ID); one process serving many tenants records them all under one; instead: run one agent process per tenant",
+          "row": "tenant per request (one process, many tenants)",
+          "state": "invisible"
+        },
+        {
+          "id": "subagents",
+          "note": "with fabric.wire.run(...) in each sub-agent (a Python process the agent starts is already its own run)",
+          "row": "sub-agents and delegation",
+          "state": "needs code"
+        },
+        {
+          "id": "browser",
+          "note": "not_instrumented: page content and UI actions are not recorded (no UI automation capture point is built); instead: the browser's launch is a command (fabric init --exec) and its connections are host evidence",
+          "row": "browser and UI automation",
+          "state": "invisible"
+        },
+        {
+          "id": "realtime",
+          "note": "not_instrumented: WebSocket and realtime sessions are not recorded (no capture point is built)",
+          "row": "realtime and voice",
+          "state": "invisible"
+        }
+      ],
+      "next": [
+        "/home/runner/work/_temp/f058-plan-scenarios/remote-sandbox/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
+        "fabric up",
+        "fabric run -- /home/runner/work/_temp/f058-plan-scenarios/remote-sandbox/.venv/bin/python agent.py",
+        "fabric verify"
+      ],
+      "problems": []
+    },
+    {
+      "id": "multi-tenant-service",
+      "audit": "Multi-tenant service (one process, many tenants)",
+      "agent_made_by": "venv",
+      "seconds": 0.434,
+      "exit_code": 0,
+      "coverage": [
+        {
+          "id": "model_calls",
+          "note": "httpx; built-in endpoint table (openai key set)",
+          "row": "model calls (requests and responses)",
+          "state": "recorded"
+        },
+        {
+          "id": "tool_calls",
+          "note": "parsed from the model bodies",
+          "row": "tool calls and results",
+          "state": "recorded"
+        },
+        {
+          "id": "commands",
+          "note": "fabric init --exec",
+          "row": "commands the agent runs",
+          "state": "fix"
+        },
+        {
+          "id": "files",
+          "note": "not_instrumented: no file capture point is built in this release; instead: commands that change files show in the commands row (fabric init --exec)",
+          "row": "files the agent touched",
+          "state": "invisible"
+        },
+        {
+          "id": "network",
+          "note": "fabric init --http-host HOST",
+          "row": "network contacts (non-model HTTP)",
+          "state": "fix"
+        },
+        {
+          "id": "mcp",
+          "note": "fabric init --http-host HOST",
+          "row": "MCP traffic",
+          "state": "fix"
+        },
+        {
+          "id": "host",
+          "note": "eBPF sensor; kernel 7.0.0, BTF; fabric up needs root or a delegated cgroup",
+          "row": "host evidence (kernel sensor)",
+          "state": "recorded"
+        },
+        {
+          "id": "permissions",
+          "note": "tools offered and refusals, parsed from the model bodies; a decision your code makes needs control_check",
+          "row": "permissions and control decisions",
+          "state": "recorded"
+        },
+        {
+          "id": "run_identity",
+          "note": "with fabric.wire.run(session_id=..., user_id=...)",
+          "row": "end user and session",
+          "state": "needs code"
+        },
+        {
+          "id": "tenant_per_request",
+          "note": "not_configured: the tenant is set per process (FABRIC_TENANT_ID); one process serving many tenants records them all under one; instead: run one agent process per tenant",
+          "row": "tenant per request (one process, many tenants)",
+          "state": "invisible"
+        },
+        {
+          "id": "subagents",
+          "note": "with fabric.wire.run(...) in each sub-agent (a Python process the agent starts is already its own run)",
+          "row": "sub-agents and delegation",
+          "state": "needs code"
+        },
+        {
+          "id": "browser",
+          "note": "not_instrumented: page content and UI actions are not recorded (no UI automation capture point is built); instead: the browser's launch is a command (fabric init --exec) and its connections are host evidence",
+          "row": "browser and UI automation",
+          "state": "invisible"
+        },
+        {
+          "id": "realtime",
+          "note": "not_instrumented: WebSocket and realtime sessions are not recorded (no capture point is built)",
+          "row": "realtime and voice",
+          "state": "invisible"
+        }
+      ],
+      "next": [
+        "/home/runner/work/_temp/f058-plan-scenarios/multi-tenant-service/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
+        "fabric up",
+        "fabric run -- /home/runner/work/_temp/f058-plan-scenarios/multi-tenant-service/.venv/bin/python server.py",
+        "fabric verify"
+      ],
+      "problems": []
+    },
+    {
+      "id": "compiled-binary",
+      "audit": "Compiled agent binary (Go/Rust)",
+      "agent_made_by": "go",
+      "seconds": 0.363,
+      "exit_code": 0,
+      "coverage": [
+        {
+          "id": "model_calls",
+          "note": "unsupported_runtime: no Fabric SDK runs in this runtime, so no model request or response is recorded; instead: the host sensor records the process's connections to the model host",
+          "row": "model calls (requests and responses)",
+          "state": "invisible"
+        },
+        {
+          "id": "tool_calls",
+          "note": "not_instrumented: tool calls are parsed from the recorded model bodies, and no model call is recorded here",
+          "row": "tool calls and results",
+          "state": "invisible"
+        },
+        {
+          "id": "commands",
+          "note": "unsupported_runtime: the exec hook runs in Python agents only; instead: the host sensor records every process the agent starts (host evidence row)",
+          "row": "commands the agent runs",
+          "state": "invisible"
+        },
+        {
+          "id": "files",
+          "note": "not_instrumented: no file capture point is built in this release; instead: commands that change files show in the commands row (fabric init --exec)",
+          "row": "files the agent touched",
+          "state": "invisible"
+        },
+        {
+          "id": "network",
+          "note": "unsupported_runtime: non-model HTTP is recorded for Python httpx clients only; instead: the host sensor records each connection's peer address (host evidence row)",
+          "row": "network contacts (non-model HTTP)",
+          "state": "invisible"
+        },
+        {
+          "id": "mcp",
+          "note": "unsupported_runtime: MCP messages are recorded in Python agents only; instead: the model's MCP tool calls are in the model bodies (tool calls row); a stdio server is a process the host sensor sees",
+          "row": "MCP traffic",
+          "state": "invisible"
+        },
+        {
+          "id": "host",
+          "note": "eBPF sensor; kernel 7.0.0, BTF; fabric up needs root or a delegated cgroup",
+          "row": "host evidence (kernel sensor)",
+          "state": "recorded"
+        },
+        {
+          "id": "permissions",
+          "note": "not_exposed: without recorded model bodies no offered tool or refusal is seen, and no records API runs in this runtime",
+          "row": "permissions and control decisions",
+          "state": "invisible"
+        },
+        {
+          "id": "run_identity",
+          "note": "not_exposed: the agent's inbound requests are not captured, so no zero-code path sees who asked",
+          "row": "end user and session",
+          "state": "invisible"
+        },
+        {
+          "id": "tenant_per_request",
+          "note": "not_configured: the tenant is set per process (FABRIC_TENANT_ID); one process serving many tenants records them all under one; instead: run one agent process per tenant",
+          "row": "tenant per request (one process, many tenants)",
+          "state": "invisible"
+        },
+        {
+          "id": "subagents",
+          "note": "unsupported_runtime: run scopes are a Python API",
+          "row": "sub-agents and delegation",
+          "state": "invisible"
+        },
+        {
+          "id": "browser",
+          "note": "not_instrumented: page content and UI actions are not recorded (no UI automation capture point is built); instead: the browser's launch is a command (fabric init --exec) and its connections are host evidence",
+          "row": "browser and UI automation",
+          "state": "invisible"
+        },
+        {
+          "id": "realtime",
+          "note": "not_instrumented: WebSocket and realtime sessions are not recorded (no capture point is built)",
+          "row": "realtime and voice",
+          "state": "invisible"
+        }
+      ],
+      "next": [
+        "fabric up",
+        "fabric run -- ./agent",
+        "fabric verify"
+      ],
+      "problems": []
+    },
+    {
+      "id": "mcp-heavy",
+      "audit": "MCP-heavy agent",
+      "agent_made_by": "venv",
+      "seconds": 0.428,
+      "exit_code": 0,
+      "coverage": [
+        {
+          "id": "model_calls",
+          "note": "httpx; built-in endpoint table (openai key set)",
+          "row": "model calls (requests and responses)",
+          "state": "recorded"
+        },
+        {
+          "id": "tool_calls",
+          "note": "parsed from the model bodies",
+          "row": "tool calls and results",
+          "state": "recorded"
+        },
+        {
+          "id": "commands",
+          "note": "fabric init --exec",
+          "row": "commands the agent runs",
+          "state": "fix"
+        },
+        {
+          "id": "files",
+          "note": "not_instrumented: no file capture point is built in this release; instead: commands that change files show in the commands row (fabric init --exec)",
+          "row": "files the agent touched",
+          "state": "invisible"
+        },
+        {
+          "id": "network",
+          "note": "fabric init --http-host HOST",
+          "row": "network contacts (non-model HTTP)",
+          "state": "fix"
+        },
+        {
+          "id": "mcp",
+          "note": "fabric init --mcp",
+          "row": "MCP traffic (stdio server files)",
+          "state": "fix"
+        },
+        {
+          "id": "mcp",
+          "note": "fabric init --http-host mcp.example.com",
+          "row": "MCP traffic (http server search)",
+          "state": "fix"
+        },
+        {
+          "id": "host",
+          "note": "eBPF sensor; kernel 7.0.0, BTF; fabric up needs root or a delegated cgroup",
+          "row": "host evidence (kernel sensor)",
+          "state": "recorded"
+        },
+        {
+          "id": "permissions",
+          "note": "tools offered and refusals, parsed from the model bodies; a decision your code makes needs control_check",
+          "row": "permissions and control decisions",
+          "state": "recorded"
+        },
+        {
+          "id": "run_identity",
+          "note": "with fabric.wire.run(session_id=..., user_id=...)",
+          "row": "end user and session",
+          "state": "needs code"
+        },
+        {
+          "id": "tenant_per_request",
+          "note": "not_configured: the tenant is set per process (FABRIC_TENANT_ID); one process serving many tenants records them all under one; instead: run one agent process per tenant",
+          "row": "tenant per request (one process, many tenants)",
+          "state": "invisible"
+        },
+        {
+          "id": "subagents",
+          "note": "with fabric.wire.run(...) in each sub-agent (a Python process the agent starts is already its own run)",
+          "row": "sub-agents and delegation",
+          "state": "needs code"
+        },
+        {
+          "id": "browser",
+          "note": "not_instrumented: page content and UI actions are not recorded (no UI automation capture point is built); instead: the browser's launch is a command (fabric init --exec) and its connections are host evidence",
+          "row": "browser and UI automation",
+          "state": "invisible"
+        },
+        {
+          "id": "realtime",
+          "note": "not_instrumented: WebSocket and realtime sessions are not recorded (no capture point is built)",
+          "row": "realtime and voice",
+          "state": "invisible"
+        }
+      ],
+      "next": [
+        "/home/runner/work/_temp/f058-plan-scenarios/mcp-heavy/.venv/bin/python -m pip install \"singleaxis-fabric[otlp]\"",
+        "fabric up",
+        "fabric run -- /home/runner/work/_temp/f058-plan-scenarios/mcp-heavy/.venv/bin/python agent.py",
+        "fabric verify"
+      ],
+      "problems": []
+    }
+  ]
+}

@@ -10,7 +10,7 @@
 # reads its keys from a credentials file mounted as a Compose secret
 # (AWS_SHARED_CREDENTIALS_FILE). Nothing in the production checks changes:
 # preflight still validates FABRIC_CONTENT_S3_ENDPOINT (https), the bucket,
-# the region and SSE from .env. docs/production-setup.md has the recipe.
+# the region and SSE from .env. docs/reference/manual-setup/production-setup.md has the recipe.
 #
 # Add it through FABRIC_COMPOSE_EXTRA (appended last by `make up-prod` and
 # `make up-prod-groups`), with in .env:

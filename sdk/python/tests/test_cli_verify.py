@@ -123,7 +123,7 @@ def test_verify_show_and_doctor_on_a_working_project(lab: dict[str, Any]) -> Non
     assert process["exchanges"] == 2 and process["chains"]["decisions"] == "complete"
     rows = {row["row"]: (row["state"], row["note"]) for row in run["coverage"]}
     assert rows["model calls (requests and responses)"] == ("recorded", "2 exchange(s)")
-    assert rows["commands the agent ran"] == ("fix", "fabric init --exec")
+    assert rows["commands the agent runs"] == ("fix", "fabric init --exec")
     assert rows["end user and session"][0] == "needs code"
     assert any(line.startswith("coverage (observed):") for line in lines)
     # --spans in each of the reader's input forms (13.4): the data directory `fabric up`
@@ -230,6 +230,7 @@ def test_s1_a_model_host_no_endpoint_matches_is_named_with_the_fix(lab: dict[str
     assert f"fabric init --provider http://127.0.0.1:{port}/v1" in findings["FW-006"]["detail"]
     rows = {row["row"]: row for row in report["data"]["run"]["coverage"]}
     assert rows["model calls (requests and responses)"] == {
+        "id": "model_calls",
         "row": "model calls (requests and responses)",
         "state": "fix",
         "note": f"fix: fabric init --provider http://127.0.0.1:{port}/v1",
@@ -374,7 +375,9 @@ def test_the_judgement_is_the_readers_verdict_and_the_decisions_chain() -> None:
 
 
 def test_reader_outputs_name_no_evaluation_word() -> None:
-    """I1 / 057 B6: verify and show print the reader's facts, never an evaluation."""
+    """I1 / 057 B6: verify and show print the reader's facts, never an evaluation. The
+    coverage rows and every reason's words (WP8-17, WP8-18) are printed by verify and
+    plan from their own modules, so those are scanned too."""
     for module in (
         "cli/_verify.py",
         "cli/_show.py",
@@ -382,6 +385,11 @@ def test_reader_outputs_name_no_evaluation_word() -> None:
         "cli/_transcript.py",
         "cli/_doctor.py",
         "cli/_run.py",
+        "cli/_kubecmd.py",
+        "cli/_plan.py",
+        "cli/_coverage.py",
+        "cli/_reasons_data.py",
+        "cli/_rows_data.py",
     ):
         for literal in _printable_literals(_tree(module)):
             assert not FORBIDDEN_WORDS.search(literal), (module, literal)
