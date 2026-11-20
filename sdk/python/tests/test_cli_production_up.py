@@ -283,8 +283,9 @@ def test_the_sensor_derives_its_source_id_with_the_key_the_node_binding_used(
     mounts = [v for v in sensor["volumes"] if isinstance(v, str)]
     assert f"{key}:/etc/fabric-host-emitter/id.key:ro" in mounts
     loaded = _load(project)
-    assert _project.derived_source_ids(loaded)["ebpf"] == (
-        _compose(project)["services"]["fabric-node"]["environment"]["FABRIC_EBPF_SOURCE_ID"]
+    assert (
+        _project.derived_source_ids(loaded)["ebpf"]
+        == (_compose(project)["services"]["fabric-node"]["environment"]["FABRIC_EBPF_SOURCE_ID"])
     )
 
 
@@ -521,9 +522,7 @@ def test_token_and_key_shapes(tmp_path: Path) -> None:
         assert _prodchecks.token_problem(token) == "is not 32 to 4096 bytes long"
     for data in (b"a" * 32 + b" b", b"a" * 32 + b"\x7f", b"a" * 32 + "é".encode()):
         token.write_bytes(data)
-        assert _prodchecks.token_problem(token) == (
-            "holds whitespace or a non-printable character"
-        )
+        assert _prodchecks.token_problem(token) == ("holds whitespace or a non-printable character")
     token.write_bytes(b"a" * 32)
     assert _prodchecks.token_problem(token) is None
     key = tmp_path / "k"

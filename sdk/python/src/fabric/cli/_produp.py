@@ -46,8 +46,8 @@ def export_header(project: _project.Project) -> tuple[str | None, list[Finding]]
         except (OSError, UnicodeDecodeError):
             token = ""
         if not token or not token.isprintable():
-            return None, [Finding("FC-176", f"the trial receiver's token file {path} is missing "
-                                            "or unreadable: run `fabric init` to generate it")]  # fmt: skip
+            why = f"the trial receiver's token file {path} is missing or unreadable"
+            return None, [Finding("FC-176", why + ": run `fabric init` to generate it")]
         return "Bearer " + token, []
     raw = destination.get("otlp_headers_file")
     if not raw:
