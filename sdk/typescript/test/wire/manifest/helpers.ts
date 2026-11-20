@@ -109,6 +109,11 @@ export function pythonValidate(manifest: unknown): string | null {
   const script = `
 import json, sys
 from pathlib import Path
+try:
+    import jsonschema  # noqa: F401
+except ImportError:
+    sys.exit("the contract validator needs jsonschema: run 'uv sync --group dev' in "
+             "sdk/python, or point FABRIC_TEST_PYTHON at an interpreter that has it")
 sys.path.insert(0, str(Path(sys.argv[1]) / "scripts" / "contracts"))
 import validate_coverage_contracts as v
 root = Path(sys.argv[1])

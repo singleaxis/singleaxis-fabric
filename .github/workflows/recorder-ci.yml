@@ -188,8 +188,11 @@ jobs:
         # fabric.wire._registration against the TypeScript one, both ways.
         # 055-t7: the spool tests read and write sealed (FWSPENC1) records in Python,
         # whose envelope needs cryptography (the otlp extra).
+        # 055-t9: the manifest tests validate TypeScript manifests with the contract
+        # validator (scripts/contracts/validate_coverage_contracts.py), which needs the dev
+        # group's jsonschema.
         run: |
-          scripts/ci/install-python-locked.sh --no-default-groups --group ci --extra otlp
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
           python -m pip install --no-deps --no-build-isolation -e ./sdk/python
           echo "FABRIC_TEST_PYTHON=$(command -v python)" >> "${GITHUB_ENV}"
       - name: Lint, typecheck, build, and test
