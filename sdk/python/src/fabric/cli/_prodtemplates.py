@@ -78,6 +78,10 @@ class ProdLayout:
     content_items: int = 64
     sensor_cgroup: str | None = None
     sensor_labels: dict[str, str] = field(default_factory=dict)  # source and host label
+    #: The id key the sensor derives its source pseudonym with: the project's (a key
+    #: fabric.yaml references, else the generated one), the key the Node's ebpf binding
+    #: was derived from. ``None``: the generated key in the secrets directory.
+    id_key: Path | None = None
 
     @property
     def tap(self) -> bool:
@@ -524,7 +528,8 @@ def _sensor(layout: ProdLayout, images: Images, labels: dict[str, str]) -> dict[
         "volumes": [
             "/sys/kernel/btf:/sys/kernel/btf:ro", "/sys/kernel/tracing:/sys/kernel/tracing:ro",
             "/sys/kernel/debug:/sys/kernel/debug:ro", "/sys/fs/cgroup:/sys/fs/cgroup:ro",
-            bind(secrets / _secrets.ID_KEY, "/etc/fabric-host-emitter/id.key", read_only=True),
+            bind(layout.id_key or secrets / _secrets.ID_KEY, "/etc/fabric-host-emitter/id.key",
+                 read_only=True),
             bind(secrets / _secrets.SENSOR_STATE_KEY, "/etc/fabric-host-emitter/state.key",
                  read_only=True),
             bind(secrets / _secrets.token_file("ebpf"), "/etc/fabric-host-emitter/token",

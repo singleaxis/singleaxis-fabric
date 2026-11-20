@@ -250,6 +250,30 @@ def test_a_referenced_id_key_the_emitter_cannot_read_keeps_the_sensor_off(
     assert mode(key) == 0o600
 
 
+def test_the_sensor_derives_its_source_id_with_the_key_the_node_binding_used(
+    project: Path, tmp_path: Path
+) -> None:
+    """A referenced id key (mode 0400) is the one the Node's ebpf binding is derived from,
+    so it is the one the sensor mounts; the generated key would give another pseudonym
+    and the Node would refuse every sensor record."""
+    _init("--destination", "trial")
+    key = tmp_path / "their.key"
+    key.write_bytes(b"k" * 64)
+    key.chmod(0o400)
+    document = yaml.safe_load((project / "fabric.yaml").read_text())
+    document["secrets"]["id_key_file"] = str(key)
+    (project / "fabric.yaml").write_text(yaml.safe_dump(document))
+    report, _ = _up_once(EnvDocker())
+    assert "FC-177" not in [f.id for f in report.findings]
+    sensor = _compose(project)["services"]["fabric-sensor"]
+    mounts = [v for v in sensor["volumes"] if isinstance(v, str)]
+    assert f"{key}:/etc/fabric-host-emitter/id.key:ro" in mounts
+    loaded = _load(project)
+    assert _project.derived_source_ids(loaded)["ebpf"] == (
+        _compose(project)["services"]["fabric-node"]["environment"]["FABRIC_EBPF_SOURCE_ID"]
+    )
+
+
 @pytest.mark.parametrize(("text", "expected"), [
     ("Authorization=Bearer%20abc\n", "Bearer abc"),
     ("x-tenant=a,Authorization=Basic%20dXNlcjpwYXNz", "Basic dXNlcjpwYXNz"),

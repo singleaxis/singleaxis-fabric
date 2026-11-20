@@ -128,6 +128,7 @@ def _layout(project: _project.Project, facts: _sensor.HostFacts, sensor: _sensor
         content_items=(queue.content_items or 64) if queue else 64,
         sensor_cgroup=sensor.cgroup if sensor.start else None,
         sensor_labels={"source": labels["ebpf"], "host": project.host_label},
+        id_key=project.id_key_file,
     )  # fmt: skip
 
 
