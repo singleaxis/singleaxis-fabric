@@ -102,6 +102,7 @@ def _crypto() -> Any:
     missing)."""
     try:
         from cryptography import x509  # noqa: PLC0415
+        from cryptography.exceptions import InvalidSignature  # noqa: PLC0415
         from cryptography.hazmat.primitives import hashes, serialization  # noqa: PLC0415
         from cryptography.hazmat.primitives.asymmetric import ec  # noqa: PLC0415
         from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID  # noqa: PLC0415
@@ -109,7 +110,8 @@ def _crypto() -> Any:
         raise CliError([Finding("FC-005", "cryptography is not installed")], EXIT_USAGE) from None
 
     return SimpleNamespace(x509=x509, hashes=hashes, serialization=serialization, ec=ec,
-                           NameOID=NameOID, ExtendedKeyUsageOID=ExtendedKeyUsageOID)  # fmt: skip
+                           NameOID=NameOID, ExtendedKeyUsageOID=ExtendedKeyUsageOID,
+                           InvalidSignature=InvalidSignature)  # fmt: skip
 
 
 # ---------------------------------------------------------------- where secrets live
@@ -687,3 +689,59 @@ def rotate_production(directory: Path, names: Sequence[str], labels: Mapping[str
     if "ca" in names and trial:
         out += _trial_certs(directory, rotate=True)
     return out
+
+
+# ---------------------------------------------------------------- `fabric up` (production)
+
+#: The canary tap's TLS receiver on the project network (§9.3) and its certificate.
+CANARY_TAP_SERVICE = "fabric-canary-tap"
+#: The server certificates `fabric up` keeps current for the services it runs beside the
+#: production Node: (file stem, service name, name in reports).
+SERVICE_CERTS: tuple[tuple[str, str, str], ...] = (
+    ("trial-otlp", TRIAL_OTLP_SERVICE, "trial-otlp-cert"),
+    ("trial-s3", TRIAL_S3_SERVICE, "trial-s3-cert"),
+    ("canary-tap", CANARY_TAP_SERVICE, "canary-tap-cert"),
+)
+#: The keys the host emitter reads, which it accepts only as mode 0400 or 0440 files.
+SENSOR_KEYS: tuple[str, ...] = (ID_KEY, SENSOR_STATE_KEY)
+
+
+def issued_by_ca(cert: Path, ca: Path) -> bool:
+    """Whether the certificate at ``cert`` was signed by the CA at ``ca`` (local check)."""
+    try:
+        _certificate(cert).verify_directly_issued_by(_certificate(ca))
+    except (CliError, ValueError, TypeError, _crypto().InvalidSignature):
+        return False
+    return True
+
+
+def ensure_service_cert(directory: Path, stem: str, *, now: dt.datetime | None = None
+                        ) -> SecretInfo:  # fmt: skip
+    """A server certificate of a service `fabric up` runs (the trial receiver and store,
+    the canary tap), issued from the project CA for that service's name: generated when
+    missing, reissued when the CA was rotated or it expires within
+    :data:`RENEW_BEFORE_DAYS` (the service's clients trust the CA, so nothing else
+    changes)."""
+    _, service, label = next(entry for entry in SERVICE_CERTS if entry[0] == stem)
+    pair = (f"{stem}.crt", f"{stem}.key")
+    stale = False
+    if _pair(directory, *pair, label):
+        _, expires = certificate_info(directory / pair[0])
+        stale = (expires - (now or _now()) <= dt.timedelta(days=RENEW_BEFORE_DAYS)
+                 or not issued_by_ca(directory / pair[0], directory / CA_CERT))  # fmt: skip
+    return _ensure_leaf(directory, pair, label, (service, "localhost"), NODE_IPS,
+                        common_name=service, client=False, rotate=stale)  # fmt: skip
+
+
+def sensor_key_modes(directory: Path) -> list[str]:
+    """Make the keys the host emitter reads mode 0400 (it refuses any other mode but
+    0440): the owner keeps reading them, nobody writes them. Returns the files changed."""
+    changed = []
+    for name in SENSOR_KEYS:
+        path = directory / name
+        if not check_secret_file(path):
+            continue
+        if _POSIX and stat.S_IMODE(path.lstat().st_mode) not in (0o400, 0o440):
+            os.chmod(path, 0o400)
+            changed.append(str(path))
+    return changed

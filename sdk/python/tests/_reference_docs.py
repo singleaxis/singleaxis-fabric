@@ -106,6 +106,7 @@ VARIABLES: tuple[tuple[str, str, str], ...] = (
     ("The CLI", "FABRIC_NODE_IMAGE", "The Node image `fabric up` runs (default: pinned by digest)."),
     ("The CLI", "FABRIC_SENSOR_IMAGE", "The sensor image `fabric up` runs (default: pinned by digest)."),
     ("The CLI", "FABRIC_SINK_IMAGE", "The local destination image `fabric up` runs (default: pinned by digest)."),
+    ("The CLI", "FABRIC_TRIAL_S3_IMAGE", "The trial destination's S3-compatible store image `fabric up` runs in the production profile (default: pinned by digest)."),
     ("The CLI", "FABRIC_CLI_IMAGE", "TS: the image `npx fabric` runs the full CLI from (default: the release's)."),
 )  # fmt: skip
 #: ``FABRIC_*`` literals in the source that are not environment variables.
@@ -124,6 +125,10 @@ NODE_VARIABLES = frozenset({
     "FABRIC_CONTENT_KEY_FILE", "FABRIC_CONTENT_S3_BUCKET", "FABRIC_CONTENT_S3_ENDPOINT",
     "FABRIC_CONTENT_S3_KMS_KEY_ID", "FABRIC_CONTENT_S3_PATH_STYLE", "FABRIC_CONTENT_S3_REGION",
     "FABRIC_CONTENT_S3_SSE",
+    # The production Node `fabric up` renders (WP8-24): the canary group's binding, the
+    # destination's Authorization header (Compose interpolates it from `up`'s own
+    # environment) and the prefix the content store's variables share.
+    "FABRIC_CANARY_SOURCE_ID", "FABRIC_EXPORT_AUTH_HEADER", "FABRIC_CONTENT_S3_",
 })  # fmt: skip
 
 

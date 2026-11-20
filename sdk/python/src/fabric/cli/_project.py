@@ -33,6 +33,15 @@ DEFAULT_NODE_PORT = 4318
 #: The production Node's content listener is the port after the telemetry one (4319 beside
 #: 4318, as the ingress-group Compose files publish them).
 CONTENT_PORT_OFFSET = 1
+#: The canary's own ingress group (§7.1, 9.3): its telemetry and content listeners, the
+#: two ports after the agent's (4320 and 4321 beside 4318), so the Node binds its records
+#: by the listener they arrive on, never by a source they name.
+CANARY_PORT_OFFSET = 2
+CANARY_CONTENT_PORT_OFFSET = 3
+#: The agent group's OTLP/gRPC listener and the eBPF group's (the ingress-group Compose
+#: files' 4317 and 4417), published on loopback.
+AGENT_GRPC_PORT = 4317
+EBPF_GRPC_PORT = 4417
 #: The clear source label of the canary `fabric verify` sends (its own ingress binding).
 CANARY_SOURCE = "fabric-canary"
 TRIAL_BUCKET = "fabric-content"
@@ -360,6 +369,15 @@ def canary_environment(project: Project) -> dict[str, str]:
     env = compile_environment(project)
     if project.production:
         env.update(_production_sender(project, "canary"))
+        # Its own listeners (the canary group) and its own spool: never the agent's
+        # spool directory, which a running agent holds.
+        port = node_port(project.resolved)
+        env["FABRIC_OTLP_ENDPOINT"] = f"https://localhost:{port + CANARY_PORT_OFFSET}"
+        if "FABRIC_WIRE_CONTENT_ENDPOINT" in env:
+            env["FABRIC_WIRE_CONTENT_ENDPOINT"] = (
+                f"https://localhost:{port + CANARY_CONTENT_PORT_OFFSET}/v1/logs"
+            )
+        env["FABRIC_WIRE_SPOOL_DIR"] = str(project.state_dir / "state" / "canary-spool")
     return env
 
 

@@ -117,6 +117,7 @@ unless marked TS or Python and TS.
 | `FABRIC_NODE_IMAGE` | The Node image `fabric up` runs (default: pinned by digest). |
 | `FABRIC_SENSOR_IMAGE` | The sensor image `fabric up` runs (default: pinned by digest). |
 | `FABRIC_SINK_IMAGE` | The local destination image `fabric up` runs (default: pinned by digest). |
+| `FABRIC_TRIAL_S3_IMAGE` | The trial destination's S3-compatible store image `fabric up` runs in the production profile (default: pinned by digest). |
 | `FABRIC_CLI_IMAGE` | TS: the image `npx fabric` runs the full CLI from (default: the release's). |
 
 `FABRIC_TOKENIZATION_KEY_FILE` and `FABRIC_WIRE_SPOOL_KEY_FILE` are the file

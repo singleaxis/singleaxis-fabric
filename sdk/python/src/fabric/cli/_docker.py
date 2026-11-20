@@ -87,6 +87,14 @@ class Docker:
             self._binary = found
         return self._binary
 
+    def with_environment(self, extra: Mapping[str, str]) -> Docker:
+        """The same daemon and runner, with ``extra`` added to the environment of every
+        command (a value Compose interpolates; never on a command line)."""
+        other = Docker({**self._environ, **extra}, runner=self._runner, which=self._which,
+                       echo=self._echo)  # fmt: skip
+        other._binary = self._binary
+        return other
+
     def run(self, *args: str, echo: bool = False) -> Result:
         return self._runner([self._docker(), *args], self._environ,
                             self._echo if echo else None)  # fmt: skip

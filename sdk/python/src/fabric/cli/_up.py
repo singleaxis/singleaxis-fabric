@@ -1,6 +1,7 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""``fabric up`` and ``fabric down`` (spec 058 §5.4), Docker shapes, local profile.
+"""``fabric up`` and ``fabric down`` (spec 058 §5.4), Docker shapes; the production profile's
+single-host shape is :mod:`._produp`.
 
 ``up`` runs ``init`` with defaults when there is no ``fabric.yaml``, renders a Compose
 project from templates packaged with the CLI (images pinned by digest), starts the Fabric
@@ -93,13 +94,16 @@ def _refuse_unbuilt(options: argparse.Namespace, project: _project.Project | Non
     if project is None:
         return
     resolved = project.resolved
-    for key, allowed in (("profile", ("local",)), ("shape", (None, "laptop", "linux-host",
-                                                              "container")),
+    for key, allowed in (("profile", ("local", "production")),
+                         ("shape", (None, "laptop", "linux-host", "container")),
                          ("node.mode", ("docker", "external"))):  # fmt: skip
         if resolved[key] not in allowed:
             raise CliError([Finding("FC-011", f"{key}: {resolved[key]}")])
     preset = (resolved["destination"] or {}).get("preset")
-    if resolved["node.mode"] == "docker" and preset != "local-dir":
+    # The local profile's Node writes local-dir; the production profile's, the presets of
+    # §9.1 (compiling the project refuses any other pairing first, with its fix).
+    expected = _config.PRODUCTION_PRESETS if project.production else ("local-dir",)
+    if resolved["node.mode"] == "docker" and preset not in expected:
         raise CliError([Finding("FC-011", f"destination.preset: {preset}")])
 
 
@@ -416,9 +420,12 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
         return _kubecmd.run_up(options, environ, cwd)
     _refuse_unbuilt(options, None)
     project, located, findings, lines, prepared = _load_or_init(options, environ, cwd)
-    report = Report("up", findings=findings, config=located.to_json())
-    report.data = {"project": project.name, "compose_project": project.compose_project,
-                   "secrets": [info.to_json() for info in prepared.secrets]}  # fmt: skip
+    if project.production:
+        return _production(options, environ, project, located, findings, lines, prepared,
+                           docker=docker, probe=probe, sleep=sleep)  # fmt: skip
+    report = Report("up", findings=findings, config=located.to_json(), data={
+        "project": project.name, "compose_project": project.compose_project,
+        "secrets": [info.to_json() for info in prepared.secrets]})  # fmt: skip
     endpoint = _project.node_endpoint(project.resolved)
     if project.resolved["node.mode"] == "external":
         findings.append(Finding("FC-024", f"node.endpoint: {endpoint}"))
@@ -484,6 +491,13 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
     lines.append(f"host sensor: {sensor.state()}{scope}")
     lines.append(next_command(project))
     return report, lines
+
+
+def _production(*args: Any, **kwargs: Any) -> tuple[Report, list[str]]:
+    """The single-host production shape (WP8-24): :func:`._produp.run_up`."""
+    from . import _produp  # noqa: PLC0415 - it builds on this module's helpers
+
+    return _produp.run_up(*args, **kwargs)
 
 
 def next_command(project: _project.Project) -> str:

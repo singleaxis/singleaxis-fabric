@@ -39,7 +39,7 @@ _KEY_ORDER = ("schema", "project", "profile", "shape", "tenant", "agent", "provi
 #: Variables `--from-env` understands, or that belong to one run and are never imported.
 _NOT_IMPORTED_SILENTLY = frozenset({
     "FABRIC_CONFIG", "FABRIC_WIRE_AUTOLOAD", "FABRIC_RUN_ID", "FABRIC_WIRE_STATUS_FILE",
-    "FABRIC_NODE_IMAGE", "FABRIC_SENSOR_IMAGE", "FABRIC_SINK_IMAGE",
+    "FABRIC_NODE_IMAGE", "FABRIC_SENSOR_IMAGE", "FABRIC_SINK_IMAGE", "FABRIC_TRIAL_S3_IMAGE",
 })  # fmt: skip
 #: The variables `--from-env` writes into fabric.yaml (or stores, with --import-secrets).
 _IMPORTED = frozenset({
@@ -1016,13 +1016,8 @@ def _production_lines(project: _project.Project, prepared: Prepared) -> list[str
                      + f", worst case {_sizing.human(queue.worst_case_bytes)}"
                      + (f" of {_sizing.human(queue.free_bytes)} free" if queue.free_bytes
                         else ""))  # fmt: skip
-    # `fabric up` for the single-host production shape is not in this release (FC-011):
-    # name the route that works, not a command that refuses.
-    lines.append(
-        "next: start the production Node from the settings above as "
-        "docs/reference/manual-setup/production-setup.md shows; `fabric up` and "
-        "`fabric verify --production` for this shape are not part of this release"
-    )
+    lines.append("next: fabric up   then   fabric run -- <your agent command>   then   "
+                 "fabric verify --production")  # fmt: skip
     return lines
 
 
