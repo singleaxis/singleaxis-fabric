@@ -926,6 +926,9 @@ export class Heartbeats {
   readonly #nowMs: () => number;
   #lastPeriodicMs: number;
   #active = false;
+  /** The `(epoch, last)` the previous tick saw: a later position means the source allocated. */
+  #seenEpoch: bigint | undefined;
+  #seenLast: bigint | undefined;
   #finals = new Set<bigint>();
   readonly pending: Heartbeat[] = [];
   dropped = 0;
@@ -961,8 +964,17 @@ export class Heartbeats {
    * The periodic tick (the Fabric worker's loop): when the interval passed and the
    * source allocated since the last heartbeat (or `every` is set: a flush), queue one at
    * `last`, the last allocated position. Returns it, or `undefined`.
+   *
+   * Eligibility follows allocation, as Python's `note_activity` (called at allocation)
+   * does: a position allocated since the previous tick makes the source eligible even
+   * when its exchange was lost and never spooled, so its gap is still bounded by a beat.
    */
   tick(epoch: bigint, last: bigint, every = false): Heartbeat | undefined {
+    if (this.#seenEpoch !== epoch || (this.#seenLast !== undefined && last > this.#seenLast)) {
+      if (this.#seenEpoch === epoch || last >= 0n) this.#active = true;
+    }
+    this.#seenEpoch = epoch;
+    this.#seenLast = last;
     const now = this.#nowMs();
     if (!every && now - this.#lastPeriodicMs < this.#intervalMs) return undefined;
     this.#lastPeriodicMs = now;

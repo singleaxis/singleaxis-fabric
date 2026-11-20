@@ -304,6 +304,24 @@ describe("heartbeats", () => {
     expect(beats.tick(epoch, 4n, true)?.kind).toBe("periodic"); // a flush beats anyway
   });
 
+  it("makes a source eligible when it allocated, spooled or not (Python note_activity)", () => {
+    const { chain, epoch, beats, advance } = clocked();
+    chain.initial(epoch);
+    expect(beats.tick(epoch, -1n)).toBe(undefined); // nothing allocated yet
+    advance(HEARTBEAT_INTERVAL_MS);
+    expect(beats.tick(epoch, -1n)).toBe(undefined); // due, but no position: no beat
+    // Positions 0..2 were allocated and lost (never spooled): still a beat at 2.
+    advance(HEARTBEAT_INTERVAL_MS);
+    expect(beats.tick(epoch, 2n)).toMatchObject({ kind: "periodic", lastSequence: 2n });
+    advance(HEARTBEAT_INTERVAL_MS);
+    expect(beats.tick(epoch, 2n)).toBe(undefined); // nothing allocated since
+    // A new epoch with no position yet is not activity; its first position is.
+    advance(HEARTBEAT_INTERVAL_MS);
+    expect(beats.tick(epoch + 1n, -1n)).toBe(undefined);
+    advance(HEARTBEAT_INTERVAL_MS);
+    expect(beats.tick(epoch + 1n, 0n)).toMatchObject({ epoch: epoch + 1n, lastSequence: 0n });
+  });
+
   it("carries the latest manifest_seq", () => {
     const { chain, epoch, beats, advance } = clocked();
     chain.initial(epoch);
