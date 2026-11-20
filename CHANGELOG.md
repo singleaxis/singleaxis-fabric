@@ -15,6 +15,22 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: capture manifests and heartbeats (spec 055,
+  unit 055-t9).** Still not installable from the package. A Node.js process
+  can now state, in the record itself, what it could and could not capture:
+  the first manifest is written before the first model call, and every later
+  one is chained to its predecessor by digest and takes effect at an exact
+  position in the capture sequence. It says, per capture point, whether
+  `fetch` and `node:http` capture is active, switched off
+  (`FABRIC_WIRE_UNDICI`, `FABRIC_WIRE_NODE_HTTP`), unsupported on this Node.js
+  build (read from the compatibility table) or failed; which model traffic is
+  never captured (for example axios adapters, WebSockets and worker threads
+  that did not load Fabric); the limits, privacy settings and key ids in
+  force; and which earlier runs of this agent ended without closing their
+  record. Manifests and the final heartbeat are written to the spool in the
+  format Python's drainer reads; periodic heartbeats every 30 seconds name
+  the latest manifest. No manifest field holds a path, a key, a token, a host
+  name or a list of installed packages.
 - **Node.js capture groundwork: content protection before anything is
   written (spec 055, unit 055-t8).** Still not installable from the package,
   and no Node.js build is released as qualified yet. Fabric's own worker
