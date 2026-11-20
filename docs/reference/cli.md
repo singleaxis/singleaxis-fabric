@@ -127,7 +127,7 @@ Check that a recorded run reached the destination intact.
 | `--spans PATH` | read the run from this span export (a destination Fabric cannot read back) |
 | `--strict` | a warning fails too |
 | `--wait SECONDS` | how long to wait for records to reach the destination (default 30; with --kubernetes and --spans, 180: for a run of the pods your rollout restarted) |
-| `--production` | ==SUPPRESS== |
+| `--production` | also check the production hardening: TLS and tokens on every hop, keys, the capture policy, the content store, certificate expiry, the sensor and the clock |
 | `--kubernetes` | check the Fabric release in the cluster of the current kube context (read-only), then read the run from --spans |
 | `--namespace NS` | the release's namespace (default fabric-system; found by itself when there is one release) |
 

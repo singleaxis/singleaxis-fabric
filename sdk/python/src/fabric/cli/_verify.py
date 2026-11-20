@@ -1,8 +1,10 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""``fabric verify`` (spec 058 §5.6), local profile: check the configuration, the Node,
-send a canary through the whole path, read it back, then read the user's last
-``fabric run`` and print the observed coverage report (§12.4).
+"""``fabric verify`` (spec 058 §5.6): check the configuration, the Node, send a canary
+through the whole path, read it back, then read the user's last ``fabric run`` and print
+the observed coverage report (§12.4). ``--production`` adds the hardening checks of §13.4
+(:mod:`._prodchecks`); in the production profile the canary has its own ingress group, and
+a destination Fabric cannot read spans from is read through the canary tap (§9.3).
 
 Exit 0 when no finding is an error (``--strict``: and no warning). A run passes when the
 reader's own verdict is complete for every process of it and the ``decisions`` chain is
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import json
 import os
 import secrets as _random
@@ -100,8 +103,12 @@ def run_canary(
 ) -> dict[str, Any]:
     """Start ``python -m fabric.cli._canary`` with the environment ``fabric run`` gives a
     Python agent (the shell's ``FABRIC_*`` win), without the autoload."""
-    plan = _run.Plan(added=dict(_project.compile_environment(project)))
+    # The canary's own source, token, listeners and spool in production (§7.1); the
+    # agent's environment in the local profile.
+    plan = _run.Plan(added=dict(_project.canary_environment(project)))
     env, _ = _run.child_environment(environ, plan)
+    if project.production:
+        _secrets.ensure_private_dir(Path(env["FABRIC_WIRE_SPOOL_DIR"]))
     for name in ("FABRIC_WIRE_AUTOLOAD", "FABRIC_RUN_ID", "FABRIC_WIRE_STATUS_FILE"):
         env.pop(name, None)
     with contextlib.suppress(OSError):
@@ -212,11 +219,15 @@ def _canary(
         return label, data
     wait = _args.DEFAULT_WAIT_S if options.wait is None else options.wait
     run, error = _poll_canary(dest, label, started, wait, sleep)
+    tapped = dest.spans_dir == canary_tap_dir(project)
     if run is None:
         findings.append(
             Finding("FC-073", error)
             if error
-            else Finding("FC-063", f"none of its records in {dest.spans_dir} after {wait:g} s")
+            else Finding(
+                "FC-197" if tapped else "FC-063",
+                f"none of its records in {dest.spans_dir} after {wait:g} s",
+            )
         )
         lines.append("canary: delivered to the Node, not found in the destination")
         return label, data
@@ -229,6 +240,41 @@ def _canary(
     findings.append(Finding("FC-065", f"{run['counts']['exchanges']} exchange, {run['verdict']}"))
     lines.append(f"canary: recorded, delivered and read back {run['verdict']}")
     return label, data
+
+
+def canary_tap_dir(project: _project.Project) -> Path:
+    """Where the Node's canary tap writes the canary's spans (§9.3)."""
+    return project.state_dir / "state" / "canary-tap"
+
+
+def canary_destination(project: _project.Project, environ: Mapping[str, str]
+                       ) -> _read.Destination:  # fmt: skip
+    """Where the canary is read back: the project's destination, or, in production with a
+    destination Fabric cannot read spans from, the canary tap (§9.3, OQ-9) with the
+    destination's content store."""
+    dest = _read.destination(project, environ)
+    if project.production and dest.spans_dir is None:
+        return dataclasses.replace(dest, spans_dir=canary_tap_dir(project), reason=None)
+    return dest
+
+
+def _production_checks(project: _project.Project, environ: Mapping[str, str],
+                       findings: list[Finding], lines: list[str]) -> dict[str, Any]:  # fmt: skip
+    """§5.6 ``--production``: the hardening checks, with ids shared with preflight-prod.sh."""
+    from . import _prodchecks  # noqa: PLC0415
+
+    checks, extra = _prodchecks.run(project, environ)
+    failed = _prodchecks.findings(checks)
+    findings.extend(extra)
+    findings.extend(failed)
+    counts = {outcome: sum(1 for c in checks if c.outcome == outcome)
+              for outcome in ("pass", "warn", "fail", "skip")}  # fmt: skip
+    if not failed:
+        findings.append(Finding("FC-196", f"{counts['pass']} passed"))
+    lines.append(f"production checks: {counts['pass']} passed, {counts['warn']} warning(s), "
+                 f"{counts['fail']} failed" + (f", {counts['skip']} not applicable"
+                                               if counts["skip"] else ""))  # fmt: skip
+    return {"checks": [c.to_json() for c in checks], "outcomes": _prodchecks.outcomes(checks)}
 
 
 # ---------------------------------------------------------------- the user's run
@@ -467,8 +513,9 @@ def run(
     """``fabric verify``."""
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
-    if options.production:
-        raise CliError([Finding("FC-011", "--production")])
+    if options.production and options.kubernetes:
+        raise CliError([Finding("FC-011", "--production with --kubernetes (the chart's "
+                                "production preset is checked by --kubernetes)")])  # fmt: skip
     if options.kubernetes:
         from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
 
@@ -484,6 +531,9 @@ def run(
                 )
             ]
         )
+    if options.production and not project.production:
+        why = "--production: this is a local project; run `fabric init --production`, `fabric up`"
+        raise CliError([Finding("FC-004", why)])
     findings: list[Finding] = []
     lines: list[str] = []
     report = Report("verify", findings=findings, config=located.to_json())
@@ -502,6 +552,8 @@ def run(
         f"{project.resolved['profile']})"
     )
     report.data = {"project": project.name}
+    if options.production:
+        report.data["production"] = _production_checks(project, environ, findings, lines)
     # 2. the Node
     endpoint = compiled["FABRIC_OTLP_ENDPOINT"]
     node = not unreadable and node_ok(project, compiled)
@@ -512,7 +564,7 @@ def run(
         findings.append(Finding("FC-061", endpoint))
     else:
         # 3 and 4. the canary through the whole path
-        dest = _read.destination(project, environ)
+        dest = canary_destination(project, environ)
         canary_label, report.data["canary"] = _canary(
             project, environ, dest, options, findings, lines, canary, sleep, now_ns
         )

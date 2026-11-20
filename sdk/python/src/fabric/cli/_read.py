@@ -17,14 +17,34 @@ from typing import Any
 
 from .._sequence import id_key_from_env
 from ..reconstruct._ids import report_run_id
-from ..reconstruct._inputs import SPAN_FILE_SUFFIXES
+from ..reconstruct._inputs import SPAN_FILE_SUFFIXES, ReconstructInputError
 from ..reconstruct._select import run_start_ns
 from . import _coverage, _project, _runstate
 from ._report import Finding
 
+#: The reader reads a production destination's S3 content store with boto3, which the
+#: [cli] extra brings (agents never need it).
+S3_MISSING = (
+    "the content store is S3 and boto3 is not installed in the CLI's environment: "
+    'pip install "singleaxis-fabric[cli]"'
+)
 #: How far before a run's start a span file may have been written and still hold it
 #: (the sink's clock and this machine's may differ under a VM's file sharing).
 MTIME_SLACK_NS = 120 * 1_000_000_000
+
+
+@dataclass(frozen=True)
+class S3Store:
+    """A production destination's S3 content store as the reader reaches it: the bucket,
+    the endpoint (``None``: AWS S3), the CA that signs its certificate and a credentials
+    file (``None``: the AWS default chain). Paths only, never a credential."""
+
+    bucket: str
+    region: str | None = None
+    endpoint: str | None = None
+    ca_file: Path | None = None
+    credentials_file: Path | None = None
+    prefix: str = "fabric/content/"
 
 
 @dataclass(frozen=True)
@@ -37,6 +57,11 @@ class Destination:
     tenant: str
     id_key: bytes | None
     reason: str | None = None
+    s3: S3Store | None = None
+    #: Production (049 §7.9): the span files are this project's Node's own delivery (the
+    #: trial receiver, the canary tap, or a ``--spans`` export of the destination the
+    #: operator chose), so the Node's source stamp counts.
+    trusted: bool = False
 
 
 def agent_environment(project: _project.Project, environ: Mapping[str, str]) -> dict[str, str]:
@@ -63,17 +88,94 @@ def destination(
         key = None
     tenant = env.get("FABRIC_TENANT_ID") or str(project.resolved["tenant"])
     store = _project.store_directory(env.get("FABRIC_WIRE_STORE") or "")
+    s3 = production_store(project) if project.production else None
+    trusted = project.production
     if spans is not None:
-        return Destination(Path(spans), store, tenant, key)
+        return Destination(Path(spans), store, tenant, key, s3=s3, trusted=trusted)
     preset = (project.resolved["destination"] or {}).get("preset")
+    if project.production and preset == "trial":
+        # The trial receiver writes span files into the data directory (§9.2).
+        return Destination(project.data_dir / "spans", None, tenant, key, s3=s3, trusted=True)
     if preset != "local-dir" or project.resolved["node.mode"] != "docker":
         why = (
             f"node.mode {project.resolved['node.mode']}"
             if preset == "local-dir"
             else f"destination {preset}"
         )
-        return Destination(None, store, tenant, key, reason=why)
+        return Destination(None, store, tenant, key, reason=why, s3=s3, trusted=trusted)
     return Destination(project.data_dir / "spans", store, tenant, key)
+
+
+def production_store(project: _project.Project) -> S3Store | None:
+    """The S3 content store of a production destination, as the reader reaches it from
+    this host: the trial store on loopback with its read-only identity; an S3-compatible
+    store at its endpoint with its CA and the credentials file the destination names; AWS
+    S3 with the default credential chain."""
+    from . import _prodtemplates, _secrets  # noqa: PLC0415
+
+    destination = project.destination
+    preset = destination.get("preset")
+    if preset not in _project.CONTENT_PRESETS or not project.resolved["capture.content"]:
+        return None
+    secrets = project.secrets_dir
+    if preset == "trial":
+        return S3Store(
+            bucket=_prodtemplates.TRIAL_BUCKET, region=_project.TRIAL_REGION,
+            endpoint=f"https://127.0.0.1:{_prodtemplates.TRIAL_S3_PORT}",
+            ca_file=secrets / _secrets.CA_CERT,
+            credentials_file=secrets / _secrets.trial_credentials("reader"))  # fmt: skip
+
+    def path(key: str) -> Path | None:
+        value = destination.get(key)
+        return _project._absolute(project.directory, str(value)) if value else None
+
+    return S3Store(bucket=str(destination.get("bucket")),
+                   region=str(destination.get("region") or _project.TRIAL_REGION),
+                   endpoint=str(destination["endpoint"]).rstrip("/")
+                   if destination.get("endpoint") else None,
+                   ca_file=path("ca_file"), credentials_file=path("credentials_file"))  # fmt: skip
+
+
+def _credentials(path: Path) -> dict[str, str]:
+    """The ``[default]`` keys of an AWS shared credentials file (read, never shown)."""
+    import configparser  # noqa: PLC0415
+
+    parser = configparser.ConfigParser()
+    parser.read_string(path.read_text(encoding="utf-8"))
+    section = parser["default"] if parser.has_section("default") else {}
+    return {"aws_access_key_id": section.get("aws_access_key_id", "").strip(),
+            "aws_secret_access_key": section.get("aws_secret_access_key", "").strip()}  # fmt: skip
+
+
+def s3_reader(spec: S3Store, tenant: str, *, client: Any | None = None) -> Any:
+    """An :class:`S3ContentStore` that reads ``spec`` (read-only use). ``client``: a
+    prepared boto3 client (tests)."""
+    from ..content_store.s3 import S3ContentStore  # noqa: PLC0415
+
+    store = S3ContentStore(bucket=spec.bucket, prefix=spec.prefix, tenant_id=tenant,
+                           region_name=spec.region, endpoint_url=spec.endpoint,
+                           addressing_style="path" if spec.endpoint else None)  # fmt: skip
+    if client is None:
+        import boto3  # type: ignore[import-not-found, import-untyped, unused-ignore]  # noqa: PLC0415
+        from botocore.config import Config  # type: ignore[import-not-found, import-untyped, unused-ignore]  # noqa: PLC0415
+
+        keys = _credentials(spec.credentials_file) if spec.credentials_file else {}
+        session = boto3.session.Session(**keys) if keys.get("aws_access_key_id") else (
+            boto3.session.Session())  # fmt: skip
+        client = session.client(
+            "s3",
+            region_name=spec.region,
+            endpoint_url=spec.endpoint,
+            verify=str(spec.ca_file) if spec.ca_file else None,
+            config=Config(
+                s3={"addressing_style": "path"} if spec.endpoint else {},
+                retries={"max_attempts": 2},
+                connect_timeout=5,
+                read_timeout=15,
+            ),
+        )
+    store._client = client
+    return store
 
 
 def span_files(directory: Path, since_ns: int | None = None) -> list[str]:
@@ -107,11 +209,16 @@ def read(
     """The reader's report over ``files`` (``ReconstructInputError`` for unusable input)."""
     from ..reconstruct._verify import reconstruct  # noqa: PLC0415
 
-    store = None
+    store: Any = None
     if dest.store_root is not None and dest.store_root.is_dir():
         from ..content_store.local import LocalFilesystemContentStore  # noqa: PLC0415
 
         store = LocalFilesystemContentStore(root=str(dest.store_root), tenant_id=dest.tenant)
+    elif dest.s3 is not None:
+        try:
+            store = s3_reader(dest.s3, dest.tenant)
+        except ImportError:
+            raise ReconstructInputError(S3_MISSING) from None
     return reconstruct(
         list(files),
         store=store,
@@ -119,6 +226,8 @@ def read(
         run_ids=list(run_ids) if run_ids is not None else None,
         id_key=dest.id_key,
         actions=actions,
+        profile="production" if dest.trusted else None,
+        trusted_source=dest.trusted,
     )
 
 

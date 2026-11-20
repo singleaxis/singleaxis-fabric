@@ -22,10 +22,15 @@ case "${1:-}" in
 esac
 
 fail=0
-note() { printf '  %s %s\n' "$1" "$2"; }
-ok()   { note "PASS" "$1"; }
-bad()  { note "FAIL" "$1"; fail=1; }
-warn() { note "WARN" "$1"; }
+# A check that `fabric verify --production` also makes ends its line with the same
+# catalogue id in brackets (docs/reference/diagnostics.md): the two report the same id
+# and outcome for the same files (scripts/tests/test_production_check_parity.py).
+note() {
+  if [ -n "${3:-}" ]; then printf '  %s %s [%s]\n' "$1" "$2" "$3"; else printf '  %s %s\n' "$1" "$2"; fi
+}
+ok()   { note "PASS" "$1" "${2:-}"; }
+bad()  { note "FAIL" "$1" "${2:-}"; fail=1; }
+warn() { note "WARN" "$1" "${2:-}"; }
 
 if [ "${GROUPS_MODE}" -eq 1 ]; then
   printf 'Fabric Node production preflight (ingress groups)\n'
@@ -170,15 +175,15 @@ if [ "${BIND_MOUNT_OWNERSHIP}" = mapped ]; then
   SECRET_FIX="chmod 0400 (yours; Docker Desktop maps ownership to the container user)"
 fi
 
-# check_node_secret LABEL PATH: readable by the node user, closed to others.
+# check_node_secret LABEL PATH [ID]: readable by the node user, closed to others.
 # LABEL is fixed text naming the file; PATH is never printed.
 check_node_secret() {
   if [ "$(other_bits "$2")" != "0" ]; then
-    bad "$1 is accessible to every host user; ${SECRET_FIX}"
+    bad "$1 is accessible to every host user; ${SECRET_FIX}" "${3:-}"
   elif ! node_access "$2" 4; then
-    bad "$1 is not readable by the container user ${NODE_UID}:${NODE_GID}; ${SECRET_FIX}"
+    bad "$1 is not readable by the container user ${NODE_UID}:${NODE_GID}; ${SECRET_FIX}" "${3:-}"
   else
-    ok "$1 readable by container user ${NODE_UID}:${NODE_GID} and closed to other users"
+    ok "$1 readable by container user ${NODE_UID}:${NODE_GID} and closed to other users" "${3:-}"
   fi
 }
 
@@ -282,15 +287,15 @@ matches() { printf '%s' "$2" | grep -Eq -- "$1"; }
 # --- required egress settings ------------------------------------------------
 export_endpoint_ok=0
 if [ -z "${FABRIC_EXPORT_ENDPOINT:-}" ]; then
-  bad "FABRIC_EXPORT_ENDPOINT unset"
+  bad "FABRIC_EXPORT_ENDPOINT unset" FC-180
 else
   url_check "${FABRIC_EXPORT_ENDPOINT}"
   if [ -n "${URL_PROBLEM}" ]; then
-    bad "FABRIC_EXPORT_ENDPOINT ${URL_PROBLEM} (value not shown); put credentials in FABRIC_EXPORT_AUTH_HEADER"
+    bad "FABRIC_EXPORT_ENDPOINT ${URL_PROBLEM} (value not shown); put credentials in FABRIC_EXPORT_AUTH_HEADER" FC-180
   elif [ "${URL_SCHEME}" != https ]; then
-    bad "FABRIC_EXPORT_ENDPOINT is http://; production egress requires https"
+    bad "FABRIC_EXPORT_ENDPOINT is http://; production egress requires https" FC-180
   else
-    ok "egress endpoint is a valid https URL"
+    ok "egress endpoint is a valid https URL" FC-180
     export_endpoint_ok=1
     export_host=${URL_HOST}
     export_port=${URL_PORT:-443}
@@ -298,9 +303,9 @@ else
 fi
 
 if [ -z "${FABRIC_EXPORT_AUTH_HEADER:-}" ]; then
-  bad "FABRIC_EXPORT_AUTH_HEADER unset; egress delivery would be unauthenticated"
+  bad "FABRIC_EXPORT_AUTH_HEADER unset; egress delivery would be unauthenticated" FC-176
 else
-  ok "egress Authorization header set"
+  ok "egress Authorization header set" FC-176
 fi
 
 # --- ingress token ------------------------------------------------------------
@@ -323,31 +328,31 @@ value_of() {
 check_token() {
   token_path=$(value_of "$1")
   if [ -z "${token_path}" ]; then
-    bad "$1 unset; $3"
+    bad "$1 unset; $3" FC-181
   elif [ ! -f "${token_path}" ]; then
-    bad "$1 points at a missing file"
+    bad "$1 points at a missing file" FC-181
   elif [ ! -r "${token_path}" ]; then
-    bad "cannot read $2 ($1) as uid ${OPERATOR_UID}, so its format cannot be checked; ${SECRET_FIX}"
+    bad "cannot read $2 ($1) as uid ${OPERATOR_UID}, so its format cannot be checked; ${SECRET_FIX}" FC-181
   elif [ ! -s "${token_path}" ]; then
-    bad "$2 ($1) is empty"
+    bad "$2 ($1) is empty" FC-181
   elif blank_lines=$(token_blank_lines "${token_path}")
     last_byte=$(token_last_byte "${token_path}")
     [ -z "${blank_lines}" ] || [ -z "${last_byte}" ]; then
-    bad "reading $2 ($1) failed, so its format cannot be checked; ${SECRET_FIX}"
+    bad "reading $2 ($1) failed, so its format cannot be checked; ${SECRET_FIX}" FC-181
   elif [ "${blank_lines}" != "0" ]; then
     # The Node accepts exactly one token per file (require_single_token).
     # bearertokenauth up to v0.150.0 also kept EMPTY entries, so a blank line
     # minted "Bearer " (empty token) as a valid credential -- auth bypass.
-    bad "$2 contains a blank line; the Node accepts exactly one token with no blank lines -- remove blank lines"
+    bad "$2 contains a blank line; the Node accepts exactly one token with no blank lines -- remove blank lines" FC-181
   elif [ "${last_byte}" = "$(printf '\nx')" ]; then
     # A trailing newline makes the file malformed for require_single_token
     # (the Node then accepts no token); up to v0.150.0 it also produced a
     # trailing empty entry -> "Bearer " authenticated. The file ends mid-line.
-    bad "$2 ends with a newline; the Node would reject the token file -- rewrite without trailing newline (printf %s, not echo or > from a newline-terminated source)"
+    bad "$2 ends with a newline; the Node would reject the token file -- rewrite without trailing newline (printf %s, not echo or > from a newline-terminated source)" FC-181
   else
-    ok "$2 present, non-empty, single-entry-safe format"
+    ok "$2 present, non-empty, single-entry-safe format" FC-181
     # Compose file secrets are bind mounts: owner and mode are the host's.
-    check_node_secret "$2" "${token_path}"
+    check_node_secret "$2" "${token_path}" FC-181
   fi
 }
 check_token FABRIC_INGRESS_TOKEN_FILE "ingress token file" "ingress would have no bearer token"
@@ -368,35 +373,41 @@ if [ "${GROUPS_MODE}" -eq 1 ]; then
     warn "FABRIC_AUDITD_SOURCE_ID is set without FABRIC_AUDITD_TOKEN_FILE; the auditd group stays disabled"
   fi
   seen=""
+  shared=0
   for variable in ${group_tokens}; do
     path=$(value_of "${variable}")
     for previous in ${seen}; do
       previous_path=$(value_of "${previous}")
       if [ -r "${path}" ] && [ -r "${previous_path}" ] && cmp -s "${path}" "${previous_path}"; then
-        bad "${previous} and ${variable} hold the same token bytes; every ingress group needs its own credential (spec 053 §6.1 rule 5)"
+        bad "${previous} and ${variable} hold the same token bytes; every ingress group needs its own credential (spec 053 §6.1 rule 5)" FC-182
+        shared=1
       fi
     done
     seen="${seen} ${variable}"
   done
+  [ "${shared}" -eq 1 ] || ok "every ingress group has its own token" FC-182
   seen=""
+  shared=0
   for variable in ${group_sources}; do
     value=$(value_of "${variable}")
     if [ -z "${value}" ]; then
-      bad "${variable} unset; an enabled ingress group binds exactly one source (spec 053 §6.1)"
+      bad "${variable} unset; an enabled ingress group binds exactly one source (spec 053 §6.1)" FC-183
     elif matches '^s-[0-9a-f]{32}$' "${value}"; then
-      ok "${variable} set (pseudonymous s- form)"
+      ok "${variable} set (pseudonymous s- form)" FC-183
     elif [ "${variable}" = FABRIC_AGENT_SOURCE_ID ] && matches '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' "${value}"; then
-      warn "FABRIC_AGENT_SOURCE_ID is not an s-<32 hex> pseudonym; it binds only agents running with FABRIC_WIRE_LABELS=clear"
+      warn "FABRIC_AGENT_SOURCE_ID is not an s-<32 hex> pseudonym; it binds only agents running with FABRIC_WIRE_LABELS=clear" FC-183
     else
-      bad "${variable} must be s-<32 lowercase hex>: a host sensor's source id is the pseudonym of its source label (fabric-host-emitter print-source-id)"
+      bad "${variable} must be s-<32 lowercase hex>: a host sensor's source id is the pseudonym of its source label (fabric-host-emitter print-source-id)" FC-183
     fi
     for previous in ${seen}; do
       if [ -n "${value}" ] && [ "${value}" = "$(value_of "${previous}")" ]; then
-        bad "${variable} equals ${previous}; no two groups bind one source (spec 053 §6.1 rule 7) -- each sensor has its own source label"
+        bad "${variable} equals ${previous}; no two groups bind one source (spec 053 §6.1 rule 7) -- each sensor has its own source label" FC-184
+        shared=1
       fi
     done
     seen="${seen} ${variable}"
   done
+  [ "${shared}" -eq 1 ] || ok "every ingress group binds its own source" FC-184
 fi
 
 # --- ingress TLS (only if enabled in collector-production.yaml) ---------------
@@ -600,9 +611,9 @@ fi
 if [ "${GROUPS_MODE}" -eq 1 ] && [ -n "${RECEIVERS}" ]; then
   plain_groups=$(printf '%s\n' "${RECEIVERS}" | awk '$4 != "tls" { printf "%s.%s:%s ", $1, $2, $3 }')
   if [ -n "${plain_groups}" ]; then
-    bad "ingress-group listeners without TLS: ${plain_groups% }; every group listener needs an uncommented tls: mapping with cert_file and key_file (spec 053 §6.1 rule 8)"
+    bad "ingress-group listeners without TLS: ${plain_groups% }; every group listener needs an uncommented tls: mapping with cert_file and key_file (spec 053 §6.1 rule 8)" FC-186
   else
-    ok "every ingress-group listener serves TLS"
+    ok "every ingress-group listener serves TLS" FC-186
   fi
 fi
 
@@ -707,11 +718,11 @@ if [ "${GROUPS_MODE}" -eq 1 ]; then
     fi
   done
   if [ -z "${FABRIC_TENANT_ID:-}" ]; then
-    bad "FABRIC_TENANT_ID unset; every ingress group binds one tenant (spec 053 §6.1)"
+    bad "FABRIC_TENANT_ID unset; every ingress group binds one tenant (spec 053 §6.1)" FC-185
   elif ! matches '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' "${FABRIC_TENANT_ID}"; then
-    bad "FABRIC_TENANT_ID is not a safe tenant id (^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\$)"
+    bad "FABRIC_TENANT_ID is not a safe tenant id (^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\$)" FC-185
   else
-    ok "bound tenant set"
+    ok "bound tenant set" FC-185
   fi
 elif source_bound; then
   if [ -z "${FABRIC_TENANT_ID:-}" ]; then
@@ -762,21 +773,21 @@ if content_configured; then
   # Spec 049 §7.8: the content queue (and the directory store) are sealed
   # with the Node-side customer key, a file-backed Compose secret.
   if [ -z "${FABRIC_CONTENT_KEY_FILE:-}" ]; then
-    bad "FABRIC_CONTENT_KEY_FILE unset; the production content queue and store are encrypted with the Node content key (spec 049 §7.8)"
+    bad "FABRIC_CONTENT_KEY_FILE unset; the production content queue and store are encrypted with the Node content key (spec 049 §7.8)" FC-187
   elif [ ! -f "${FABRIC_CONTENT_KEY_FILE}" ]; then
-    bad "FABRIC_CONTENT_KEY_FILE points at a missing file"
+    bad "FABRIC_CONTENT_KEY_FILE points at a missing file" FC-187
   elif [ ! -r "${FABRIC_CONTENT_KEY_FILE}" ]; then
-    bad "cannot read the content key file (FABRIC_CONTENT_KEY_FILE) as uid ${OPERATOR_UID}, so its format cannot be checked; ${SECRET_FIX}"
+    bad "cannot read the content key file (FABRIC_CONTENT_KEY_FILE) as uid ${OPERATOR_UID}, so its format cannot be checked; ${SECRET_FIX}" FC-187
   else
     key_bytes=$(wc -c < "${FABRIC_CONTENT_KEY_FILE}" | tr -d ' ')
     key_text=$(tr -d '\n' < "${FABRIC_CONTENT_KEY_FILE}" 2>/dev/null || true)
     if [ "${key_bytes}" = "32" ] \
       || { { [ "${key_bytes}" = "44" ] || [ "${key_bytes}" = "45" ]; } \
            && [ "${#key_text}" = "44" ] && matches '^[A-Za-z0-9+/]{43}=$' "${key_text}"; }; then
-      ok "content key file holds a 32-byte key"
-      check_node_secret "content key file" "${FABRIC_CONTENT_KEY_FILE}"
+      ok "content key file holds a 32-byte key" FC-187
+      check_node_secret "content key file" "${FABRIC_CONTENT_KEY_FILE}" FC-187
     else
-      bad "content key file (FABRIC_CONTENT_KEY_FILE) must hold 32 raw bytes or their base64 (openssl rand -base64 32)"
+      bad "content key file (FABRIC_CONTENT_KEY_FILE) must hold 32 raw bytes or their base64 (openssl rand -base64 32)" FC-187
     fi
   fi
   content_rows=$(printf '%s\n' "${RECEIVERS}" | awk '$1 ~ /^otlp\/content/')
@@ -804,9 +815,9 @@ if content_configured; then
         && [ -f collector-config/collector-content.yaml ] && [ -f docker-compose.content.yml ] \
         || bad "FABRIC_CONTENT_BACKEND=s3 needs collector-config/collector-content.yaml, collector-config/collector-content-s3.yaml, docker-compose.content.yml and docker-compose.content-s3.yml"
       if matches '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$' "${FABRIC_CONTENT_S3_BUCKET:-}"; then
-        ok "content bucket name is valid"
+        ok "content bucket name is valid" FC-188
       else
-        bad "FABRIC_CONTENT_S3_BUCKET is unset or not a bucket name (no scheme, no path)"
+        bad "FABRIC_CONTENT_S3_BUCKET is unset or not a bucket name (no scheme, no path)" FC-188
       fi
       prefix="${FABRIC_CONTENT_S3_PREFIX:-fabric/content/}"
       if matches '/$' "${prefix}" && ! matches '^/|//|(^|/)\.\.?(/|$)' "${prefix}"; then
@@ -815,21 +826,21 @@ if content_configured; then
         bad "FABRIC_CONTENT_S3_PREFIX must end with /, must not start with / and must not contain empty, . or .. segments"
       fi
       if [ -z "${FABRIC_CONTENT_S3_REGION:-}" ]; then
-        bad "FABRIC_CONTENT_S3_REGION unset; set the bucket region"
+        bad "FABRIC_CONTENT_S3_REGION unset; set the bucket region" FC-188
       fi
       if [ -z "${FABRIC_CONTENT_S3_ENDPOINT:-}" ]; then
-        ok "content store is AWS S3 (default endpoint)"
+        ok "content store is AWS S3 (default endpoint)" FC-188
       else
         url_check "${FABRIC_CONTENT_S3_ENDPOINT}"
         if [ -n "${URL_PROBLEM}" ]; then
-          bad "FABRIC_CONTENT_S3_ENDPOINT ${URL_PROBLEM} (value not shown); store credentials come from the instance role or the credentials-file overlay"
+          bad "FABRIC_CONTENT_S3_ENDPOINT ${URL_PROBLEM} (value not shown); store credentials come from the instance role or the credentials-file overlay" FC-188
         elif [ -n "${URL_PATH}" ] && [ "${URL_PATH}" != / ]; then
           # The exporter refuses an endpoint path at startup (config.go).
-          bad "FABRIC_CONTENT_S3_ENDPOINT must not contain a path: it is scheme://host[:port]; the bucket and FABRIC_CONTENT_S3_PREFIX are separate settings"
+          bad "FABRIC_CONTENT_S3_ENDPOINT must not contain a path: it is scheme://host[:port]; the bucket and FABRIC_CONTENT_S3_PREFIX are separate settings" FC-188
         elif [ "${URL_SCHEME}" != https ]; then
-          bad "FABRIC_CONTENT_S3_ENDPOINT is plaintext http; content would leave the Node unencrypted in transit -- use https"
+          bad "FABRIC_CONTENT_S3_ENDPOINT is plaintext http; content would leave the Node unencrypted in transit -- use https" FC-188
         else
-          ok "content store endpoint uses https"
+          ok "content store endpoint uses https" FC-188
         fi
       fi
       case "${FABRIC_CONTENT_S3_PATH_STYLE:-false}" in
@@ -838,11 +849,11 @@ if content_configured; then
       esac
       sse="${FABRIC_CONTENT_S3_SSE:-aws:kms}"
       case "${sse}" in
-        aws:kms|AES256) ok "content server-side encryption: ${sse}" ;;
-        *) bad "FABRIC_CONTENT_S3_SSE must be aws:kms or AES256; production content is always encrypted at rest" ;;
+        aws:kms|AES256) ok "content server-side encryption: ${sse}" FC-188 ;;
+        *) bad "FABRIC_CONTENT_S3_SSE must be aws:kms or AES256; production content is always encrypted at rest" FC-188 ;;
       esac
       if [ -n "${FABRIC_CONTENT_S3_KMS_KEY_ID:-}" ] && [ "${sse}" != "aws:kms" ]; then
-        bad "FABRIC_CONTENT_S3_KMS_KEY_ID is only valid with FABRIC_CONTENT_S3_SSE=aws:kms"
+        bad "FABRIC_CONTENT_S3_KMS_KEY_ID is only valid with FABRIC_CONTENT_S3_SSE=aws:kms" FC-188
       fi
       ;;
     *) ;;  # refused above
