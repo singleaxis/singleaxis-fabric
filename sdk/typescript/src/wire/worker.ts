@@ -500,6 +500,8 @@ export class CapturePipeline {
     internal_error: 0,
   };
   readonly #noticed = new Set<bigint>();
+  /** A masking role has no service or transformation: its content is withheld (FW-032). */
+  readonly #maskedWithheld: boolean = false;
   #unreadable = 0;
 
   constructor(config: PipelineConfig, spool: Spool, sink: PipelineSink) {
@@ -536,8 +538,10 @@ export class CapturePipeline {
           (config.redaction === undefined || !Object.hasOwn(config.transformations, role))
         );
       });
-      // A masking role with no service or transformation is withheld: say so at install.
-      if (masked.length > 0) sink.notice?.("FW-032", "protection_failed");
+      // A masking role with no service or transformation is withheld: say so at install,
+      // and again at the first exchange of each epoch (§5).
+      this.#maskedWithheld = masked.length > 0;
+      if (this.#maskedWithheld) sink.notice?.("FW-032", "protection_failed");
     }
   }
 
@@ -651,11 +655,17 @@ export class CapturePipeline {
     return outcome;
   }
 
-  /** 049 §7.3: a disabled content state is noted at the first exchange of each epoch. */
+  /**
+   * 049 §7.3, spec 055 §5: missing protection is noted, by class only, at the first
+   * exchange of each epoch: content disabled (FW-008), or a masking role whose content
+   * is withheld for want of a redaction service or transformation (FW-032).
+   */
   #noticeDisabled(epoch: bigint): void {
-    if (this.gate.contentCapture !== "disabled" || this.#noticed.has(epoch)) return;
+    const disabled = this.gate.contentCapture === "disabled";
+    if ((!disabled && !this.#maskedWithheld) || this.#noticed.has(epoch)) return;
     this.#noticed.add(epoch);
-    this.#sink.notice?.("FW-008", this.gate.reason ?? "content_capture_disabled");
+    if (disabled) this.#sink.notice?.("FW-008", this.gate.reason ?? "content_capture_disabled");
+    else this.#sink.notice?.("FW-032", "protection_failed");
   }
 }
 

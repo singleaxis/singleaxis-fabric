@@ -189,6 +189,7 @@ finally:
         { valid: true, blob: Buffer.concat([PROMPT, ANSWER]).toString("hex"), status: "stored" },
       ]);
     },
+    60_000, // a Python subprocess: the 5 s default flakes under a loaded full-suite run
   );
 
   it.skipIf(!PUBLISHES_BODIES)(
@@ -265,6 +266,72 @@ finally:
     new CapturePipeline(pipelineConfig({ policy: masked as never }), {} as Spool, seen.sink);
     expect(seen.notices).toEqual([["FW-032", "protection_failed"]]);
   });
+
+  it.skipIf(!PUBLISHES_BODIES)(
+    "a masking role with no redaction service is noted again at the first exchange of each epoch (FW-032)",
+    async () => {
+      const seen = recorder();
+      const masked = policyDoc({ "model.exchange.request": "redact" }, "production");
+      const written: unknown[] = [];
+      const fake = {
+        writeBatch: (entries: readonly unknown[]) => {
+          written.push(...entries);
+          return entries.map(() => "rec");
+        },
+      } as unknown as Spool;
+      const pipeline = new CapturePipeline(
+        pipelineConfig({ policy: masked as never }),
+        fake,
+        seen.sink,
+      );
+      cap = capture(server.port);
+      await call();
+      await call();
+      expect(await processJobs(cap, pipeline)).toEqual(["spooled", "spooled"]);
+      // install, then once for the epoch: never per exchange
+      expect(seen.notices).toEqual([
+        ["FW-032", "protection_failed"],
+        ["FW-032", "protection_failed"],
+      ]);
+      const reasons = written.map(
+        (entry) =>
+          ((entry as any).doc.bodies[0].descriptor as Record<string, unknown>).status_reason,
+      );
+      expect(reasons).toEqual(["protection_failed", "protection_failed"]);
+    },
+  );
+
+  it.skipIf(!PUBLISHES_BODIES)(
+    "an exchange over 260 objects is an accounted internal_error loss and writes nothing (R6)",
+    async () => {
+      const seen = recorder();
+      let writes = 0;
+      const fake = {
+        writeBatch: (entries: readonly unknown[]) => {
+          writes += 1;
+          return entries.map(() => "rec");
+        },
+      } as unknown as Spool;
+      const pipeline = new CapturePipeline(pipelineConfig(), fake, seen.sink);
+      // Whole-object modes make at most two objects per side; a side that made 131 (as
+      // split parts and review copies can, 055-t15) puts the exchange at 262.
+      const protector = pipeline.protector!;
+      const side = protector.side.bind(protector);
+      protector.side = async (...args: Parameters<typeof side>) => {
+        const result = await side(...args);
+        return {
+          ...result,
+          objects: Array<(typeof result.objects)[number]>(131).fill(result.objects[0]!),
+        };
+      };
+      cap = capture(server.port);
+      await call();
+      expect(await processJobs(cap, pipeline)).toEqual(["internal_error"]);
+      expect(writes).toBe(0);
+      expect(seen.losses.map(([reason]) => reason)).toEqual(["internal_error"]);
+      expect(pipeline.stats().outcomes.internal_error).toBe(1);
+    },
+  );
 
   it("content capture without a tenant id is a fixed-text configuration error that names the fix", () => {
     expect(
