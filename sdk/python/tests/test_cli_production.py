@@ -276,6 +276,12 @@ def test_a_token_and_headers_pair_that_disagree_is_refused_with_the_fix(
     report = _json(["init"], capsys)
     assert (report["exit_code"], _ids(report)) == (2, ["FC-169"])
     assert "--rotate tokens" in report["findings"][0]["fix"]
+    # The fix the finding names works: the rotation replaces both halves of every pair.
+    report = _json(["init", "--rotate", "tokens"], capsys)
+    assert report["exit_code"] == 0 and "FC-169" not in _ids(report)
+    token = (_secrets_dir(tmp_path) / "agent.token").read_bytes()
+    assert headers.read_bytes() == b"Authorization=Bearer%20" + token
+    assert _ids(_json(["init"], capsys)).count("FC-169") == 0
 
 
 def test_a_missing_headers_file_is_made_from_its_token_not_a_new_one(

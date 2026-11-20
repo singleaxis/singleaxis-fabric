@@ -802,13 +802,18 @@ def destination_files(project: _project.Project) -> list[Finding]:
 
 
 def _production(
-    project: _project.Project, image_digest: str | None, findings: list[Finding]
+    project: _project.Project,
+    image_digest: str | None,
+    findings: list[Finding],
+    rotate: str | None = None,
 ) -> tuple[list[_secrets.SecretInfo], dict[str, Any]]:
     """§7.1 and §6.3: the production secrets, the capture policy preset (written once,
     then the customer's), and the destination's own files and caveats."""
     preset = project.destination.get("preset")
+    rotating_tokens = bool(rotate) and "tokens" in _rotation_names(str(rotate), production=True)
     secrets_now = _secrets.ensure_production(project.secrets_dir, project.source_labels(),
-                                             trial=preset == "trial")  # fmt: skip
+                                             trial=preset == "trial",
+                                             rotating_tokens=rotating_tokens)  # fmt: skip
     policy = project.policy_path
     if policy is None:  # compile refuses a production project without one
         raise CliError([Finding("FC-166", "capture.privacy: profile-default")])
@@ -866,7 +871,7 @@ def prepare(project: _project.Project, *, rotate: str | None = None,
                                         tls=project.generates_tls)  # fmt: skip
     production: dict[str, Any] = {}
     if project.production:
-        more, production = _production(project, image_digest, findings)
+        more, production = _production(project, image_digest, findings, rotate)
         secrets_now += more
     if rotate:
         secrets_now = _rotate(project, rotate, generate_id_key, secrets_now, findings)

@@ -558,9 +558,10 @@ def _ensure_key(directory: Path, name: str, label: str, make: Any) -> SecretInfo
     return _key_info(directory, name, label, action)
 
 
-def _ensure_token(directory: Path, source: str) -> SecretInfo:
+def _ensure_token(directory: Path, source: str, *, check_pair: bool = True) -> SecretInfo:
     """A source's token and (for an SDK sender) its headers file, generated together. One
-    half missing is made from the other; two halves that disagree are ``FC-169``."""
+    half missing is made from the other; two halves that disagree are ``FC-169``, unless
+    ``check_pair`` is off because ``--rotate tokens`` replaces both next (FC-169's fix)."""
     token_path = directory / token_file(source)
     has_token = check_secret_file(token_path)
     header_path = directory / headers_file(source) if source in HEADER_SOURCES else None
@@ -570,9 +571,11 @@ def _ensure_token(directory: Path, source: str) -> SecretInfo:
     if header_path is not None and has_headers:
         from_headers = token_from_headers(_read(header_path))
         if from_headers is None or (token is not None and token != from_headers):
-            raise CliError([Finding("FC-169", f"{header_path} is not the headers file of "
-                                              f"{token_path}")])  # fmt: skip
-        token = from_headers
+            if check_pair:
+                raise CliError([Finding("FC-169", f"{header_path} is not the headers file of "
+                                                  f"{token_path}")])  # fmt: skip
+        else:
+            token = from_headers
     if token is None:
         token = _new_token()
         action = "generated"
@@ -630,11 +633,13 @@ def _new_credentials(identity: str) -> bytes:
             f"aws_secret_access_key = {secret}\n").encode("ascii")  # fmt: skip
 
 
-def ensure_production(directory: Path, labels: Mapping[str, str], *, trial: bool
-                      ) -> list[SecretInfo]:  # fmt: skip
+def ensure_production(directory: Path, labels: Mapping[str, str], *, trial: bool,
+                      rotating_tokens: bool = False) -> list[SecretInfo]:  # fmt: skip
     """Generate every production secret that is missing (§7.1); never overwrite one.
     ``labels`` maps each of :data:`SOURCES` to its clear source label (the client
-    certificate's common name). The CA must exist (:func:`ensure_local` first)."""
+    certificate's common name). The CA must exist (:func:`ensure_local` first). With
+    ``rotating_tokens`` a token and headers pair that disagree is left for the rotation
+    that follows to replace, instead of refused."""
     ensure_private_dir(directory)
     if not _pair(directory, CA_CERT, CA_KEY, "ca"):
         raise CliError([Finding("FC-014", f"ca: {directory / CA_CERT} is missing")])
@@ -642,7 +647,7 @@ def ensure_production(directory: Path, labels: Mapping[str, str], *, trial: bool
         _ensure_key(directory, SPOOL_KEY, "spool-key", _new_key_b64),
         _ensure_key(directory, CONTENT_KEY, "content-key", _new_key_b64),
         _ensure_key(directory, SENSOR_STATE_KEY, "ebpf-state-key", _new_key_b64),
-        *(_ensure_token(directory, source) for source in SOURCES),
+        *(_ensure_token(directory, source, check_pair=not rotating_tokens) for source in SOURCES),
         *_client_certs(directory, labels),
     ]
     if trial:
