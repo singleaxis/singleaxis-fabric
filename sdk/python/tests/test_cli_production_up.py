@@ -640,6 +640,26 @@ def test_a_missing_boto3_is_a_reader_error_with_the_install_line(
         _read.read(dest, [])
 
 
+@pytest.mark.parametrize("content", [None, "aws_access_key_id = no section\n", "\xff"])
+def test_an_unusable_credentials_file_is_a_reader_error_naming_it(
+    tmp_path: Path, content: str | None
+) -> None:
+    """A store credentials file that is missing or malformed is a named reader error
+    (``FC-073`` in verify), never a traceback, and its lines are never quoted."""
+    from fabric.reconstruct._inputs import ReconstructInputError  # noqa: PLC0415
+
+    pytest.importorskip("boto3")
+    path = tmp_path / "store.credentials"
+    if content == "\xff":
+        path.write_bytes(b"\xff\xfe")
+    elif content is not None:
+        path.write_text(content)
+    spec = _read.S3Store(bucket="fabric-content", credentials_file=path)
+    with pytest.raises(ReconstructInputError, match="credentials file") as raised:
+        _read.s3_reader(spec, "default")
+    assert "no section" not in str(raised.value)
+
+
 def test_a_root_operator_runs_the_node_as_container_root_without_reowning_files(
     project: Path, tmp_path: Path
 ) -> None:

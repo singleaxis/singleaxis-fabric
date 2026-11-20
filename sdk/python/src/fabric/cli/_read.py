@@ -141,7 +141,16 @@ def _credentials(path: Path) -> dict[str, str]:
     import configparser  # noqa: PLC0415
 
     parser = configparser.ConfigParser()
-    parser.read_string(path.read_text(encoding="utf-8"))
+    try:
+        parser.read_string(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, configparser.Error):
+        # Fixed text and the path only: a parser message can quote a line of the file.
+        raise ReconstructInputError(
+            f"the content store's credentials file {path} is missing, unreadable or not an "
+            "AWS shared credentials file ([default] with aws_access_key_id and "
+            "aws_secret_access_key): correct it, or run `fabric init` to name another "
+            "with --credentials-file"
+        ) from None
     section = parser["default"] if parser.has_section("default") else {}
     return {"aws_access_key_id": section.get("aws_access_key_id", "").strip(),
             "aws_secret_access_key": section.get("aws_secret_access_key", "").strip()}  # fmt: skip
