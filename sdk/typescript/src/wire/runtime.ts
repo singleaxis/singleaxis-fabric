@@ -289,6 +289,20 @@ export class WireRuntime {
     return Atomics.load(this.i64, C_NEXT);
   }
 
+  /**
+   * An exact allocator boundary for a state change (spec 050 §3.8, 055 §7.2): runs
+   * `change` (which makes the new state visible, for example a shared state word), then
+   * reads the counter with a read-modify-write, a full fence. Returns the last position
+   * allocated before the read (-1 when none): every position above it was allocated after
+   * the change took effect, so a manifest effective after it never covers a position
+   * allocated under the old state's promise. Allocation is one `Atomics.add`, so the read
+   * is ordered with every isolate's allocations; nothing waits.
+   */
+  cut(change?: () => void): bigint {
+    change?.();
+    return Atomics.add(this.i64, C_NEXT, 0n) - 1n;
+  }
+
   // ------------------------------------------------------------------- registration
 
   /**
