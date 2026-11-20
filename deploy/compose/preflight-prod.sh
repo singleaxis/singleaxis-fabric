@@ -318,6 +318,24 @@ token_last_byte() {
   # The trailing "x" keeps a final newline from being stripped by $(...).
   { tail -c1 "$1" 2>/dev/null && printf 'x'; } || true
 }
+# group_token_problem PATH: why the Node's gate (fabric-gate) would refuse an
+# ingress-group token file it can read: not 32 to 4096 bytes, whitespace or a
+# non-printable byte, or writable by its group. Prints nothing when it accepts it.
+group_token_problem() {
+  size=$(wc -c < "$1" 2>/dev/null | tr -d ' ')
+  if [ -z "${size}" ] || [ "${size}" -lt 32 ] || [ "${size}" -gt 4096 ]; then
+    printf 'is not 32 to 4096 bytes long'; return
+  fi
+  other=$(LC_ALL=C tr -d '\041-\176' < "$1" 2>/dev/null | wc -c | tr -d ' ')
+  if [ "${other}" != "0" ]; then
+    printf 'holds whitespace or a non-printable character'; return
+  fi
+  meta=$(file_meta "$1") || return
+  # shellcheck disable=SC2086 # split "uid gid mode" into fields
+  set -- ${meta}
+  m="${3#"${3%???}"}"; g=${m#?}; g=${g%?}
+  if [ $((g & 2)) -ne 0 ]; then printf 'is writable by its group'; fi
+}
 # value_of VAR: the value of the variable named VAR (empty when unset).
 value_of() {
   eval "printf '%s' \"\${${1}:-}\""
@@ -349,6 +367,10 @@ check_token() {
     # (the Node then accepts no token); up to v0.150.0 it also produced a
     # trailing empty entry -> "Bearer " authenticated. The file ends mid-line.
     bad "$2 ends with a newline; the Node would reject the token file -- rewrite without trailing newline (printf %s, not echo or > from a newline-terminated source)" FC-181
+  elif [ "${GROUPS_MODE}" -eq 1 ] && problem=$(group_token_problem "${token_path}") \
+    && [ -n "${problem}" ]; then
+    # fabric-gate refuses such a group token at startup: the Node would not start.
+    bad "$2 ${problem}; the Node refuses it at startup -- generate one: openssl rand -hex 32 | tr -d '\\n' > FILE; chmod 0600 FILE" FC-181
   else
     ok "$2 present, non-empty, single-entry-safe format" FC-181
     # Compose file secrets are bind mounts: owner and mode are the host's.

@@ -146,6 +146,14 @@ FAULTS: dict[str, tuple[Fault, set[str]]] = {
         lambda p: _overwrite(p.secrets_dir / "ebpf.token",
                              (p.secrets_dir / "agent.token").read_bytes()),
         {"FC-182"}),
+    # The Node's gate refuses these group tokens at startup (fabric-gate).
+    "a token shorter than 32 bytes": (
+        lambda p: _overwrite(p.secrets_dir / "agent.token", b"0123456789abcdef"), {"FC-181"}),
+    "a token with a space": (
+        lambda p: _overwrite(p.secrets_dir / "ebpf.token", b"0123456789abcdef 0123456789abcdef"),
+        {"FC-181"}),
+    "a token file writable by its group": (
+        lambda p: (p.secrets_dir / "ebpf.token").chmod(0o620), {"FC-181"}),
     "a token file open to others": (
         lambda p: (p.secrets_dir / "ebpf.token").chmod(0o604), {"FC-181"}),
     "a source id that is no pseudonym": (

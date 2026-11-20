@@ -1133,11 +1133,12 @@ Fix: set your collector's https:// URL, without user info, query or fragment: `f
 
 ### FC-181
 
-`production_token_file`, error: an ingress group's token file is missing, empty, holds more than one
-line or ends with a newline, or other users can read it.
+`production_token_file`, error: an ingress group's token file is missing, not one line of 32 to 4096
+printable characters, ends with a newline, or is group-writable or readable by others: the Node
+would refuse it.
 
-Fix: run `fabric init` to generate a missing token, or `fabric init --rotate tokens`; a token file
-is one line with no trailing newline, mode 0600.
+Fix: run `fabric init` to generate a missing token, or `fabric init --rotate tokens` to replace a
+bad one (64 hex characters); a token file is one line with no trailing newline, mode 0600.
 
 ### FC-182
 

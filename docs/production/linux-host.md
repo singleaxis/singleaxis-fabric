@@ -84,7 +84,7 @@ when none is a failure. The checks and their ids:
 |---|---|
 | The span destination is an https URL | `FC-180` |
 | The destination is given an Authorization header | `FC-176` |
-| Each ingress group's token file: one token, no newline, private | `FC-181` |
+| Each ingress group's token file: one token of 32 to 4096 printable characters, no newline, private | `FC-181` |
 | No two groups share a token | `FC-182` |
 | Each group binds an `s-` pseudonym, none shared | `FC-183`, `FC-184` |
 | The tenant id is safe | `FC-185` |

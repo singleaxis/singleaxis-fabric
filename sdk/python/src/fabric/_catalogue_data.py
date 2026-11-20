@@ -1558,10 +1558,12 @@ CATALOGUE: dict[str, Any] = {
             "id": "FC-181",
             "name": "production_token_file",
             "severity": "error",
-            "text": "an ingress group's token file is missing, empty, holds more than one "
-            "line or ends with a newline, or other users can read it",
+            "text": "an ingress group's token file is missing, not one line of 32 to 4096 "
+            "printable characters, ends with a newline, or is group-writable or "
+            "readable by others: the Node would refuse it",
             "fix": "run `fabric init` to generate a missing token, or `fabric init --rotate "
-            "tokens`; a token file is one line with no trailing newline, mode 0600",
+            "tokens` to replace a bad one (64 hex characters); a token file is one "
+            "line with no trailing newline, mode 0600",
         },
         {
             "id": "FC-182",

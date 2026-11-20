@@ -512,6 +512,20 @@ def test_token_and_key_shapes(tmp_path: Path) -> None:
     assert _prodchecks.token_problem(token) == "is open to other users"
     token.chmod(0o600)
     assert _prodchecks.token_problem(token) is None
+    # What the Node's gate (fabric-gate) refuses at startup is a failure, never a pass.
+    token.chmod(0o620)
+    assert _prodchecks.token_problem(token) == "is writable by its group"
+    token.chmod(0o600)
+    for data in (b"a" * 31, b"a" * 4097):
+        token.write_bytes(data)
+        assert _prodchecks.token_problem(token) == "is not 32 to 4096 bytes long"
+    for data in (b"a" * 32 + b" b", b"a" * 32 + b"\x7f", b"a" * 32 + "é".encode()):
+        token.write_bytes(data)
+        assert _prodchecks.token_problem(token) == (
+            "holds whitespace or a non-printable character"
+        )
+    token.write_bytes(b"a" * 32)
+    assert _prodchecks.token_problem(token) is None
     key = tmp_path / "k"
     key.write_bytes(b"x" * 32)
     assert _prodchecks.key_problem(key) is None

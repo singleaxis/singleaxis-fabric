@@ -44,6 +44,9 @@ _BUCKET = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 _LABEL = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 _B64_KEY = re.compile(r"^[A-Za-z0-9+/]{43}=$")
 WARN_DAYS = 14
+#: A group token's length as the Node's gate accepts it (fabric-gate).
+TOKEN_MIN_BYTES = 32
+TOKEN_MAX_BYTES = 4096
 
 
 @dataclass(frozen=True)
@@ -124,8 +127,17 @@ def token_problem(path: Path) -> str | None:  # noqa: PLR0911 - one return per r
         return "has a blank line"
     if data.endswith(b"\n"):
         return "ends with a newline"
+    # The Node's startup gate (fabric-gate, checkDedicatedTokenFile) refuses a group token
+    # outside 32-4096 bytes, with whitespace or a non-printable byte, or writable by the
+    # group or readable by others: the Node would not start, so each is a failure here.
+    if not TOKEN_MIN_BYTES <= len(data) <= TOKEN_MAX_BYTES:
+        return f"is not {TOKEN_MIN_BYTES} to {TOKEN_MAX_BYTES} bytes long"
+    if any(byte <= 0x20 or byte >= 0x7F for byte in data):  # noqa: PLR2004
+        return "holds whitespace or a non-printable character"
     if stat.S_IMODE(info.st_mode) & 0o007:
         return "is open to other users"
+    if stat.S_IMODE(info.st_mode) & 0o020:
+        return "is writable by its group"
     return None
 
 
