@@ -75,6 +75,21 @@ Spec 056 milestone M2 (production profile, WP6-11) adds, in version 1.3.0:
 | `fixtures/vectors/span-category-v1.json`, `records-span-v1.json` | the `fabric.sensor_event` branch (`sensor_cases`); the M2 records cases and the host-record cases with the host placement (`host_cases`, `host_placement`) |
 | `fixtures/action-record/` | the §6.1 M2 rule fixtures, four refusals, the goldens' M2 sections and `remote-sandbox-records.json` ([its README](fixtures/action-record/README.md), section 9) |
 
+Spec 055 (TypeScript wire capture, unit 055-t1) adds, in version 1.5.0:
+
+| Path | Pins |
+|---|---|
+| `registry/capture-points-v1.json` | the `wire.ts.undici` row (exact qualified undici builds, the native addon, its limits and its activation line) and the new, separately opt-in `wire.ts.node_http` row; both supply the 20 fields of 055 §1.1 (`field-registry-v1.json` `observed_by`); `run.scope` and `fabric.self` cover the Node.js runtime |
+| `registry/telemetry-keys-v1.json` | `fabric.capture.point` examples `wire.ts.undici@1.0.0` and `wire.ts.node_http@1.0.0`; the validators resolve every capture-point value to a registry row, since the pattern alone establishes neither a registered nor a qualified point |
+| `schema/capture-manifest-v1.schema.json` | the uncaptured class `node_worker_unattached` (an application worker isolate that did not attach) |
+| `schema/wire-qualification-v1.schema.json` | `fabric.wire-qualification/v1`, the schema of `sdk/typescript/wire-qualification.json`: per-build audits of the undici body-chunk channels, the builds a point may run on (`audited`, or `active` with its report hash) and the three gates |
+| `valid/manifest-typescript-*.json`, `invalid/manifest-typescript-*.json` | TypeScript manifests: active undici, active core HTTP, both, production with content disabled, Node 22, Node 24 with an old undici, native addon missing, an unattached worker, a key rotation; refused: an epoch rounded through a float64 (`coverage.manifest.integer`), an unregistered point, a Python point, an active claim on a build the table does not back (`coverage.manifest.qualification`) |
+| `valid/projection-typescript-model-call.json`, `invalid/projection-typescript-*.json` | a projection with registered TypeScript evidence; refused: an unregistered point (`coverage.projection.capture_point`), a false complete on an open run |
+| `valid/wire-qualification-*.json`, `invalid/wire-qualification-*.json` | an audited table and a claimed one; refused: an active tuple without a report hash, a passed gate without an active tuple, a tuple below Node 24, a tuple whose build does not publish both body channels |
+
+The TypeScript rules are in `scripts/contracts/typescript_wire.py`, which also
+builds these fixtures.
+
 The rules the fixtures pin are executable in
 `scripts/contracts/action_reference.py`; `scripts/contracts/action_record.py`
 and `action_record_m2.py` build the fixtures and check them, and

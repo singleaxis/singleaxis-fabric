@@ -124,6 +124,7 @@ POINTS: Mapping[str, PointSpec] = MappingProxyType({
     "wire.py.httpx": PointSpec("W", True, True),
     "wire.py.aiohttp": PointSpec("W", True, True),
     "wire.ts.undici": PointSpec("W", True, True),
+    "wire.ts.node_http": PointSpec("W", True, True),  # spec 055 §8 (registry mirror only)
     "explicit.call_recorder": PointSpec("R", False, False),
     "explicit.byte_boundary": PointSpec("R", False, False),
     "explicit.final_http": PointSpec("R", False, False),

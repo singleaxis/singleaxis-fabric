@@ -46,7 +46,10 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from contracts import p1_reference as ref  # noqa: E402
+from contracts import (
+    p1_reference as ref,  # noqa: E402
+    typescript_wire as tsw,  # noqa: E402
+)
 
 FAMILY = Path("contracts/coverage/v1")
 SPEC = Path("specs/049-four-layer-capture-coverage.md")
@@ -84,6 +87,7 @@ SCHEMAS = {
     "projection": "schema/step-projection-v1.schema.json",
     "manifest": "schema/capture-manifest-v1.schema.json",
     "evidence": "schema/record-evidence-v1.schema.json",
+    "qualification": tsw.QUALIFICATION_SCHEMA,  # spec 055 §9.4
 }
 # Spec 050 §4.1: the capture record classes a key may be placed on, in this order.
 PLACEMENTS = (
@@ -1225,6 +1229,14 @@ def check_key_checks(root: Path, reg: Mapping[str, Any]) -> None:
                 _fail(
                     "coverage.keys.free_text", where, f"check admits free text {text!r}"
                 )
+        if key == "fabric.capture.point" and not all(
+            tsw.registered(example, reg) for example in check["examples"]
+        ):
+            _fail(
+                "coverage.keys.capture_point",
+                where,
+                "every example names a registered capture point (spec 055 §8)",
+            )
         nested = check["items"] if check["type"] == "array" else check
         if nested["type"] == "enum" and not _enum_source_ok(
             row, nested, reg, manifest_schema
@@ -1501,11 +1513,34 @@ GRAPH_REASONS = {"segment_missing", "segment_conflict", "post_terminal_activity"
 CLAIMS = {"captured_for_declared_fields", "captured_with_withholding"}
 
 
+def _projection_points(value: Any, reg: Mapping[str, Any], where: str = "$") -> None:
+    """Every ``capture_point`` a projection cites resolves to a registry row (spec 055
+    §8: registered TypeScript evidence is accepted, an unregistered id is refused)."""
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            at = f"{where}.{key}"
+            if (
+                key == "capture_point"
+                and isinstance(item, str)
+                and not tsw.registered(item, reg, version_required=False)
+            ):
+                _fail(
+                    "coverage.projection.capture_point",
+                    at,
+                    f"{item!r} names no capture point of capture-points-v1.json",
+                )
+            _projection_points(item, reg, at)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _projection_points(item, reg, f"{where}[{index}]")
+
+
 def validate_projection(
     document: Mapping[str, Any], reg: Mapping[str, Any], schema: Mapping[str, Any]
 ) -> None:
     """Semantic rules of ``fabric.step-projection/v1`` the schema cannot express."""
     _schema_errors(document, schema)
+    _projection_points(document, reg)
     confidence = _confidence(reg)
     manifests = {m["manifest_id"] for m in document["inputs"]["manifests"]}
     runs = {run["run_id"] for run in document["runs"]}
@@ -1740,7 +1775,9 @@ def validate_projection(
 def validate_manifest_document(
     document: Mapping[str, Any], reg: Mapping[str, Any], schema: Mapping[str, Any]
 ) -> None:
-    """Semantic rules of ``fabric.capture-manifest/v1`` (spec 049 §2.4, §2.8, §2.9, §7.3)."""
+    """Semantic rules of ``fabric.capture-manifest/v1`` (spec 049 §2.4, §2.8, §2.9, §7.3;
+    spec 055 §8 for exact integers and the TypeScript wire points)."""
+    tsw.check_manifest_numbers(document, _fail)
     _schema_errors(document, schema)
     registry = {p["id"]: p for p in reg["points"]["capture_points"]}
     seen: set[str] = set()
@@ -1806,6 +1843,7 @@ def validate_manifest_document(
             "$.unsealed_prior_epoch_count",
             "the count is exact; the list is truncated only beyond 64",
         )
+    tsw.check_manifest_points(document, _fail)
 
 
 EPOCH_VARIABLE = {
@@ -2600,6 +2638,10 @@ def validate_fixture(
         validate_projection(document, reg, schemas["projection"])
     elif kind == "fabric.capture-manifest/v1":
         validate_manifest_document(document, reg, schemas["manifest"])
+    elif kind == tsw.QUALIFICATION:
+        tsw.validate_qualification(
+            document, schemas["qualification"], _fail, _schema_errors
+        )
     elif kind == ref.EVIDENCE_SCHEMA:
         validate_evidence_document(document, reg, root, schemas)
     elif kind == "fabric.record-evidence-fixture/v1":
@@ -2726,6 +2768,12 @@ def validate_coverage_contracts(repo_root: Path, *, write: bool = False) -> list
     check_manifest_record_schema(repo_root, reg, write=write)
     pinned = check_manifest(repo_root)
     validate_artifacts(repo_root, reg)
+    tsw.validate_qualification(  # spec 055 §9.4: the shipped table itself
+        tsw.load_table(repo_root),
+        _load(repo_root / FAMILY / tsw.QUALIFICATION_SCHEMA),
+        _fail,
+        _schema_errors,
+    )
     blocks = check_spec(repo_root, reg, write=write)
     return [f"coverage/{p}" for p in pinned] + [f"spec/{b}" for b in blocks]
 

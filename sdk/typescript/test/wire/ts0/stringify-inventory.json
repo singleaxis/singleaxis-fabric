@@ -1,0 +1,138 @@
+{
+  "schema_version": "fabric.ts0-stringify-inventory/v1",
+  "rule": "Spec 055 §4.3 R9 and §6.1 (TS-0 audit, unit 055-t2): every automatic String(), JSON.stringify(), template interpolation, .message/.stack or inspect() in the explicit producers decision.ts, calls.ts and byte-evidence.ts, matched by its trimmed source line. verdict: fabric_computed (a Fabric value, a constant, a validated vocabulary or a count), mapped (the result goes through the identity rule before it is emitted), local_only (a map key, a returned value or an error that never leaves the process as telemetry), reported (a caller value emitted as given, as Python emits it) or follow_up (a site 055-t20 must bound or map when it routes the producer through the records input). A new site fails the test until it is audited here.",
+  "sites": [
+    {
+      "file": "decision.ts",
+      "code": "`recordRetrieval: resultHashes length (${resultHashes.length}) must equal ` +",
+      "verdict": "fabric_computed",
+      "note": "a count in a misuse error"
+    },
+    {
+      "file": "decision.ts",
+      "code": "`resultCount (${options.resultCount}) when supplied`,",
+      "verdict": "fabric_computed",
+      "note": "a validated count in a misuse error"
+    },
+    {
+      "file": "decision.ts",
+      "code": "const tools = definitions.map((definition, i) => `${definition.name}:${defHashes[i]}`);",
+      "verdict": "local_only",
+      "note": "the inventory returned to the caller keeps the caller's own view; never emitted"
+    },
+    {
+      "file": "decision.ts",
+      "code": "const names = definitions.map((definition) => this.ids.label(String(definition.name)));",
+      "verdict": "mapped",
+      "note": "a tool name is an operator label (lbl- when pseudonymous)"
+    },
+    {
+      "file": "decision.ts",
+      "code": "attrs[A.ATTR_MCP_TOOLS] = names.map((name, i) => `${name}:${defHashes[i]}`);",
+      "verdict": "mapped",
+      "note": "names are already mapped labels; hashes are Fabric digests"
+    },
+    {
+      "file": "decision.ts",
+      "code": "if (coverageShouldEmit(`kind:${kind}`)) {",
+      "verdict": "local_only",
+      "note": "an in-process once-per-kind key"
+    },
+    {
+      "file": "decision.ts",
+      "code": "coverageShouldEmit(`deviation:${kind}`)",
+      "verdict": "local_only",
+      "note": "an in-process once-per-kind key"
+    },
+    {
+      "file": "calls.ts",
+      "code": "this.span.setAttribute(FABRIC_TOOL_ERROR_CATEGORY, String(category));",
+      "verdict": "follow_up",
+      "note": "a caller category emitted as given; 055-t20 applies the key's registry check (rule A)"
+    },
+    {
+      "file": "calls.ts",
+      "code": "throw new Error(`${label} must be non-empty`);",
+      "verdict": "fabric_computed",
+      "note": "label is a Fabric parameter name"
+    },
+    {
+      "file": "calls.ts",
+      "code": "return JSON.stringify(sortForJson(value));",
+      "verdict": "follow_up",
+      "note": "opt-in GenAI content (captureContent); 055-t20 adds the size, depth and item bounds R9 requires before serializing"
+    },
+    {
+      "file": "calls.ts",
+      "code": "const span = safeStartSpan(tracer, `${operationName} ${options.model}`, {",
+      "verdict": "reported",
+      "note": "the GenAI span name of the caller's own model call, as Python's llm_call names it"
+    },
+    {
+      "file": "calls.ts",
+      "code": "throw new TypeError(`payload must be str, got ${typeof payload}`);",
+      "verdict": "fabric_computed",
+      "note": "a typeof tag, never the value"
+    },
+    {
+      "file": "calls.ts",
+      "code": "throw new RangeError(`${name} must be a finite non-negative number`);",
+      "verdict": "fabric_computed",
+      "note": "name is a Fabric parameter name"
+    },
+    {
+      "file": "byte-evidence.ts",
+      "code": "throw new Error(`${ID_KEY_ENV} must be at least ${MIN_ID_KEY_BYTES} bytes`);",
+      "verdict": "fabric_computed",
+      "note": "constants"
+    },
+    {
+      "file": "byte-evidence.ts",
+      "code": "return mintEmittedId(`source:${String(this.source(\"\"))}:${epoch}`, this.#issuer);",
+      "verdict": "fabric_computed",
+      "note": "an emitted source id and a minted epoch"
+    },
+    {
+      "file": "byte-evidence.ts",
+      "code": "const text = String(value);",
+      "verdict": "local_only",
+      "note": "a map key for a generated g- id; the caller value is never emitted"
+    },
+    {
+      "file": "byte-evidence.ts",
+      "code": "return mintEmittedId(labelPseudonym(prefix, String(value), this.#key), this.#issuer);",
+      "verdict": "mapped",
+      "note": "keyed v1 label"
+    },
+    {
+      "file": "byte-evidence.ts",
+      "code": "`fabric.byteEvidence: content capture disabled (${gate.reason}, ${gate.profile} ` +",
+      "verdict": "fabric_computed",
+      "note": "gate reason and profile are closed vocabularies"
+    },
+    {
+      "file": "byte-evidence.ts",
+      "code": "const key = JSON.stringify([options.sourceId, options.sourceEpoch]);",
+      "verdict": "local_only",
+      "note": "an in-process map key"
+    },
+    {
+      "file": "byte-evidence.ts",
+      "code": "captured_at: new Date().toISOString(),",
+      "verdict": "fabric_computed",
+      "note": "the capture clock"
+    },
+    {
+      "file": "byte-evidence.ts",
+      "code": "descriptor.status_reason = String(protectedContent.metadata.reason);",
+      "verdict": "fabric_computed",
+      "note": "the protector's closed reason vocabulary"
+    },
+    {
+      "file": "byte-evidence.ts",
+      "code": "throw new Error(`${name} must be an opaque identifier`);",
+      "verdict": "fabric_computed",
+      "note": "name is a Fabric parameter name"
+    }
+  ]
+}
