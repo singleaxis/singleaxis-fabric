@@ -1516,5 +1516,15 @@ CATALOGUE: dict[str, Any] = {
             "otlp_ca_file or otlp_headers_file), make it readable by you, chmod 0600 "
             "a credentials or headers file, and run `fabric init` again",
         },
+        {
+            "id": "FC-175",
+            "name": "image_digest_not_written",
+            "severity": "warning",
+            "text": "--image-digest was not written: the capture policy file already "
+            "exists, and fabric init never rewrites it",
+            "fix": "set deployment.image_digest in the policy file the detail names to the "
+            "digest you passed (the file is yours to edit), then run `fabric init` "
+            "again to check it",
+        },
     ],
 }

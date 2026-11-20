@@ -512,6 +512,9 @@
      "fix": "to keep content, add an S3 store for it: fabric init --destination s3 --bucket NAME --region REGION --otlp-endpoint URL (spans still go to that OTLP endpoint)"},
     {"id": "FC-174", "name": "destination_file_unusable", "severity": "error",
      "text": "a file the destination names is missing, unreadable, or open to other users",
-     "fix": "correct the path in fabric.yaml (destination.ca_file, credentials_file, otlp_ca_file or otlp_headers_file), make it readable by you, chmod 0600 a credentials or headers file, and run `fabric init` again"}
+     "fix": "correct the path in fabric.yaml (destination.ca_file, credentials_file, otlp_ca_file or otlp_headers_file), make it readable by you, chmod 0600 a credentials or headers file, and run `fabric init` again"},
+    {"id": "FC-175", "name": "image_digest_not_written", "severity": "warning",
+     "text": "--image-digest was not written: the capture policy file already exists, and fabric init never rewrites it",
+     "fix": "set deployment.image_digest in the policy file the detail names to the digest you passed (the file is yours to edit), then run `fabric init` again to check it"}
   ]
 }

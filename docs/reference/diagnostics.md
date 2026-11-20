@@ -1100,6 +1100,14 @@ Fix: correct the path in fabric.yaml (destination.ca_file, credentials_file, otl
 otlp_headers_file), make it readable by you, chmod 0600 a credentials or headers file, and run
 `fabric init` again.
 
+### FC-175
+
+`image_digest_not_written`, warning: --image-digest was not written: the capture policy file already
+exists, and fabric init never rewrites it.
+
+Fix: set deployment.image_digest in the policy file the detail names to the digest you passed (the
+file is yours to edit), then run `fabric init` again to check it.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001

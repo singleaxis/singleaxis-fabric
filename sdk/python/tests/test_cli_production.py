@@ -429,7 +429,22 @@ def test_the_policy_is_the_customers_once_written_and_never_rewritten(
     report = _json(["init", "--production", "--image-digest", "sha256:" + "cd" * 32], capsys)
     assert json.loads(path.read_text("utf-8")) == edited
     assert report["data"]["production"]["policy"]["action"] == "kept"
-    assert _ids(report) == ["FC-018", "FC-172"]  # the flag cannot reach an existing file
+    assert _ids(report) == ["FC-175", "FC-172"]  # the flag cannot reach an existing file
+
+
+def test_image_digest_for_the_customers_own_policy_file_is_said_once(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A policy outside the preset path is never written either: one FC-175, not two."""
+    _json(["init", "--production", "--image-digest", DIGEST], capsys)
+    (project / "fabric-capture-policy.json").rename(project / "own-policy.json")
+    text = (project / "fabric.yaml").read_text("utf-8")
+    (project / "fabric.yaml").write_text(text.replace("./fabric-capture-policy.json",
+                                                      "./own-policy.json"))  # fmt: skip
+    report = _json(["init", "--image-digest", "sha256:" + "cd" * 32], capsys)
+    assert _ids(report).count("FC-175") == 1
+    assert "own-policy.json" in report["findings"][_ids(report).index("FC-175")]["detail"]
+    assert not (project / "fabric-capture-policy.json").exists()
 
 
 @pytest.mark.parametrize(

@@ -822,17 +822,10 @@ def _production(
         written = _policy.write_preset(policy, str(project.resolved["tenant"]),
                                        str(project.resolved["agent"]),
                                        image_digest=image_digest)  # fmt: skip
-    elif image_digest:
-        findings.append(Finding("FC-018", f"--image-digest: {policy} is your own policy file; "
-                                          "set deployment.image_digest in it"))  # fmt: skip
-    if not written and image_digest and policy.is_file():
-        findings.append(
-            Finding(
-                "FC-018",
-                f"--image-digest: {policy} exists and is never "
-                "rewritten; set deployment.image_digest in it",
-            )
-        )
+    if not written and image_digest:
+        # The file is the customer's (an existing preset or their own): never rewritten,
+        # so the flag's value went nowhere, and the finding says where to put it.
+        findings.append(Finding("FC-175", f"--image-digest: {policy}"))
     findings.extend(_policy.check(policy, str(project.resolved["tenant"])))
     findings.extend(destination_files(project))
     if preset == "trial":
