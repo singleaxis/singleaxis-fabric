@@ -40,8 +40,15 @@ def export_header(project: _project.Project) -> tuple[str | None, list[Finding]]
     destination = project.destination
     secrets = project.secrets_dir
     if destination.get("preset") == "trial":
-        token = _secrets._read(secrets / _secrets.TRIAL_EXPORT_TOKEN).strip()
-        return "Bearer " + token.decode("ascii"), []
+        path = secrets / _secrets.TRIAL_EXPORT_TOKEN
+        try:
+            token = _secrets._read(path).strip().decode("ascii")
+        except (OSError, UnicodeDecodeError):
+            token = ""
+        if not token or not token.isprintable():
+            return None, [Finding("FC-176", f"the trial receiver's token file {path} is missing "
+                                            "or unreadable: run `fabric init` to generate it")]  # fmt: skip
+        return "Bearer " + token, []
     raw = destination.get("otlp_headers_file")
     if not raw:
         return None, [Finding("FC-176", "destination.otlp_headers_file is not set")]

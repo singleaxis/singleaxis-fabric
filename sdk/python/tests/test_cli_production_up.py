@@ -222,6 +222,20 @@ def test_up_refuses_a_destination_that_would_be_delivered_to_unauthenticated(
     assert docker.calls == []  # Docker was never asked to start anything
 
 
+def test_a_missing_trial_token_is_a_finding_with_its_fix_not_a_traceback(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init("--destination", "trial")
+    _up_once(EnvDocker())
+    (_load(project).secrets_dir / _secrets.TRIAL_EXPORT_TOKEN).unlink()
+    monkeypatch.setattr(_prodchecks, "clock_synchronized", lambda: True)
+    report, _ = _verify_now("--production", "--canary-only", "--wait", "0")
+    (finding,) = [f for f in report.findings if f.id == "FC-176"]
+    assert "fabric init" in str(finding.detail)
+    assert report.data["production"]["outcomes"]["FC-176"] == "fail"
+    assert report.exit_code == 1
+
+
 def test_up_refuses_a_policy_the_sdk_would_refuse(project: Path) -> None:
     _init("--destination", "trial")
     (project / "fabric-capture-policy.json").write_text("{}")
