@@ -44,29 +44,44 @@ _OUTCOME = {"PASS": "pass", "FAIL": "fail", "WARN": "warn"}
 DIGEST = "sha256:" + "cd" * 32
 
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32" or shutil.which("sh") is None, reason="preflight-prod.sh is POSIX sh"
+    sys.platform == "win32" or shutil.which("sh") is None,
+    reason="preflight-prod.sh is POSIX sh",
 )
 
 
-def _project_at(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *flags: str) -> _project.Project:
+def _project_at(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *flags: str
+) -> _project.Project:
     directory = tmp_path / "support-agent"
     directory.mkdir()
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(directory)
     for name in [n for n in os.environ if n.startswith(("FABRIC_", "OTEL_"))]:
         monkeypatch.delenv(name)
-    assert cli.main(["init", "--json", "--production", "--image-digest", DIGEST, *flags]) == 0
-    project = _project.load(_config.discover(None, os.environ, directory), {}, os.environ)
+    assert (
+        cli.main(["init", "--json", "--production", "--image-digest", DIGEST, *flags])
+        == 0
+    )
+    project = _project.load(
+        _config.discover(None, os.environ, directory), {}, os.environ
+    )
     # The Node configuration `fabric up` would render (receiver TLS is checked on it).
     from fabric.cli import _init  # noqa: PLC0415
 
-    facts = _sensor.HostFacts(system="Linux", docker_os="Ubuntu 24.04", docker_kernel="6.8.0",
-                              docker_cgroup_version="2", rootless=False, euid=os.geteuid())
+    facts = _sensor.HostFacts(
+        system="Linux",
+        docker_os="Ubuntu 24.04",
+        docker_kernel="6.8.0",
+        docker_cgroup_version="2",
+        rootless=False,
+        euid=os.geteuid(),
+    )
     header, _ = _produp.export_header(project)
     layout = _produp._layout(project, facts, _sensor.SensorPlan(), _init.prepare(project),
                              header is not None)  # fmt: skip
     (project.state_dir / "compose" / _templates.NODE_CONFIG_FILE).write_text(
-        _templates.dump(_prodtemplates.node_config(layout), _templates.RENDER_HEADER))
+        _templates.dump(_prodtemplates.node_config(layout), _templates.RENDER_HEADER)
+    )
     return project
 
 
@@ -172,10 +187,17 @@ def test_an_unauthenticated_span_destination_fails_both(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The otlp preset without a headers file: the Node would export unauthenticated."""
-    project = _project_at(tmp_path, monkeypatch, "--destination", "otlp",
-                          "--otlp-endpoint", "https://collector.example.com:4318")
+    project = _project_at(
+        tmp_path,
+        monkeypatch,
+        "--destination",
+        "otlp",
+        "--otlp-endpoint",
+        "https://collector.example.com:4318",
+    )
     theirs = _preflight(project)
     ours = _verify(project)
     assert theirs["FC-176"] == ours["FC-176"] == "fail"
     assert {check: ours[check] for check in theirs if check in ours} == {
-        check: outcome for check, outcome in theirs.items() if check in ours}
+        check: outcome for check, outcome in theirs.items() if check in ours
+    }

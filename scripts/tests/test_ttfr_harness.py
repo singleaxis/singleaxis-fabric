@@ -70,7 +70,8 @@ def test_images_are_pinned_by_digest() -> None:
 
 def test_pinned_fabric_images_are_the_clis_own() -> None:
     images = ttfr.pinned_fabric_images()
-    assert len(images) == 3 and all("@sha256:" in i for i in images)
+    # The Node, the sensor, the local sink and (production) the trial store.
+    assert len(images) == 4 and all("@sha256:" in i for i in images)
 
 
 @pytest.fixture
@@ -460,3 +461,27 @@ def test_ci_runs_the_node_page_and_keeps_ttfr_json() -> None:
     steps = json.dumps(ci["jobs"]["ttfr-laptop-node"]["steps"])
     assert "scripts/ttfr/ttfr_node.py" in steps and "npm pack" in steps
     assert "ttfr.json" in steps and "upload-artifact" in steps
+
+
+def test_host_production_fails_on_a_verify_failure_or_the_sensor_off() -> None:
+    """G3 (ttfr-host-production): verify --production must report no FAIL and, on the
+    Linux runner, the sensor must run in production mode."""
+    import ttfr_host_production as host  # noqa: PLC0415
+
+    report = {
+        "exit_code": 0,
+        "findings": [{"id": "FC-065", "severity": "info"}],
+        "data": {"production": {"outcomes": {"FC-181": "pass", "FC-193": "warn"}}},
+    }
+    summary = host.production_summary(report)
+    assert summary["failed_checks"] == [] and summary["errors"] == []
+    verdict: dict[str, object] = {"failures": [], "ok": True}
+    host._judge(verdict, summary, require_sensor=False)
+    assert verdict["ok"] is True
+    host._judge(verdict, summary, require_sensor=True)
+    assert verdict["ok"] is False and "FC-193" in str(verdict["failures"])
+    report["data"]["production"]["outcomes"]["FC-181"] = "fail"  # type: ignore[index]
+    verdict = {"failures": [], "ok": True}
+    host._judge(verdict, host.production_summary(report), require_sensor=False)
+    assert verdict["ok"] is False and "FC-181" in str(verdict["failures"])
+    assert host.BUDGET_S == 420.0 and host.PATH_NAME == "host-production"

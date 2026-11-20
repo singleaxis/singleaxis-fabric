@@ -66,12 +66,16 @@ def test_the_production_page_meets_g3() -> None:
     assert counts["host-production"]["lines"] <= 200
     blocks, unmarked = docs.parse(HOST_PRODUCTION)
     assert unmarked == []
-    commands = [c for b in docs.blocks_for(blocks, "host-production") for c in b.commands]
+    commands = [
+        c for b in docs.blocks_for(blocks, "host-production") for c in b.commands
+    ]
     assert commands == ['pip install "singleaxis-fabric[cli]"',
                         "fabric init --production --destination trial", "fabric up",
                         "fabric run -- python agent.py", "fabric verify --production"]  # fmt: skip
     verify = docs.blocks_for(blocks, "host-production")[-1]
-    assert "FC-069" in verify.expects, "verify must prove the agent's own run, not the canary"
+    assert "FC-069" in verify.expects, (
+        "verify must prove the agent's own run, not the canary"
+    )
 
 
 KUBERNETES = ROOT / "docs" / "get-started" / "kubernetes.md"

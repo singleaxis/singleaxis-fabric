@@ -84,13 +84,18 @@ def _environment(work: Path, venv: Path, model_url: str, images: Mapping[str, st
     return env
 
 
-def _verify_json(venv: Path, env: Mapping[str, str], cwd: Path, *args: str) -> dict[str, Any]:
+def _verify_json(
+    venv: Path, env: Mapping[str, str], cwd: Path, *args: str
+) -> dict[str, Any]:
     done = ttfr._sh([str(venv / "bin/fabric"), "verify", "--production", "--json", *args],
                     env=env, cwd=cwd, check=False, timeout=600)  # fmt: skip
     try:
         report: dict[str, Any] = json.loads(done.stdout)
     except ValueError:
-        return {"exit_code": done.returncode, "error": (done.stderr or done.stdout)[-800:]}
+        return {
+            "exit_code": done.returncode,
+            "error": (done.stderr or done.stdout)[-800:],
+        }
     return report
 
 
@@ -100,7 +105,11 @@ def production_summary(report: Mapping[str, Any]) -> dict[str, Any]:
     data = report.get("data") or {}
     outcomes = dict((data.get("production") or {}).get("outcomes") or {})
     findings = [f.get("id") for f in report.get("findings") or []]
-    errors = [f.get("id") for f in report.get("findings") or [] if f.get("severity") == "error"]
+    errors = [
+        f.get("id")
+        for f in report.get("findings") or []
+        if f.get("severity") == "error"
+    ]
     return {"exit_code": report.get("exit_code"), "outcomes": outcomes, "findings": findings,
             "errors": errors,
             "failed_checks": sorted(k for k, v in outcomes.items() if v == "fail")}  # fmt: skip
@@ -114,7 +123,10 @@ def run_page(options: argparse.Namespace, work: Path) -> dict[str, Any]:
     venv = _venv(work, shutil.which(options.python) or options.python)
     fixture = [sys.executable, "-I", str(HERE / "model_server.py"), "--api-key", ttfr.API_KEY,
                "--ready-file", str(work / "model.json")]  # fmt: skip
-    images = {"FABRIC_NODE_IMAGE": options.node_image, "FABRIC_SENSOR_IMAGE": options.sensor_image}
+    images = {
+        "FABRIC_NODE_IMAGE": options.node_image,
+        "FABRIC_SENSOR_IMAGE": options.sensor_image,
+    }
     with ttfr.background(fixture):
         model_url = f"http://127.0.0.1:{ttfr.wait_file(work / 'model.json')['port']}/v1"
         env = _environment(work, venv, model_url, images)
@@ -130,7 +142,9 @@ def run_page(options: argparse.Namespace, work: Path) -> dict[str, Any]:
                 env["PIP_INDEX_URL"] = f"http://127.0.0.1:{port}/simple/"
                 source = "local wheel (the build under test), dependencies from PyPI"
             # Cold cache: the CLI's pins (images given by the harness were built here).
-            pinned = [i for i in ttfr.pinned_fabric_images() if i not in images.values()]
+            pinned = [
+                i for i in ttfr.pinned_fabric_images() if i not in images.values()
+            ]
             evicted = ttfr.evict_images(pinned) if options.cold else []
             try:
                 report_file = work / "steps.json"
@@ -154,8 +168,10 @@ def run_page(options: argparse.Namespace, work: Path) -> dict[str, Any]:
         summary["s3_compatible"] = run_s3_compatible(options, work, venv, env)
         if not summary["s3_compatible"].get("ok"):
             summary["ok"] = False
-            summary["failures"].append("the S3-compatible store with a private CA: "
-                                       + "; ".join(summary["s3_compatible"]["failures"]))
+            summary["failures"].append(
+                "the S3-compatible store with a private CA: "
+                + "; ".join(summary["s3_compatible"]["failures"])
+            )
     return summary
 
 
@@ -163,8 +179,10 @@ def _judge(summary: dict[str, Any], production: Mapping[str, Any], *,
            require_sensor: bool) -> None:  # fmt: skip
     failures = summary["failures"]
     if production["failed_checks"] or production["errors"]:
-        failures.append("verify --production reported a FAIL: "
-                        + ", ".join(production["failed_checks"] + production["errors"]))
+        failures.append(
+            "verify --production reported a FAIL: "
+            + ", ".join(production["failed_checks"] + production["errors"])
+        )
     if require_sensor and production["outcomes"].get("FC-193") != "pass":
         failures.append("the host sensor did not run in production mode (FC-193)")
     summary["ok"] = not failures
@@ -173,8 +191,14 @@ def _judge(summary: dict[str, Any], production: Mapping[str, Any], *,
 # ---------------------------------------------------------------- S3-compatible acceptance
 
 
-def _openssl_leaf(directory: Path, name: str, ca: Path, ca_key: Path, sans: str) -> tuple[Path, Path]:
-    key, csr, leaf = directory / f"{name}.key", directory / f"{name}.csr", directory / f"{name}.crt"
+def _openssl_leaf(
+    directory: Path, name: str, ca: Path, ca_key: Path, sans: str
+) -> tuple[Path, Path]:
+    key, csr, leaf = (
+        directory / f"{name}.key",
+        directory / f"{name}.csr",
+        directory / f"{name}.crt",
+    )
     ext = directory / f"{name}.ext"
     ext.write_text(f"subjectAltName={sans}\nbasicConstraints=CA:FALSE\n"
                    "extendedKeyUsage=serverAuth\n")  # fmt: skip
@@ -207,7 +231,9 @@ def run_s3_compatible(options: argparse.Namespace, work: Path, venv: Path,
               "/CN=customer private CA"])  # fmt: skip
     store_crt, store_key = _openssl_leaf(customer, "store", ca, ca_key,
                                          f"IP:{gateway},DNS:fabric-trial-s3")  # fmt: skip
-    collector_crt, collector_key = _openssl_leaf(customer, "collector", ca, ca_key, f"IP:{gateway}")
+    collector_crt, collector_key = _openssl_leaf(
+        customer, "collector", ca, ca_key, f"IP:{gateway}"
+    )
     for identity in ("root", "node", "reader"):
         _credentials(customer / f"{identity}.credentials")
     (customer / "kek").write_text(secrets.token_hex(32))
@@ -257,21 +283,33 @@ def run_s3_compatible(options: argparse.Namespace, work: Path, venv: Path,
                         check=False, timeout=300)  # fmt: skip
         result["init_exit_code"] = init.returncode
         if init.returncode != 0:
-            result["failures"].append(f"init exited {init.returncode}: {init.stderr[-600:]}")
+            result["failures"].append(
+                f"init exited {init.returncode}: {init.stderr[-600:]}"
+            )
             return result
         up = ttfr._sh([fabric, "up"], env=env, cwd=project, check=False, timeout=900)
         result["up_exit_code"] = up.returncode
         if up.returncode != 0:
-            result["failures"].append(f"up exited {up.returncode}: {(up.stderr or up.stdout)[-600:]}")
+            result["failures"].append(
+                f"up exited {up.returncode}: {(up.stderr or up.stdout)[-600:]}"
+            )
             return result
-        production = production_summary(_verify_json(venv, env, project, "--canary-only"))
+        production = production_summary(
+            _verify_json(venv, env, project, "--canary-only")
+        )
         result["production"] = production
-        if production["failed_checks"] or production["errors"] or production["exit_code"] != 0:
+        if (
+            production["failed_checks"]
+            or production["errors"]
+            or production["exit_code"] != 0
+        ):
             result["failures"].append("verify --production reported a FAIL: "
                                       + ", ".join(production["failed_checks"]
                                                   + production["errors"]))  # fmt: skip
         if "FC-065" not in production["findings"]:
-            result["failures"].append("the canary was not read back through the canary tap")
+            result["failures"].append(
+                "the canary was not read back through the canary tap"
+            )
         result["collector_span_files"] = len(list(spans.glob("*.otlp")))
         result["ok"] = not result["failures"]
         return result
@@ -286,9 +324,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wheel-dir", default=str(ROOT / "sdk" / "python" / "dist"))
     parser.add_argument("--published", action="store_true",
                         help="install the published package from PyPI (release candidates)")  # fmt: skip
-    parser.add_argument("--python", default="python3.12", help="the agent's interpreter")
-    parser.add_argument("--node-image", default="", help="a Node image built from this tree")
-    parser.add_argument("--sensor-image", default="", help="a sensor image built from this tree")
+    parser.add_argument(
+        "--python", default="python3.12", help="the agent's interpreter"
+    )
+    parser.add_argument(
+        "--node-image", default="", help="a Node image built from this tree"
+    )
+    parser.add_argument(
+        "--sensor-image", default="", help="a sensor image built from this tree"
+    )
     parser.add_argument("--require-sensor", action="store_true",
                         help="fail unless the sensor ran in production mode (Linux with eBPF)")  # fmt: skip
     parser.add_argument("--s3-compatible", action="store_true",
@@ -297,7 +341,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--warm", dest="cold", action="store_false",
                         help="keep cached images (not a TTFR measurement)")  # fmt: skip
     parser.add_argument("--budget", type=float, default=BUDGET_S)
-    parser.add_argument("--work", type=Path, help="work directory (default: a new temp dir)")
+    parser.add_argument(
+        "--work", type=Path, help="work directory (default: a new temp dir)"
+    )
     parser.add_argument("--out", type=Path, default=Path("ttfr.json"))
     options = parser.parse_args(argv)
     work = (options.work or Path(tempfile.mkdtemp(prefix=f"{PREFIX}-"))).resolve()
@@ -317,8 +363,10 @@ def main(argv: list[str] | None = None) -> int:
     if "production" in result:
         print("verify --production: " + json.dumps(result["production"]["outcomes"]))
     if "s3_compatible" in result:
-        print("S3-compatible with a private CA: "
-              + ("PASS" if result["s3_compatible"]["ok"] else "FAIL"))
+        print(
+            "S3-compatible with a private CA: "
+            + ("PASS" if result["s3_compatible"]["ok"] else "FAIL")
+        )
     if not result["ok"]:
         with contextlib.suppress(OSError, ValueError, KeyError):
             for step in json.loads((work / "steps.json").read_text("utf-8"))["steps"]:

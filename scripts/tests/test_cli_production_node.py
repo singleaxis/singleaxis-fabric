@@ -55,7 +55,9 @@ def _init_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *flags: str) 
     monkeypatch.chdir(project)
     for name in [n for n in os.environ if n.startswith(("FABRIC_", "OTEL_"))]:
         monkeypatch.delenv(name)
-    code = cli.main(["init", "--json", "--production", "--image-digest", DIGEST, *flags])
+    code = cli.main(
+        ["init", "--json", "--production", "--image-digest", DIGEST, *flags]
+    )
     assert code == 0
     return project
 
@@ -66,8 +68,10 @@ def _files(tmp_path: Path) -> dict[str, Path]:
     secrets.mkdir(mode=0o700)
     ca, _ = _secrets._new_ca(_secrets._crypto(), "customer-ca")
     (secrets / "ca.crt").write_bytes(ca)
-    (secrets / "credentials").write_text("[default]\naws_access_key_id = AKIDFIXTURE\n"
-                                         "aws_secret_access_key = fixture-not-a-secret\n")
+    (secrets / "credentials").write_text(
+        "[default]\naws_access_key_id = AKIDFIXTURE\n"
+        "aws_secret_access_key = fixture-not-a-secret\n"
+    )
     (secrets / "credentials").chmod(0o600)
     (secrets / "headers").write_text("Authorization=Bearer%20fixture-collector-token\n")
     (secrets / "headers").chmod(0o600)
@@ -100,7 +104,9 @@ def _layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                               euid=os.geteuid())  # fmt: skip
     sensor = _sensor.SensorPlan()
     header, _ = _produp.export_header(project)
-    return project, _produp._layout(project, facts, sensor, prepared, header is not None)
+    return project, _produp._layout(
+        project, facts, sensor, prepared, header is not None
+    )
 
 
 def _on_host(config: dict[str, Any], project: _project.Project,
@@ -138,7 +144,9 @@ def test_the_rendered_node_passes_the_group_rules_and_fabric_gate(
     on_host = _on_host(config, project, layout)
     env = _environment(layout)
     for name, value in env.items():
-        monkeypatch.setenv(name, value)  # the checker expands ${env:...} from os.environ
+        monkeypatch.setenv(
+            name, value
+        )  # the checker expands ${env:...} from os.environ
 
     def read(path: str) -> bytes | None:
         try:
@@ -151,7 +159,9 @@ def test_the_rendered_node_passes_the_group_rules_and_fabric_gate(
     assert layout.content == (preset != "otlp")
     go = shutil.which("go")
     if go is None:
-        pytest.skip("Go is not installed: the reference checker ran, fabric-gate did not")
+        pytest.skip(
+            "Go is not installed: the reference checker ran, fabric-gate did not"
+        )
     gate = tmp_path / "fabric-gate"
     built = subprocess.run(  # noqa: S603 - the repository's own gate
         [go, "build", "-o", str(gate), "."],
@@ -193,38 +203,57 @@ def test_the_agent_and_sensor_groups_are_the_ingress_group_compose_files_node(
     content = _repo("collector-production-groups-content.yaml")
     for receiver in ("otlp/agent", "otlp/ebpf"):
         for protocol, settings in groups["receivers"][receiver]["protocols"].items():
-            assert _without(ours["receivers"][receiver]["protocols"][protocol], "tls") == (
-                _without(settings, "tls")), (receiver, protocol)
-            assert ours["receivers"][receiver]["protocols"][protocol]["tls"]["min_version"] == (
-                settings["tls"]["min_version"])
+            assert _without(
+                ours["receivers"][receiver]["protocols"][protocol], "tls"
+            ) == (_without(settings, "tls")), (receiver, protocol)
+            assert (
+                ours["receivers"][receiver]["protocols"][protocol]["tls"]["min_version"]
+                == (settings["tls"]["min_version"])
+            )
     receiver = "otlp/content-agent"
-    assert _without(ours["receivers"][receiver]["protocols"]["http"], "tls") == _without(
-        content["receivers"][receiver]["protocols"]["http"], "tls")
+    assert _without(
+        ours["receivers"][receiver]["protocols"]["http"], "tls"
+    ) == _without(content["receivers"][receiver]["protocols"]["http"], "tls")
     for guard in ("fabricguard/agent", "fabricguard/ebpf"):
         assert ours["processors"][guard] == groups["processors"][guard]
     for auth in ("bearertokenauth/agent", "bearertokenauth/ebpf"):
         assert _without(ours["extensions"][auth], "filename") == _without(
-            groups["extensions"][auth], "filename")
+            groups["extensions"][auth], "filename"
+        )
     for extension in ("health_check", "noredirect", "file_storage/fabric"):
         assert ours["extensions"][extension] == groups["extensions"][extension]
-    for extension in ("file_storage/fabric_content_agent", "fabricenvelope/fabric_content_agent"):
+    for extension in (
+        "file_storage/fabric_content_agent",
+        "fabricenvelope/fabric_content_agent",
+    ):
         assert _without(ours["extensions"][extension], "key_file") == _without(
-            content["extensions"][extension], "key_file")
+            content["extensions"][extension], "key_file"
+        )
     exporter = ours["exporters"]["otlp_http/fabric"]
     theirs = groups["exporters"]["otlp_http/fabric"]
-    assert _without(exporter, "sending_queue", "tls") == _without(theirs, "sending_queue", "tls")
+    assert _without(exporter, "sending_queue", "tls") == _without(
+        theirs, "sending_queue", "tls"
+    )
     assert _without(exporter["sending_queue"], "queue_size") == _without(
-        theirs["sending_queue"], "queue_size")
+        theirs["sending_queue"], "queue_size"
+    )
     writer = ours["exporters"]["fabriccontent/agent"]
     their_writer = content["exporters"]["fabriccontent/agent"]
     assert _without(writer, "sending_queue") == _without(their_writer, "sending_queue")
     for pipeline in ("traces/agent", "logs/agent", "traces/ebpf"):
-        assert ours["service"]["pipelines"][pipeline] == groups["service"]["pipelines"][pipeline]
-    assert ours["service"]["pipelines"]["logs/content-agent"] == (
-        content["service"]["pipelines"]["logs/content-agent"])
+        assert (
+            ours["service"]["pipelines"][pipeline]
+            == groups["service"]["pipelines"][pipeline]
+        )
+    assert (
+        ours["service"]["pipelines"]["logs/content-agent"]
+        == (content["service"]["pipelines"]["logs/content-agent"])
+    )
     assert ours["service"]["telemetry"] == groups["service"]["telemetry"]
     assert ours["processors"]["memory_limiter"] == {
-        **groups["processors"]["memory_limiter"], **content["processors"]["memory_limiter"]}
+        **groups["processors"]["memory_limiter"],
+        **content["processors"]["memory_limiter"],
+    }
 
 
 def test_the_canary_is_its_own_group_and_only_its_spans_reach_the_tap(
@@ -235,13 +264,24 @@ def test_the_canary_is_its_own_group_and_only_its_spans_reach_the_tap(
     _, layout = _layout(tmp_path, monkeypatch, "otlp")
     config = _prodtemplates.node_config(layout)
     pipelines = config["service"]["pipelines"]
-    tapped = [name for name, p in pipelines.items() if "otlp_http/canary_tap" in p["exporters"]]
+    tapped = [
+        name
+        for name, p in pipelines.items()
+        if "otlp_http/canary_tap" in p["exporters"]
+    ]
     assert tapped == ["traces/canary"]
     assert config["processors"]["fabricguard/canary"]["evidence_source_binding"] == {
-        "tenant_id": "${env:FABRIC_TENANT_ID}", "source_id": "${env:FABRIC_CANARY_SOURCE_ID}"}
+        "tenant_id": "${env:FABRIC_TENANT_ID}",
+        "source_id": "${env:FABRIC_CANARY_SOURCE_ID}",
+    }
     assert config["extensions"]["bearertokenauth/canary"]["filename"] == (
-        "/run/secrets/fabric_canary_token")
-    ports = {p["endpoint"] for r in config["receivers"].values() for p in r["protocols"].values()}
+        "/run/secrets/fabric_canary_token"
+    )
+    ports = {
+        p["endpoint"]
+        for r in config["receivers"].values()
+        for p in r["protocols"].values()
+    }
     assert "0.0.0.0:4320" in ports
     assert set(layout.source_ids) == {"agent", "ebpf", "canary"}
     assert len(set(layout.source_ids.values())) == 3
@@ -253,11 +293,22 @@ def test_no_secret_value_is_written_into_the_rendered_project(
     """I7: the rendered Compose project names files; the destination's header reaches
     Compose from `up`'s own environment, never a rendered file."""
     project, layout = _layout(tmp_path, monkeypatch, "trial")
-    images = argparse.Namespace(node="n@sha256:" + "0" * 64, sink="s@sha256:" + "1" * 64,
-                                sensor="e@sha256:" + "2" * 64, trial_s3="t@sha256:" + "3" * 64)
+    images = argparse.Namespace(
+        node="n@sha256:" + "0" * 64,
+        sink="s@sha256:" + "1" * 64,
+        sensor="e@sha256:" + "2" * 64,
+        trial_s3="t@sha256:" + "3" * 64,
+    )
     node_text = yaml.safe_dump(_prodtemplates.node_config(layout))
-    document = _prodtemplates.compose(project.name, project.compose_project, images,  # type: ignore[arg-type]
-                                      layout, node_text, "f" * 64, project.directory)
+    document = _prodtemplates.compose(
+        project.name,
+        project.compose_project,
+        images,  # type: ignore[arg-type]
+        layout,
+        node_text,
+        "f" * 64,
+        project.directory,
+    )
     text = node_text + yaml.safe_dump(document)
     for path in project.secrets_dir.iterdir():
         if path.is_file() and not path.name.endswith(".crt"):
@@ -265,5 +316,6 @@ def test_no_secret_value_is_written_into_the_rendered_project(
             assert value and value.decode("utf-8", "replace") not in text, path.name
     node = document["services"][_prodtemplates.NODE_SERVICE]
     assert node["environment"][_prodtemplates.EXPORT_HEADER_VARIABLE] == (
-        "${FABRIC_EXPORT_AUTH_HEADER:-}")
+        "${FABRIC_EXPORT_AUTH_HEADER:-}"
+    )
     assert all(port.startswith("127.0.0.1:") for port in node["ports"])
