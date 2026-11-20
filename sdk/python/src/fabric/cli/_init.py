@@ -103,7 +103,8 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     preset.add_argument("--otlp-ca-file", metavar="PATH",
                         help="the collector's private CA certificate")  # fmt: skip
     preset.add_argument("--otlp-headers-file", metavar="PATH",
-                        help="a file with the collector's headers (Authorization=...)")  # fmt: skip
+                        help="a file with the collector's headers (Authorization=...); production "
+                             "needs one, or `fabric up` refuses (FC-176)")  # fmt: skip
     parser.add_argument(
         "--queue-size",
         metavar="SIZE",

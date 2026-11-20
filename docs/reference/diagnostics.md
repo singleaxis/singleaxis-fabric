@@ -1022,9 +1022,8 @@ the process exits, and start the agent with fabric run.
 records.
 
 Fix: choose one with fabric init --production: --destination trial to try the production Node (not
-durable), --destination s3 --bucket NAME --region REGION --otlp-endpoint URL, --destination
-s3-compatible --endpoint URL --bucket NAME --otlp-endpoint URL, or --destination otlp
---otlp-endpoint URL.
+durable); or s3 (--bucket NAME --region REGION), s3-compatible (--endpoint URL --bucket NAME) or
+otlp, each with --otlp-endpoint URL --otlp-headers-file FILE.
 
 ### FC-166
 
@@ -1081,7 +1080,7 @@ agents keep records in their own spool while the Node's queue is full.
 production Node before a real destination exists.
 
 Fix: for real records choose a destination you own: fabric init --destination s3 --bucket NAME
---region REGION --otlp-endpoint URL (or s3-compatible, or otlp).
+--region REGION --otlp-endpoint URL --otlp-headers-file FILE (or s3-compatible, or otlp).
 
 ### FC-173
 
@@ -1089,7 +1088,7 @@ Fix: for real records choose a destination you own: fabric init --destination s3
 check model decisions against them.
 
 Fix: to keep content, add an S3 store for it: fabric init --destination s3 --bucket NAME --region
-REGION --otlp-endpoint URL (spans still go to that OTLP endpoint).
+REGION --otlp-endpoint URL --otlp-headers-file FILE (spans still go to that OTLP endpoint).
 
 ### FC-174
 

@@ -1425,10 +1425,9 @@ CATALOGUE: dict[str, Any] = {
             "severity": "error",
             "text": "the production profile needs a destination that keeps records",
             "fix": "choose one with fabric init --production: --destination trial to try "
-            "the production Node (not durable), --destination s3 --bucket NAME "
-            "--region REGION --otlp-endpoint URL, --destination s3-compatible "
-            "--endpoint URL --bucket NAME --otlp-endpoint URL, or --destination otlp "
-            "--otlp-endpoint URL",
+            "the production Node (not durable); or s3 (--bucket NAME --region "
+            "REGION), s3-compatible (--endpoint URL --bucket NAME) or otlp, each "
+            "with --otlp-endpoint URL --otlp-headers-file FILE",
         },
         {
             "id": "FC-166",
@@ -1494,8 +1493,8 @@ CATALOGUE: dict[str, Any] = {
             "text": "the trial destination is not durable storage: it is for trying the "
             "production Node before a real destination exists",
             "fix": "for real records choose a destination you own: fabric init "
-            "--destination s3 --bucket NAME --region REGION --otlp-endpoint URL (or "
-            "s3-compatible, or otlp)",
+            "--destination s3 --bucket NAME --region REGION --otlp-endpoint URL "
+            "--otlp-headers-file FILE (or s3-compatible, or otlp)",
         },
         {
             "id": "FC-173",
@@ -1504,8 +1503,8 @@ CATALOGUE: dict[str, Any] = {
             "text": "this production destination keeps no model bodies, so the reader "
             "cannot check model decisions against them",
             "fix": "to keep content, add an S3 store for it: fabric init --destination s3 "
-            "--bucket NAME --region REGION --otlp-endpoint URL (spans still go to "
-            "that OTLP endpoint)",
+            "--bucket NAME --region REGION --otlp-endpoint URL --otlp-headers-file "
+            "FILE (spans still go to that OTLP endpoint)",
         },
         {
             "id": "FC-174",

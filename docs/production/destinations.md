@@ -11,12 +11,15 @@ credentials file you name by path.
 | Preset | Spans go to | Content (model bodies) goes to | Flags |
 |---|---|---|---|
 | `trial` | a TLS OTLP receiver `fabric up` provisions, writing files under `./fabric-data/spans` | a bundled S3-compatible test store with TLS | none; not durable storage (`FC-172`), for trying the production Node |
-| `s3` | your OTLP/HTTP collector | your AWS S3 bucket, encrypted with KMS | `--bucket`, `--region`, `--otlp-endpoint`; optional `--sse-kms-key`, `--otlp-ca-file`, `--otlp-headers-file` |
-| `s3-compatible` | your OTLP/HTTP collector | any S3 API store, encrypted with SSE-S3 | `--endpoint` (https), `--bucket`, `--otlp-endpoint`; optional `--region`, `--ca-file` (a private CA), `--credentials-file`, `--otlp-ca-file`, `--otlp-headers-file` |
-| `otlp` | your OTLP/HTTP collector | nowhere: model bodies are not kept, so decisions cannot be checked against them (`FC-173`) | `--otlp-endpoint`; optional `--otlp-ca-file`, `--otlp-headers-file` |
+| `s3` | your OTLP/HTTP collector | your AWS S3 bucket, encrypted with KMS | `--bucket`, `--region`, `--otlp-endpoint`, `--otlp-headers-file`; optional `--sse-kms-key`, `--otlp-ca-file` |
+| `s3-compatible` | your OTLP/HTTP collector | any S3 API store, encrypted with SSE-S3 | `--endpoint` (https), `--bucket`, `--otlp-endpoint`, `--otlp-headers-file`; optional `--region`, `--ca-file` (a private CA), `--credentials-file`, `--otlp-ca-file` |
+| `otlp` | your OTLP/HTTP collector | nowhere: model bodies are not kept, so decisions cannot be checked against them (`FC-173`) | `--otlp-endpoint`, `--otlp-headers-file`; optional `--otlp-ca-file` |
 
 The Node exports spans over OTLP only, so the S3 presets also name the
-collector spans go to. Fabric cannot read spans back from your collector:
+collector spans go to, and the headers file with the Authorization the
+Node presents to it (one line `Authorization=Bearer%20TOKEN`, mode 0600):
+`fabric up` does not start a Node that would export unauthenticated
+(`FC-176`). Fabric cannot read spans back from your collector:
 `fabric verify` reads its canary through a small, bounded tap on the Node
 that only the canary's own ingress group writes to (never an agent's), and
 reads your runs from an export you give it with `--spans PATH`. Model bodies

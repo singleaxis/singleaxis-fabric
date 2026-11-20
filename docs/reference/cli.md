@@ -39,7 +39,7 @@ Write fabric.yaml, generated secrets and the compiled environment.
 | `--credentials-file PATH` | s3-compatible: an AWS credentials file the Node reads |
 | `--otlp-endpoint URL` | otlp, s3, s3-compatible: your OTLP/HTTP collector, where spans go |
 | `--otlp-ca-file PATH` | the collector's private CA certificate |
-| `--otlp-headers-file PATH` | a file with the collector's headers (Authorization=...) |
+| `--otlp-headers-file PATH` | a file with the collector's headers (Authorization=...); production needs one, or `fabric up` refuses (FC-176) |
 | `--queue-size SIZE` | the disk the Node's durable queue may use (20GiB, 500MB, or auto: half the free space) |
 | `--image-digest sha256:HEX` | production: the agent image's digest, written into the capture policy |
 | `--exec` | record the commands the agent runs |

@@ -105,7 +105,7 @@ you set up by hand. `verify` never claims more than the reader's own verdict.
 ## Next
 
 - Move to your own destination: `fabric init --destination s3 --bucket NAME
-  --region REGION --otlp-endpoint URL`, then `fabric up`
+  --region REGION --otlp-endpoint URL --otlp-headers-file FILE`, then `fabric up`
   ([destinations](destinations.md)). For a destination Fabric cannot read
   spans back from, `verify` reads the canary through a bounded local tap on
   the Node, and your runs with `--spans PATH` from an export you make.
