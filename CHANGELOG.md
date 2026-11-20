@@ -15,6 +15,32 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **`fabric up` for production on a single host.** After `fabric init
+  --production`, `fabric up` starts the production Node with Docker: one
+  ingress group per source (your agent, the host sensor, and the canary
+  `fabric verify` sends), each with its own listener, token and source
+  binding; the trial destination (a TLS receiver writing span files and an
+  encrypted S3-compatible test store) when that is the preset; and, on Linux
+  with eBPF, the host sensor in production mode bound to its own group. Your
+  destination's Authorization header reaches the Node from the headers file
+  you named, never a rendered file. A project the Node would refuse, or that
+  would send records to your collector without credentials (`FC-176`), is not
+  started; the finding names the fix.
+- **`fabric verify --production`.** Checks the production hardening, each
+  check with an id and a fix: https to the destination and its credentials,
+  one private token and one source id per ingress group, never shared, TLS
+  on every listener, the content key and an encrypted content store, the
+  spool key, certificate expiry (a warning 14 days before, a failure after),
+  the Node's image, the sensor in production mode and the host clock, plus
+  the capture policy and queue checks of `fabric init`. `make -C
+  deploy/compose preflight-prod` prints the same ids for a Node you set up
+  by hand. For a destination Fabric cannot read spans back from, the canary
+  is read through a small, bounded tap on the Node that only the canary's own
+  ingress group writes to; model bodies are read back from your S3 store.
+- **Go to production, checked.** `docs/production/linux-host.md`: install,
+  `fabric init --production --destination trial`, `fabric up`, `fabric run`,
+  `fabric verify --production`, executed as written in CI on a Linux host
+  with eBPF.
 - **`fabric init --production`.** One command makes a production project on
   a single host: it writes a capture policy into your project
   (`fabric-capture-policy.json`: model exchanges kept, no command argument,
@@ -27,8 +53,7 @@ it never makes, applies, waits for or returns one.
   secret by file path; nothing secret is ever printed. `--image-digest`
   names your agent image in the policy. `fabric init --rotate tokens` and
   `--rotate client-certs` rotate them (`all` includes both and never the id
-  key). Starting the production Node with `fabric up` and `fabric verify
-  --production` on a single host are not in this release yet.
+  key).
 - **Destination presets.** `fabric init --production --destination trial`
   (try the production Node before you have a destination; not durable
   storage), `s3 --bucket NAME --region REGION --otlp-endpoint URL`,
@@ -640,6 +665,14 @@ it never makes, applies, waits for or returns one.
 
 ### Changed
 
+- **The `[cli]` extra brings boto3**, so `fabric verify` and `fabric show` can
+  read model bodies back from a production destination's S3 store. Agents
+  never need it; their installs are unchanged.
+- **`deploy/compose/preflight-prod.sh`** ends each check `fabric verify
+  --production` also makes with its catalogue id in brackets, and now says
+  when every ingress group has its own token and its own source.
+- **In the production profile the canary of `fabric verify`** sends through
+  its own ingress group (its own listeners and spool), never the agent's.
 - **`.fabric/compiled.env` carries three settings as comments**
   (`# fabric-setting: project=...`, `providers.from_environment=...`,
   `node.mode=...`), so a launcher that reads the file needs no YAML parser.
