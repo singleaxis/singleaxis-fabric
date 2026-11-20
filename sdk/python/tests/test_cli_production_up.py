@@ -397,6 +397,28 @@ def test_verify_production_reports_every_check_with_its_id(
     assert "FC-196" in [f.id for f in report.findings]
 
 
+def test_verify_production_names_redact_roles_autoload_withholds(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§5.6, S6: a role the policy masks has no transformation under zero-code capture and
+    is withheld on every run; --production says which (FW-004), as a warning."""
+    from fabric.wire import _status  # noqa: PLC0415
+
+    assert _prodchecks.MASKING_MODES == _status._MASKING_MODES
+    _init("--destination", "trial")
+    _up_once(EnvDocker())
+    monkeypatch.setattr(_prodchecks, "clock_synchronized", lambda: True)
+    report, _ = _verify_now("--production", "--canary-only", "--wait", "0")
+    assert "FW-004" not in [f.id for f in report.findings]  # the preset withholds nothing
+    policy_file = project / "fabric-capture-policy.json"
+    policy = json.loads(policy_file.read_text())
+    policy["privacy"]["terminal.argv"] = "redact"
+    policy_file.write_text(json.dumps(policy))
+    report, _ = _verify_now("--production", "--canary-only", "--wait", "0")
+    (finding,) = [f for f in report.findings if f.id == "FW-004"]
+    assert finding.severity == "warning" and "terminal.argv" in str(finding.detail)
+
+
 def test_verify_production_before_up_says_to_run_up(project: Path) -> None:
     _init("--destination", "trial")
     report, _ = _verify_now("--production", "--canary-only", node_ok=False)

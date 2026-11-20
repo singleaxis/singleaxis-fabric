@@ -96,6 +96,7 @@ when none is a failure. The checks and their ids:
 | The sensor runs in production mode | `FC-193` |
 | The host clock is synchronized | `FC-194` |
 | The capture policy is present, valid and the project's | `FC-166`, `FC-167`, `FC-168` |
+| Roles the policy masks, withheld under `fabric run` (a warning) | `FW-004` |
 | The queue fits the disk | `FC-170`, `FC-171` |
 
 `deploy/compose/preflight-prod.sh --groups` reports the same ids for a Node

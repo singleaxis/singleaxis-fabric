@@ -361,6 +361,7 @@ def run(project: _project.Project, environ: Mapping[str, str], *,
         extra.append(Finding("FC-166", "capture.privacy: profile-default"))
     else:
         extra.extend(_policy.check(project.policy_path, str(project.resolved["tenant"])))
+        extra.extend(withheld_roles(project.policy_path))
     from . import _init  # noqa: PLC0415
 
     extra.extend(_init.destination_files(project))
@@ -371,6 +372,25 @@ def run(project: _project.Project, environ: Mapping[str, str], *,
         extra.append(Finding("FC-173", f"destination.preset: {preset}"))
     extra.extend(_secret_modes(project))
     return checks, extra
+
+
+#: The privacy modes that need a transformation (a redaction service); `fabric run`'s
+#: zero-code capture has none, so a role in one of them is withheld (the SDK's FW-004).
+MASKING_MODES = frozenset({"redact", "masked_only", "original_plus_masked"})
+
+
+def withheld_roles(path: Path) -> list[Finding]:
+    """§5.6, S6: ``FW-004`` naming the roles the capture policy masks, whose content
+    zero-code capture withholds on every run (no transformation under autoload). Nothing
+    for a policy the SDK would refuse (``FC-167`` says so)."""
+    from ..deployment_policy import DeploymentPolicy  # noqa: PLC0415
+
+    try:
+        policy = DeploymentPolicy(json.loads(path.read_bytes()))
+    except (OSError, ValueError, TypeError):
+        return []
+    roles = sorted(role for role, mode in policy.privacy.items() if mode in MASKING_MODES)
+    return [Finding("FW-004", f"{path}: roles {', '.join(roles)}")] if roles else []
 
 
 def node_settings(project: _project.Project, queue: Any = None
