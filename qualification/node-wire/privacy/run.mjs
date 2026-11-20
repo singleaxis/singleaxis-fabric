@@ -101,7 +101,11 @@ function found(haystack, needle) {
  */
 function scan({ dir, key, mode, C, output, digests }) {
     const violations = [];
-    const stats = { files: 0, records: 0, exchanges: 0, retained_objects: 0, planted_found: [] };
+    const stats = {
+        files: 0, records: 0, exchanges: 0, retained_objects: 0, planted_found: [],
+        // non-vacuity: what each mode is expected to have produced
+        transformed_objects: 0, descriptor_only_objects: 0, store_reasons: [],
+    }; // prettier-ignore
     const retain = mode === "retain_original";
     const check = (where, text, allowBody) => {
         for (const name of OTHER_CANARIES) if (found(text, C[name])) violations.push({ where, canary: name });
@@ -141,7 +145,11 @@ function scan({ dir, key, mode, C, output, digests }) {
         }
         for (const { doc, blob } of records) {
             stats.records++;
-            if (doc.record_kind === "exchange") stats.exchanges++;
+            if (doc.record_kind === "exchange") {
+                stats.exchanges++;
+                const reason = doc.span?.attributes?.["fabric.wire.store_reason"];
+                if (reason !== undefined && !stats.store_reasons.includes(reason)) stats.store_reasons.push(reason);
+            }
             const header = JSON.stringify(doc, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
             check(`${where} header`, header, false);
             for (const digest of digests) {
@@ -152,6 +160,14 @@ function scan({ dir, key, mode, C, output, digests }) {
                 const d = body.descriptor;
                 const authorized = d.privacy_mode === "retain_original" && retain && "stored_sha256" in d;
                 if (authorized) stats.retained_objects++;
+                if (["redact", "masked_only", "tokenize"].includes(d.privacy_mode) && "stored_sha256" in d) {
+                    stats.transformed_objects++;
+                    const stored = blob.subarray(body.offset, body.offset + body.length).toString("latin1");
+                    // a token is the HMAC text only; a masked object is the service's output
+                    const expected = d.privacy_mode === "tokenize" ? /^fabric\.token\.v1:[0-9a-f]{64}$/ : /^\{"masked":true\}$/;
+                    if (!expected.test(stored)) violations.push({ where: `${where} body ${d.role}`, unexpected_transformed_bytes: d.privacy_mode });
+                }
+                if (!("stored_sha256" in d)) stats.descriptor_only_objects++;
                 if (!retain && ("source_sha256" in d || "byte_range" in d)) {
                     violations.push({ where: `${where} descriptor`, original_digest_or_range: d.role });
                 }
@@ -216,7 +232,19 @@ function scenario(mode, options = {}) {
     // Not vacuous: every call left a record, and where retention is authorized the
     // planted body canaries were found inside the retained objects.
     const planted = mode !== "retain_original" || BODY_CANARIES.every((n) => scanned.stats.planted_found.includes(n));
-    const enough = scanned.stats.exchanges >= result.calls && planted;
+    // Each mode must have done its work, or its scan proves nothing: every request (all
+    // five complete) became a stored transformed object under redact, masked_only and
+    // tokenize, a descriptor under metadata_only; the disabled run names its reason.
+    const s = scanned.stats;
+    const worked = {
+        redact: s.transformed_objects >= result.calls,
+        masked_only: s.transformed_objects >= result.calls,
+        tokenize: s.transformed_objects >= result.calls,
+        metadata_only: s.descriptor_only_objects >= result.calls,
+        omit: s.descriptor_only_objects === 0 && s.transformed_objects === 0,
+        disabled: s.store_reasons.length === 1 && s.store_reasons[0] === "missing_id_key",
+    }[mode] ?? true;
+    const enough = scanned.stats.exchanges >= result.calls && planted && worked;
     return {
         mode,
         calls: result.calls,
@@ -224,6 +252,7 @@ function scenario(mode, options = {}) {
         drained: result.drained,
         losses: result.losses,
         ...scanned.stats,
+        mode_did_its_work: worked,
         violations: scanned.violations,
         passed: scanned.violations.length === 0 && enough && result.drained === true && result.matched >= result.calls,
     };
