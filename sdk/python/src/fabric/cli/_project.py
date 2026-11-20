@@ -242,6 +242,13 @@ def _check_destination(project: Project) -> None:
         return
     if preset not in _config.PRODUCTION_PRESETS:
         raise CliError([Finding("FC-165", f"destination.preset: {preset or 'none'}")])
+    span_target = str(project.destination.get("otlp_endpoint") or "")
+    if span_target.lower().startswith("http://"):
+        # The production Node exports with TLS only (preflight-prod.sh: "production egress
+        # requires https"): records and the headers file's credentials never leave in clear.
+        raise CliError([Finding("FC-004", "destination.otlp_endpoint: production egress "
+                                "requires https; use your collector's https:// URL, with "
+                                "--otlp-ca-file for a private CA")])  # fmt: skip
     if preset in ("s3", "s3-compatible") and not project.destination.get("otlp_endpoint"):
         raise CliError([Finding("FC-004", f"destination.otlp_endpoint: is required with the "
                                 f"{preset} preset (the Node exports spans over OTLP; S3 "

@@ -483,3 +483,18 @@ def test_up_renders_the_local_node_with_the_queue_of_queue_size(
     rendered = yaml.safe_load((project / ".fabric" / "compose" / "node.yaml").read_text("utf-8"))
     queue = rendered["exporters"]["otlp_http/local_dir"]["sending_queue"]
     assert queue["queue_size"] == GIB // (8 * MIB)
+
+
+@pytest.mark.parametrize(
+    "preset", [["otlp"], ["s3", "--bucket", "acme-records", "--region", "eu-west-1"]]
+)
+def test_a_plaintext_span_target_is_refused_in_production(
+    preset: list[str], project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Production egress is TLS only (preflight-prod.sh): an http:// collector would carry
+    records and the headers file's token in clear."""
+    report = _json(["init", "--production", "--destination", *preset,
+                    "--otlp-endpoint", "http://otel.example.com:4318"], capsys)  # fmt: skip
+    assert (report["exit_code"], _ids(report)) == (2, ["FC-004"])
+    assert "https" in report["findings"][0]["detail"]
+    assert not (project / ".fabric" / "node.env").exists()
