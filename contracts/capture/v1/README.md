@@ -174,6 +174,20 @@ emitters).**
 python scripts/contracts/validate_capture_contracts.py
 ```
 
+## Version 1.10.0 (spec 055 §8, TypeScript wire points)
+
+- `fabric.capture.point` on a spool record resolves to a row of
+  `contracts/coverage/v1/registry/capture-points-v1.json`; an unregistered id
+  is refused (`capture.capture_point`) even when it matches the key's pattern.
+- New fixtures from one TypeScript source: `valid/spool-record-exchange-typescript.json`
+  (`wire.ts.undici`) and `valid/spool-record-record-typescript.json` (a
+  records-input record of the same source and epoch: mixed input),
+  `valid/spool-record-exchange-typescript-split-redacted.json` (a split request
+  with a redacted review copy), and three refusals: an unregistered point, an
+  agent-stamped `fabric.source.authenticated`, and a review copy that keeps the
+  original's digest. No shape change: TypeScript writes the same records as
+  Python. Additive: 1.9.0 records stay valid.
+
 ## Version 1.8.0 (Node delivery policy, destination_rejected)
 
 - `loss-record-v1` and `run-reconstruction-v1`: loss reason `destination_rejected`.

@@ -6,10 +6,21 @@ retrieval, memory activity, side effects, delegation, retries and failures that
 your code reports, and exact bytes you pass to `ByteEvidenceRecorder`. It does
 not block, alter or delay the agent.
 
-**No zero-code wire capture in TypeScript yet.** Unlike the Python SDK, this
-package does not tee model HTTP traffic; every record comes from an explicit
-call. TypeScript wire capture is planned and not built. See
-[limitations](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/limitations-and-roadmap.md).
+**Model-call wire capture (built, not yet released).** `@singleaxis/fabric/register`
+records the model calls an unmodified Node.js agent makes through global `fetch`,
+including the official `openai` and `@anthropic-ai/sdk` clients, with no code
+change:
+
+```sh
+FABRIC_WIRE_AUTOLOAD=1 NODE_OPTIONS="--import=@singleaxis/fabric/register" node agent.mjs
+node -p "require('@singleaxis/fabric/wire').envStatus()"   # why nothing is recorded
+```
+
+It is active only on the exact Node.js 24 builds the package's compatibility table
+lists, and the release workflow publishes it only once its qualification gates pass.
+Importing the package root installs nothing. See
+[Node.js wire capture](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/node-wire-capture.md)
+and [limitations](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/limitations-and-roadmap.md).
 
 Requires Node.js 22.18 or later (CI tests Node 22 and 24). Node 20 reached end
 of life on 2026-04-30 and is not supported from 0.12.0.

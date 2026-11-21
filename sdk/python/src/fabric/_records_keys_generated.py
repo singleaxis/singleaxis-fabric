@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-RECORD_KEY_TABLE_REVISION = "fabric.telemetry-key-registry/v1@13"
+RECORD_KEY_TABLE_REVISION = "fabric.telemetry-key-registry/v1@14"
 
 RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
     "fabric.actor.id": {
@@ -59,6 +59,8 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         "examples": (
             "wire.py.httpx@1.2.0",
             "sdk.records@0.9.0+local",
+            "wire.ts.undici@1.0.0",
+            "wire.ts.node_http@1.0.0",
         ),
     },
     "fabric.capture.source": {

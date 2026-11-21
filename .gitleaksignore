@@ -94,3 +94,9 @@ e7f51825264e116a36e00ce4b29d26e8fbb4f975:components/otel-collector-fabric/proces
 9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:681
 9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:705
 9ee23b2d802437946f58ec46fd671daba2551b24:sdk/typescript/test/wire/fixtures/config-env.json:generic-api-key:1084
+# Spec 058 E2a chart test: a render-only source id (feature branch of PR #311); see triage document.
+63f7326c314c7bbc81f3bcf4ec4f2dea5c516022:charts/fabric/tests/test-secrets-and-injector.sh:generic-api-key:120
+# Spec 057 P3c SC-RA-3 live-mode test: a wrong stand-in model key (feature branch of PR #321); see triage document.
+465acac9424f9729982ed77be7aade4f243c06ec:qualification/security-context/tests/test_sc_ra3_live_mode.py:generic-api-key:62
+# Spec 055 T15 split tests: a plain-text privacy canary, never a key (feature branch of PR #336); see triage document.
+370a9bdc2e0a8ed77f2382bf6a9c7db52c643a12:sdk/typescript/test/wire/parts/helpers.ts:generic-api-key:24

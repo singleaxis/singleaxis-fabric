@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.field-registry/v1",
-  "registry_revision": 13,
+  "registry_revision": 14,
   "status": "draft",
   "spec": "specs/049-four-layer-capture-coverage.md (revision 3)",
   "profiles": [
@@ -208,7 +208,9 @@
       "observed_by": [
         "run.scope",
         "wire.py.httpx",
-        "wire.py.aiohttp"
+        "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http"
       ],
       "default_policy": "metadata",
       "privacy_class": "ID",
@@ -440,6 +442,8 @@
       "observed_by": [
         "wire.py.httpx",
         "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http",
         "sdk.records",
         "explicit.call_recorder"
       ],
@@ -475,6 +479,8 @@
       "observed_by": [
         "wire.py.httpx",
         "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http",
         "sdk.records",
         "explicit.call_recorder"
       ],
@@ -736,7 +742,9 @@
       "type": "enum (section 4.2)",
       "observed_by": [
         "wire.py.httpx",
-        "wire.py.aiohttp"
+        "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http"
       ],
       "default_policy": "metadata",
       "privacy_class": "META",
@@ -1438,7 +1446,9 @@
       "type": "label, enum",
       "observed_by": [
         "wire.py.httpx",
-        "wire.py.aiohttp"
+        "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http"
       ],
       "default_policy": "metadata",
       "privacy_class": "LABEL/META",
@@ -1455,7 +1465,9 @@
       "type": "label",
       "observed_by": [
         "wire.py.httpx",
-        "wire.py.aiohttp"
+        "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http"
       ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
@@ -1489,6 +1501,8 @@
       "observed_by": [
         "wire.py.httpx",
         "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http",
         "reconstruct.parse"
       ],
       "default_policy": "metadata",
@@ -1539,7 +1553,9 @@
       "type": "p-pseudonym",
       "observed_by": [
         "wire.py.httpx",
-        "wire.py.aiohttp"
+        "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http"
       ],
       "default_policy": "off",
       "privacy_class": "ID",
@@ -1692,6 +1708,8 @@
       "observed_by": [
         "wire.py.httpx",
         "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http",
         "sdk.records",
         "explicit.call_recorder"
       ],
@@ -1711,6 +1729,8 @@
       "observed_by": [
         "wire.py.httpx",
         "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http",
         "sdk.records",
         "explicit.call_recorder"
       ],
@@ -1730,6 +1750,8 @@
       "observed_by": [
         "wire.py.httpx",
         "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http",
         "sdk.records"
       ],
       "default_policy": "metadata",
@@ -1748,6 +1770,8 @@
       "observed_by": [
         "wire.py.httpx",
         "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http",
         "sdk.records",
         "explicit.call_recorder"
       ],
@@ -1767,6 +1791,8 @@
       "observed_by": [
         "wire.py.httpx",
         "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http",
         "reconstruct.parse"
       ],
       "default_policy": "metadata",
@@ -2059,7 +2085,9 @@
       "type": "enum complete/closed_early/error/abandoned",
       "observed_by": [
         "wire.py.httpx",
-        "wire.py.aiohttp"
+        "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http"
       ],
       "default_policy": "metadata",
       "privacy_class": "META",
@@ -2076,7 +2104,9 @@
       "type": "int",
       "observed_by": [
         "wire.py.httpx",
-        "wire.py.aiohttp"
+        "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http"
       ],
       "default_policy": "metadata",
       "privacy_class": "META",
@@ -2110,7 +2140,9 @@
       "observed_by": [
         "sdk.records",
         "wire.py.httpx",
-        "wire.py.aiohttp"
+        "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http"
       ],
       "default_policy": "metadata",
       "privacy_class": "META/ID",
@@ -2161,6 +2193,7 @@
         "wire.py.httpx",
         "wire.py.aiohttp",
         "wire.ts.undici",
+        "wire.ts.node_http",
         "explicit.call_recorder",
         "explicit.byte_boundary"
       ],
@@ -2179,7 +2212,9 @@
       "type": "list of object",
       "observed_by": [
         "wire.py.httpx",
-        "wire.py.aiohttp"
+        "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http"
       ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
@@ -2263,6 +2298,8 @@
       "observed_by": [
         "wire.py.httpx",
         "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http",
         "reconstruct.parse"
       ],
       "default_policy": "metadata",
@@ -3649,6 +3686,8 @@
       "observed_by": [
         "wire.py.httpx",
         "wire.py.aiohttp",
+        "wire.ts.undici",
+        "wire.ts.node_http",
         "reconstruct.parse"
       ],
       "default_policy": "metadata",

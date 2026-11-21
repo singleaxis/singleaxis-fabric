@@ -97,6 +97,19 @@ updates:
   # license scanner. Its client-s3 range must equal the SDK's peer range, so
   # only the lockfile moves for it (the scanner's exact pin is raised).
   - package-ecosystem: "npm"
+    # Spec 055 §9.3: the model clients the Node.js wire capture is qualified against
+    # (exact pins; never a dependency of @singleaxis/fabric).
+    directory: "/qualification/node-wire"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "typescript", "qualification"]
+    groups:
+      node-wire-clients:
+        patterns: ["*"]
+  - package-ecosystem: "npm"
     directory: "/scripts/license/s3-peer"
     schedule:
       interval: "weekly"

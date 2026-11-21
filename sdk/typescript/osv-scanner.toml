@@ -1,0 +1,20 @@
+# osv-scanner configuration for sdk/typescript/package-lock.json.
+#
+# Read by the "Released lockfile vulnerability scan" job in
+# .github/workflows/recorder-security.yml (osv-scanner loads the
+# osv-scanner.toml next to each scanned lockfile). Every entry names one
+# advisory, why it cannot reach a released artifact, and an expiry date, after
+# which the scan fails again and the entry must be re-triaged or removed.
+
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2027-01-31
+reason = """
+picomatch ReDoS on single-branch repeated extglobs. No fixed release exists:
+every version through 4.0.7, the latest, is affected. picomatch is a
+development-only transitive dependency (tsup -> tinyglobby, vitest, vite). The
+published @singleaxis/fabric package has no runtime dependencies and ships only
+dist/, README.md and LICENSE, so picomatch is never installed with it. The
+build and test tools match only glob patterns this repository writes. Remove
+this entry when a fixed picomatch is published, and bump the lockfile.
+"""
