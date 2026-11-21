@@ -1,15 +1,83 @@
 {
   "contract": "singleaxis.fabric.diagnostics",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "digest_scope": "exact_file_bytes",
   "schema": {
     "path": "schema/messages-v1.schema.json",
-    "sha256": "2862f827580c29ace5d51e85ec48531e95b3322bca2a10e270d98277fa2c73ed"
+    "sha256": "0964975bb52bfe3cdb4b6671bf22a4be6ff7728b7c77b8a3447e4194718cf27f"
   },
   "files": [
     {
+      "path": "fixtures/wire-status/invalid/bad-warning-id.json",
+      "sha256": "2238e483908e1ee175e89ee8227fe422c31a5bd62f037ddc6d3f3412d7c75021"
+    },
+    {
+      "path": "fixtures/wire-status/invalid/closed-without-stats.json",
+      "sha256": "396f9c489c23c42d23056234e4699d9be23717d5566a1f42e33b390131f3bf0e"
+    },
+    {
+      "path": "fixtures/wire-status/invalid/content-in-status.json",
+      "sha256": "773e10da7abe27bab1320a0b96bee0aaf284f55867027dfef5891204080e05e9"
+    },
+    {
+      "path": "fixtures/wire-status/invalid/error-message-not-class.json",
+      "sha256": "cefb8b7328a4a018acbd054e83a8c1abe79f5de8d78b3c93602280c403afca8f"
+    },
+    {
+      "path": "fixtures/wire-status/invalid/header-at-top-level.json",
+      "sha256": "6596d645d66af19d32eed008147836c5d70f001a5bc226e1f7cf27a81b53da90"
+    },
+    {
+      "path": "fixtures/wire-status/invalid/not-installed-with-status.json",
+      "sha256": "bc8128ea5d20f542b2f069370cb3d3cb9651449d1f1e9747cbe8bb19e155650d"
+    },
+    {
+      "path": "fixtures/wire-status/invalid/unknown-capture-state.json",
+      "sha256": "30effcaf05ef7ed079015c467d23de88b406978807e83b09b51ec5d8f1f4506f"
+    },
+    {
+      "path": "fixtures/wire-status/invalid/unknown-point-state.json",
+      "sha256": "90347d3e411d062c02fe8c0f3d63028a1f54c11ab73a19c183a1476f3c3d2fd2"
+    },
+    {
+      "path": "fixtures/wire-status/valid/python-disabled.json",
+      "sha256": "5b6c740be23e1f0845907272560cbfafab66032f937846fc3c700dde5af6f0ba"
+    },
+    {
+      "path": "fixtures/wire-status/valid/python-exit.json",
+      "sha256": "b1b02cde839b1c67ea7c82a5f4e9c5cf25f53f2ca156b2b70a02379a7d1d32b6"
+    },
+    {
+      "path": "fixtures/wire-status/valid/python-failure.json",
+      "sha256": "25eec53b0906916617332e41a153ea1382d78e76c1aac4c10a9740d14d611e07"
+    },
+    {
+      "path": "fixtures/wire-status/valid/python-install.json",
+      "sha256": "9b67748bb586536163e73586416816df5f1e2b8052d0c99f511c5dbe7d46ac6d"
+    },
+    {
+      "path": "fixtures/wire-status/valid/typescript-exit.json",
+      "sha256": "7e524b7b0ed9c70e62514c2dbc07e4bf1b1005e2d88997d64c1932bf8618bce5"
+    },
+    {
+      "path": "fixtures/wire-status/valid/typescript-install.json",
+      "sha256": "45fa622451237514577bf104ccfc0896d207e51952a91c299d3b65863f3b8c22"
+    },
+    {
+      "path": "fixtures/wire-status/valid/typescript-not-installed.json",
+      "sha256": "562576284b5b7f0b601a17a857ab9a7d9a6bc732e1b90daf6bdffb5128dec172"
+    },
+    {
+      "path": "fixtures/wire-status/valid/typescript-unqualified-runtime.json",
+      "sha256": "679d9f5b02bc5dc3692591c142703f34f1b1ded02b2dba660529a485e62bf2ab"
+    },
+    {
       "path": "messages-v1.json",
-      "sha256": "dfcde9c63a6bc297694413aec2d7638c35455eb08ecc899a9625fab6cdda59bb"
+      "sha256": "934a09f879be7d445ae429dd588a364cf83b1c7edf13b406c44c7c232baad0e3"
+    },
+    {
+      "path": "schema/wire-status-v1.schema.json",
+      "sha256": "0585a1c18e122e0e0b43e866469bf75a85f2f0fe127419e527410596d3d23fcc"
     }
   ]
 }

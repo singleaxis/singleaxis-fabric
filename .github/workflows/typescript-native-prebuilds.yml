@@ -1,0 +1,113 @@
+name: TypeScript native prebuilds
+
+# Spec 055 §4.4 and §9.2 (`typescript-native`): builds Fabric's Node-API lock module
+# for the six supported targets, runs its C unit tests and its JavaScript ABI tests on
+# each target, and checks that the SHA-256 table the loader embeds
+# (sdk/typescript/src/wire/native-digests.generated.ts) is the table of the files built
+# here. No binary is committed: the packaging unit takes the `fabric-wire-prebuilds`
+# artifact of this workflow into the npm tarball.
+#
+# The Linux targets compile and test inside container images pinned by digest
+# (scripts/typescript/prebuild/prebuild.mjs), each on a runner of its own CPU, so no
+# emulation is involved. The macOS targets compile with one pinned Xcode.
+#
+# When the digest check fails after an intended change to native/**, the compile flags
+# or a pinned image: download the `fabric-wire-prebuilds` artifact of the failed run
+# into sdk/typescript/prebuilds-build/, run
+# `node scripts/typescript/prebuild/prebuild.mjs digests --write`, and commit the table.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The Xcode both macOS targets compile with. A different Xcode changes the built
+  # bytes, so changing this means regenerating the digest table.
+  XCODE_VERSION: "16.4"
+
+jobs:
+  build:
+    name: Native lock module (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64-glibc
+            runner: ubuntu-24.04
+          - target: linux-arm64-glibc
+            runner: ubuntu-24.04-arm
+          - target: linux-x64-musl
+            runner: ubuntu-24.04
+          - target: linux-arm64-musl
+            runner: ubuntu-24.04-arm
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: Select the pinned Xcode
+        if: runner.os == 'macOS'
+        run: |
+          app="/Applications/Xcode_${XCODE_VERSION}.app"
+          if [ ! -d "${app}" ]; then
+            have=$(cd /Applications && echo Xcode*)
+            echo "::error::Xcode ${XCODE_VERSION} is not on this runner image (it has: ${have}). Set XCODE_VERSION in typescript-native-prebuilds.yml to a version both macOS runners have, then regenerate the digest table (see the top of that file)."
+            exit 1
+          fi
+          sudo xcode-select -s "${app}/Contents/Developer"
+          cc --version
+      - name: Install the locked dependencies (the pinned Node-API headers)
+        working-directory: sdk/typescript
+        run: npm ci
+      - name: Build the module and run the C unit tests
+        run: node scripts/typescript/prebuild/prebuild.mjs build --target "${{ matrix.target }}"
+      - name: Run the JavaScript ABI tests against the built module
+        run: node scripts/typescript/prebuild/prebuild.mjs test --target "${{ matrix.target }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fabric-wire-prebuild-${{ matrix.target }}
+          path: sdk/typescript/prebuilds-build/${{ matrix.target }}/fabric_wire.node
+          if-no-files-found: error
+          retention-days: 14
+
+  digests:
+    name: Native lock module digest table
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: fabric-wire-prebuild-*
+          path: downloaded
+      - name: Lay the six files out as prebuilds/<target>/fabric_wire.node
+        run: |
+          for dir in downloaded/fabric-wire-prebuild-*; do
+            target="${dir#downloaded/fabric-wire-prebuild-}"
+            mkdir -p "sdk/typescript/prebuilds-build/${target}"
+            cp "${dir}/fabric_wire.node" "sdk/typescript/prebuilds-build/${target}/fabric_wire.node"
+          done
+          (cd sdk/typescript/prebuilds-build && sha256sum ./*/fabric_wire.node)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fabric-wire-prebuilds
+          path: sdk/typescript/prebuilds-build/*/fabric_wire.node
+          if-no-files-found: error
+          retention-days: 14
+      - name: The embedded digest table is the table of the built files, all six
+        run: node scripts/typescript/prebuild/prebuild.mjs digests --check --require-all
