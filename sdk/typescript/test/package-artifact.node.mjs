@@ -245,8 +245,11 @@ const a = install(), b = install();
 const port = server.address().port;
 await (await fetch(\`http://127.0.0.1:\${port}/v1/chat/completions\`, { method: "POST", body: "{}" })).text();
 server.close();
+// One runtime: the preload and install() registered one epoch between them.
+const { readdirSync } = await import("node:fs");
+const epochs = readdirSync(process.env.FABRIC_WIRE_SPOOL_DIR + "/.epochs").filter((n) => n.endsWith(".reg")).length;
 console.log(JSON.stringify({ hooked, same: a === b, capturing: a.capturing, reason: a.reason ?? null,
-  matched: a.status().status?.matched ?? null }));
+  matched: a.status().status?.matched ?? null, epochs }));
 `;
 const PROBE_CJS =
     PROBE_ESM.replace(
@@ -349,6 +352,7 @@ for (const [label, file, source, args] of [
                 capturing: true,
                 reason: null,
                 matched: 1,
+                epochs: 1,
             });
             assert.equal(stderr, ""); // silent by default (spec 055 §4.7)
             assert.equal(status.phase, "exit");
@@ -377,6 +381,72 @@ console.log(JSON.stringify({ error }));
             out.error.message,
             /already installed in this process with a different configuration/,
         );
+    },
+);
+
+test(
+    "packed: after close(), install() with other settings installs again; while capturing, " +
+        "its own transformations throw",
+    {
+        ...packaged,
+        skip: packaged.skip || (!CAPTURING_NODE && "needs Node.js 24.4 or newer"),
+    },
+    () => {
+        const source = `
+import { install } from "@singleaxis/fabric/wire";
+const a = install();
+let conflict = null;
+try { install({ transformations: { "model.exchange.request": {} } }); } catch (e) { conflict = e.name; }
+await a.close({ timeoutMs: 1000 });
+const b = install({ undici: false });
+console.log(JSON.stringify({ first: a.capturing, conflict, fresh: a !== b, again: install() === b,
+  reason: b.reason ?? null }));
+`;
+        const { out } = runApp("reinstall.mjs", source, { ...PRELOAD, ...endpointEnv() });
+        assert.deepEqual(out, {
+            first: true,
+            conflict: "WireConfigError",
+            fresh: true,
+            again: true,
+            reason: "hook_disabled",
+        });
+    },
+);
+
+test(
+    "packed: a model-looking request to an unconfigured host is listed with its fix (FW-006)",
+    {
+        ...packaged,
+        skip: packaged.skip || (!CAPTURING_NODE && "needs Node.js 24.4 or newer"),
+    },
+    () => {
+        const source = `
+import { createServer } from "node:http";
+const server = createServer((req, res) => { req.resume(); req.on("end", () => res.end("{}")); });
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const port = server.address().port;
+// The endpoint covers 127.0.0.1 only: localhost is a host no matcher covers.
+await fetch(\`http://localhost:\${port}/v1/messages\`, { method: "POST", body: "{}" }).then((r) => r.text(), () => null);
+server.close();
+const { install } = await import("@singleaxis/fabric/wire");
+const live = install().status();
+console.log(JSON.stringify({ port, live: live.status.unmatched_model_hosts, ids: live.warning_ids }));
+`;
+        const { out, status } = runApp("unmatched.mjs", source, { ...PRELOAD, ...endpointEnv() });
+        const row = {
+            host: "localhost",
+            port: out.port,
+            count: 1,
+            fix:
+                `export FABRIC_WIRE_ENDPOINTS='[{"endpoint_id":"my-model","dialect":"anthropic",` +
+                `"hosts":["localhost"],"ports":[${out.port}],"schemes":["http"]}]'`,
+        };
+        assert.deepEqual(out.live, [row]);
+        assert.ok(out.ids.includes("FW-006"), out.ids);
+        // The exit document the Fabric worker wrote lists it too.
+        assert.equal(status.phase, "exit");
+        assert.deepEqual(status.unmatched_model_hosts, [row]);
+        assert.ok(status.warning_ids.includes("FW-006"), status.warning_ids);
     },
 );
 
