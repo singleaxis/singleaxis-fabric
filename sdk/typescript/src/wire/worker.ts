@@ -23,6 +23,13 @@
  * protector and its redaction service client are built here, in the Fabric worker, from
  * a plain configuration ({@link PipelineConfig}); no object holding a socket crosses an
  * isolate. The sender (055-t13) drains the spool.
+ *
+ * Unit 055-t10 adds the loss funnel and the seal accumulator: every lost position reaches
+ * the worker through the runtime's loss ring and its `loss` handler, then
+ * {@link LossTable.record} (`loss.ts`), which settles the position in its segment's seal;
+ * a spooled exchange settles its record digest ({@link SegmentSeals}, `seal.ts`). Loss
+ * ranges and `segment_seal` markers are spooled on the worker's tick, and at stop the
+ * `shutdown` losses and the seals precede the epoch's `final` heartbeat.
  */
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -49,13 +56,22 @@ import {
   decideGate,
   modeOf,
 } from "./protect.js";
+import { LossTable } from "./loss.js";
 import {
+  MAX_RUNS,
   type RuntimeLoss,
   type RuntimeLossReason,
   type RuntimeShared,
   WireRuntime,
   waitAsync,
 } from "./runtime.js";
+import {
+  type RunTableView,
+  SegmentSeals,
+  exchangeSealEntry,
+  observeRunTable,
+  segmentIdOf,
+} from "./seal.js";
 import type { Spool } from "./spool.js";
 import type { WireSettings } from "./types.js";
 import { UNDICI_POINT, contentEncodingOf, mediaTypeOf, readUndiciMeta } from "./undici.js";
@@ -231,6 +247,12 @@ export interface FabricWorkerHandlers {
    * heartbeats' clock. A handler that throws is ignored until the next call.
    */
   tick?(context: FabricWorkerContext): void | Promise<void>;
+  /**
+   * Called once when the worker stops in order, after every queued job and loss record
+   * was handled: the pipeline seals and writes the epoch's `final` here. A handler that
+   * throws is ignored.
+   */
+  stop?(context: FabricWorkerContext): void | Promise<void>;
 }
 
 /**
@@ -315,19 +337,20 @@ async function consume(
       growPools(pools);
       if (performance.now() - lastTick >= WORKER_TICK_MS) await tick();
     }
-    if (handlers.loss !== undefined) {
-      for (let loss = runtime.peekLoss(); loss !== undefined; loss = runtime.peekLoss()) {
-        try {
-          await handlers.loss(loss, context);
-        } catch {
-          runtime.countUnattributed();
-        }
-        runtime.commitLoss();
-      }
-    }
+    await handleLosses(context, handlers);
     growPools(pools);
     await tick();
-    if (runtime.stopRequested) return;
+    if (runtime.stopRequested) {
+      // Losses recorded just before the stop request (the shutdown sweep) are handled
+      // before the stop handler, so they precede the epoch's final.
+      await handleLosses(context, handlers);
+      try {
+        await handlers.stop?.(context);
+      } catch {
+        // a final not written leaves the epoch unverified; never the agent's problem
+      }
+      return;
+    }
     const waited = waitAsync(jobs.wakeWords, jobs.wakeIndex, seen, WORKER_TICK_MS);
     if (!waited.async) continue;
     // A pending waitAsync does not keep a thread alive; the timer does.
@@ -339,6 +362,23 @@ async function consume(
       }),
     ]);
     clearTimeout(timer);
+  }
+}
+
+/** Hands every queued loss record to the `loss` handler (left in the ring without one). */
+async function handleLosses(
+  context: FabricWorkerContext,
+  handlers: FabricWorkerHandlers,
+): Promise<void> {
+  if (handlers.loss === undefined) return;
+  const { runtime } = context;
+  for (let loss = runtime.peekLoss(); loss !== undefined; loss = runtime.peekLoss()) {
+    try {
+      await handlers.loss(loss, context);
+    } catch {
+      runtime.countUnattributed();
+    }
+    runtime.commitLoss();
   }
 }
 
@@ -396,6 +436,8 @@ export interface PipelineConfig {
     readonly template: ManifestTemplate;
     readonly unsealed: { readonly epochs: readonly bigint[]; readonly count: number };
   };
+  /** The forced-seal bound (default 1,000,000 positions, spec 055 §4.3; tests scale it). */
+  readonly forcedSealPositions?: number;
 }
 
 const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
@@ -496,12 +538,15 @@ export function pipelineConfig(
   };
 }
 
-/** Where the pipeline's own losses go (the runtime's loss ring; 055-t10 seals them). */
+/**
+ * Where the pipeline's own losses go: the runtime's loss ring, from which the worker's
+ * `loss` handler takes them to {@link CapturePipeline.lost}, the single loss funnel.
+ */
 export interface PipelineSink {
   lose(reason: RuntimeLossReason, sequence: bigint, segmentHi: bigint, segmentLo: bigint): void;
   /** A class-only notice (catalogue id and reason), never a value. */
   notice?(id: string, reason: string): void;
-  /** A record was written: 055-t10 settles its segment's seal here. */
+  /** A record was written (its segment's seal is already settled). */
   written?(job: CapturedExchange, span: SpanDoc): void;
 }
 
@@ -521,14 +566,18 @@ export interface PipelineStats {
         readonly internalErrors: number;
       }
     | undefined;
+  readonly losses: ReturnType<LossTable["stats"]>;
+  readonly seals: ReturnType<SegmentSeals["stats"]>;
 }
+
+/** How long one tick may spend building handed-off seals. */
+export const SEAL_BUDGET_MS = 20;
 
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 const uuidText = (bytes: Uint8Array): string => {
   const h = hex(bytes);
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 };
-const u64hex = (value: bigint): string => BigInt.asUintN(64, value).toString(16).padStart(16, "0");
 
 /**
  * The Fabric worker's capture pipeline: one completed exchange in, one protected spool
@@ -557,6 +606,12 @@ export class CapturePipeline {
   /** Manifests and `final` waiting for the spool, written in order ahead of exchanges. */
   readonly markers = new MarkerQueue();
   #unsealed: { readonly epochs: readonly bigint[]; readonly count: number } | undefined;
+  /** Segment seals (050 §3.7): settled after the record is spooled, or by the loss funnel. */
+  readonly seals: SegmentSeals;
+  /** The single loss funnel and its ranges (050 §3.3, R3). */
+  readonly losses: LossTable;
+  /** The result of the orderly close ({@link closeEpoch}), once it ran. */
+  closed: boolean | undefined;
 
   constructor(config: PipelineConfig, spool: Spool, sink: PipelineSink) {
     this.#config = config;
@@ -564,6 +619,22 @@ export class CapturePipeline {
     this.#sink = sink;
     this.manifests =
       config.manifest === undefined ? undefined : new ManifestChain(config.manifest.template);
+    this.seals = new SegmentSeals({
+      // Manifest 0 of the seal's epoch goes ahead of its first seal.
+      sink: (marker, seal) => {
+        this.#ensureManifest(seal.epoch);
+        return this.markers.queue(marker);
+      },
+      manifestSeq: (epoch) => this.manifests?.latestSeq(epoch),
+      forcedAt: config.forcedSealPositions,
+    });
+    this.losses = new LossTable({
+      settle: (segmentId, sequence, entry, sourceId, epoch) => {
+        if (segmentId === undefined) return;
+        this.seals.noteJob(segmentId, sourceId, epoch);
+        this.seals.settle(segmentId, sequence, entry);
+      },
+    });
     this.heartbeats = this.manifests === undefined ? undefined : new Heartbeats(this.manifests);
     this.#unsealed = config.manifest?.unsealed;
     const policy = config.policy === undefined ? undefined : new DeploymentPolicy(config.policy);
@@ -620,7 +691,51 @@ export class CapturePipeline {
               beatsPending: this.heartbeats?.pending.length ?? 0,
               internalErrors: chain.internalErrors,
             },
+      losses: this.losses.stats(),
+      seals: this.seals.stats(),
     };
+  }
+
+  /**
+   * The manifests at the head of the queue (an epoch's manifest 0 leads it), then the
+   * losses, then the other held markers (Python's sender writes losses ahead of markers
+   * and spools a prefix): a seal or `final` never overtakes a loss range that could not
+   * be written, so a `final` never precedes a `shutdown` loss.
+   */
+  #pump(): void {
+    this.markers.pump(
+      this.#spool,
+      (marker) => (marker.doc.marker as { kind?: unknown })?.kind !== "manifest",
+    );
+    if (this.losses.pump(this.#spool)) this.markers.pump(this.#spool);
+  }
+
+  /**
+   * The single loss funnel of the Fabric worker (050 §3.3): one lost position from the
+   * runtime's loss ring, in the epoch it was allocated in. Never throws.
+   */
+  lost(loss: RuntimeLoss, epoch: bigint): void {
+    try {
+      this.#ensureManifest(epoch);
+      this.losses.record(
+        this.#config.sourceId,
+        epoch,
+        loss.reason,
+        loss.sequence,
+        segmentIdOf(loss.segmentHi, loss.segmentLo),
+      );
+    } catch {
+      // the position stays a gap; never the agent's problem
+    }
+  }
+
+  /** The tick's run-table scan: a segment at the forced bound is sealed non-terminally. */
+  observeRuns(runtime: RunTableView, runs = MAX_RUNS): void {
+    try {
+      observeRunTable(runtime, this.seals, runs);
+    } catch {
+      // the next tick scans again
+    }
   }
 
   // ------------------------------------------------------------------ manifests (§7.2)
@@ -648,7 +763,8 @@ export class CapturePipeline {
     try {
       this.#ensureManifest(epoch);
       this.heartbeats?.tick(epoch, last);
-      this.markers.pump(this.#spool);
+      this.seals.drain(SEAL_BUDGET_MS);
+      this.#pump();
     } catch {
       // a manifest not written leaves its epoch unverified; never the agent's problem
     }
@@ -668,7 +784,7 @@ export class CapturePipeline {
     try {
       this.#ensureManifest(epoch);
       this.markers.queue(this.manifests?.pointChanged(epoch, point, state, reason, cut));
-      this.markers.pump(this.#spool);
+      this.#pump();
     } catch {
       // as tick
     }
@@ -679,7 +795,7 @@ export class CapturePipeline {
     try {
       this.#ensureManifest(epoch);
       this.markers.queue(this.manifests?.classUncaptured(epoch, cls, cut));
-      this.markers.pump(this.#spool);
+      this.#pump();
     } catch {
       // as tick
     }
@@ -693,11 +809,33 @@ export class CapturePipeline {
     try {
       this.#ensureManifest(epoch);
       this.markers.queue(this.heartbeats?.final(epoch, last));
-      this.markers.pump(this.#spool);
-      return this.markers.held.length === 0 && this.markers.dropped === 0;
+      this.#pump();
+      return this.markers.held.length === 0 && this.markers.dropped === 0 && !this.losses.pending;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * The orderly close of `epoch` at `last` (spec 055 §4.3, 050 §3.7), after the shutdown
+   * sweep's `shutdown` losses were recorded: build every handed-off seal, spool the loss
+   * ranges, the `segment_seal` markers and then `final`. `true` only when every seal
+   * requested was built and queued, none was dropped, and every loss and marker,
+   * `final` last, is in the spool. Afterwards the closed epoch settles nothing more.
+   * Never throws.
+   */
+  closeEpoch(epoch: bigint, last: bigint): boolean {
+    let sealed: boolean;
+    try {
+      sealed =
+        this.seals.drain() && this.seals.dropped() === 0 && this.seals.waiting().length === 0;
+    } catch {
+      sealed = false;
+    }
+    const final = this.final(epoch, last);
+    this.losses.setSettle(undefined);
+    this.closed = sealed && final;
+    return this.closed;
   }
 
   async close(): Promise<void> {
@@ -721,7 +859,6 @@ export class CapturePipeline {
       mediaType: mediaTypeOf(media),
       contentEncoding: contentEncodingOf(encoding),
     });
-    const segmented = job.segmentHi !== 0n || job.segmentLo !== 0n;
     return {
       exchangeId: uuidText(job.exchangeId),
       eventId: uuidText(job.eventId),
@@ -741,7 +878,7 @@ export class CapturePipeline {
       sourceId: this.#config.sourceId,
       sourceEpoch: epoch,
       sequence: job.sequence,
-      segmentId: segmented ? `seg-${u64hex(job.segmentHi)}${u64hex(job.segmentLo)}` : undefined,
+      segmentId: segmentIdOf(job.segmentHi, job.segmentLo),
       runId: undefined,
       scopeId: undefined,
       startNs: job.startNs,
@@ -776,7 +913,7 @@ export class CapturePipeline {
         this.#noticeDisabled(epoch);
         // The epoch's manifests go to the spool ahead of its exchanges.
         this.#ensureManifest(epoch);
-        this.markers.pump(this.#spool);
+        this.#pump();
         const prepared = await prepareExchange(
           captured,
           {
@@ -791,6 +928,7 @@ export class CapturePipeline {
         outcome = admitEntries(this.#spool, [entry])[0]!;
         if (outcome === "spooled") {
           this.heartbeats?.noteActivity();
+          this.#settleWritten(captured, prepared.span);
           this.#sink.written?.(captured, prepared.span);
         }
       }
@@ -806,6 +944,28 @@ export class CapturePipeline {
       }
     }
     return outcome;
+  }
+
+  /**
+   * 050 §3.7: a spooled position settles its segment with its record digest, only now
+   * that the record is in the spool. A digest that cannot be built leaves the position
+   * unsettled, so its segment never seals complete.
+   */
+  #settleWritten(captured: CapturedExchange, span: SpanDoc): void {
+    const segmentId = captured.segmentId;
+    if (segmentId === undefined) return;
+    try {
+      this.seals.noteJob(
+        segmentId,
+        captured.sourceId,
+        captured.sourceEpoch,
+        captured.runId,
+        captured.scopeId,
+      );
+      this.seals.settle(segmentId, captured.sequence, exchangeSealEntry(span));
+    } catch {
+      // unsettled: the verifier reports the segment unsealed
+    }
   }
 
   /**
@@ -832,16 +992,24 @@ function rootTraceId(): string {
 
 /**
  * The Fabric worker's handlers for a pipeline: each completed exchange goes through
- * {@link CapturePipeline.handle} under the runtime's current epoch; its losses go to the
- * runtime's loss ring; each loop pass ticks the manifests and heartbeats at the last
- * allocated position.
+ * {@link CapturePipeline.handle} under the runtime's current epoch; every loss record of
+ * the runtime's loss ring goes through the loss funnel ({@link CapturePipeline.lost});
+ * each loop pass scans the run table for forced seals and ticks the seals, manifests and
+ * heartbeats at the last allocated position; an orderly stop closes the epoch.
  */
 export function pipelineHandlers(pipeline: CapturePipeline): FabricWorkerHandlers {
   return {
     job: async (job, context) => {
       await pipeline.handle(job, context.exchanges.arena, context.runtime.epoch);
     },
-    tick: ({ runtime }) => pipeline.tick(runtime.epoch, runtime.nextSequence - 1n),
+    loss: (loss, { runtime }) => pipeline.lost(loss, runtime.epoch),
+    tick: ({ runtime }) => {
+      pipeline.observeRuns(runtime);
+      pipeline.tick(runtime.epoch, runtime.nextSequence - 1n);
+    },
+    stop: ({ runtime }) => {
+      pipeline.closeEpoch(runtime.epoch, runtime.nextSequence - 1n);
+    },
   };
 }
 
