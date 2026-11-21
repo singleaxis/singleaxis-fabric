@@ -63,10 +63,19 @@ record must be delivered. Its self-test is a second scenario whose fault leaks
 the span attribute only (the record stays valid and is delivered): the scan
 must report that canary in the spans the sink received.
 
+A full disk (unit 055-t16): the `retain_original` scenario again with every
+spool record write failing with `ENOSPC` in the harness's Fabric worker, so
+every exchange is a `disk_full` loss that only the preallocated loss ledger
+holds. The scan decodes the ledger's slots (loss and marker headers only: no
+canary may appear, not even a body canary), and the delivery step's drainer
+exports them (`Sender.recoverOrphans`) before the sink scan. The row fails
+unless the ledger held a `disk_full` loss, no exchange was spooled and the
+drainer exported it. Registration files under `.epochs/` are scanned raw with
+every other spool file.
+
 Not scanned yet, added by the units that produce those bytes: the Node's
-persistent queue and the store with the real Node (055-t17), the registration
-files and the ledger under faults (055-t16), the status file and the exit note
-(055-t14).
+persistent queue and the store with the real Node (055-t17), the status file
+and the exit note (055-t14).
 
 ## Network step
 

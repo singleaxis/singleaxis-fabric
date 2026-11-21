@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The `ts-wire-privacy` gate of spec 055 §9.2 (unit 055-t8; extended by 055-t13, -t14, -t16,
-// -t20, -t21): canary scan, scanner self-test and (055-t12) the network step.
+// -t20, -t21): canary scan, scanner self-test and (055-t12) the network step. 055-t16:
+// a full-disk scenario whose losses only the loss ledger holds; its decoded slots and the
+// spans a drainer exports from them are scanned.
 //
 //   node qualification/node-wire/privacy/run.mjs --out report.json
 //
@@ -187,11 +189,33 @@ function scan({ dir, key, mode, C, output, digests }) {
         }
     };
     const spool = join(dir, "spool");
+    stats.ledger_records = 0;
+    stats.ledger_reasons = [];
     for (const path of files(spool)) {
         stats.files++;
         const where = relative(dir, path);
         const raw = readFileSync(path);
         check(`${where} (raw)`, raw.toString("latin1"), false);
+        // 055-t16: the loss ledger's slots decoded (FWLSLOT1 | u32 len | JSON | sha256):
+        // loss and marker headers only, never a canary (not even a body canary).
+        if (path.endsWith("/.ledger")) {
+            for (let at = 4096; at + 4096 <= raw.length; at += 4096) {
+                const slot = raw.subarray(at, at + 4096);
+                if (slot.subarray(0, 8).toString("latin1") !== "FWLSLOT1") continue;
+                const payload = slot.subarray(12, 12 + slot.readUInt32BE(8)).toString("utf8");
+                check(`${where} slot ${(at - 4096) / 4096}`, payload, false);
+                try {
+                    for (const doc of JSON.parse(payload).records) {
+                        stats.ledger_records++;
+                        const reason = doc.loss?.reason;
+                        if (reason !== undefined && !stats.ledger_reasons.includes(reason)) stats.ledger_reasons.push(reason);
+                    }
+                } catch (error) {
+                    violations.push({ where: `${where} slot`, error: `unreadable slot: ${error.constructor.name}` });
+                }
+            }
+            continue;
+        }
         if (!raw.subarray(0, 8).equals(codec.ENVELOPE_MAGIC) && !raw.subarray(0, 8).equals(codec.MAGIC)) continue;
         let inner;
         try {
@@ -403,6 +427,24 @@ async function scenario(mode, options = {}) {
         omit: s.descriptor_only_objects === 0 && s.transformed_objects === 0,
         disabled: s.store_reasons.length === 1 && s.store_reasons[0] === "missing_id_key",
     }[mode] ?? true;
+    // 055-t16: on a full disk no exchange is spooled; each is a disk_full loss that only
+    // the ledger holds, and the delivery step exports it from there.
+    if (options.fault === "disk_full") {
+        const ledgered =
+            s.exchanges === 0 &&
+            s.ledger_records >= 1 &&
+            s.ledger_reasons.includes("disk_full") &&
+            (sent.delivered.stats.ledger_recovered ?? 0) >= 1;
+        return {
+            mode: "disk_full",
+            calls: result.calls,
+            losses: result.losses,
+            ...scanned.stats,
+            delivered: sent.delivered,
+            violations: scanned.violations,
+            passed: scanned.violations.length === 0 && ledgered && sent.delivered.trace_requests > 0,
+        };
+    }
     const enough = scanned.stats.exchanges >= result.calls && planted && worked;
     return {
         mode,
@@ -429,6 +471,13 @@ const scenarios = [];
 for (const mode of NETWORK_ONLY ? [] : MODES) {
     const row = await scenario(mode);
     log(`${mode}: ${row.passed ? "passed" : "FAILED"} (${row.exchanges ?? 0} exchange records, ${row.violations?.length ?? "?"} violations)`);
+    scenarios.push(row);
+}
+// 055-t16: a full disk. The losses live only in the loss ledger; its slots and the spans
+// a drainer exports from them are scanned (retain_original: every canary is planted).
+if (!NETWORK_ONLY) {
+    const row = await scenario("retain_original", { fault: "disk_full" });
+    log(`disk_full: ${row.passed ? "passed" : "FAILED"} (${row.ledger_records ?? 0} ledger records, ${row.violations?.length ?? "?"} violations)`);
     scenarios.push(row);
 }
 // Scanner self-test: the leaked canaries must be reported, in a span attribute and in a
@@ -473,7 +522,8 @@ const report = {
     spec: "055 §9.2 ts-wire-privacy",
     node: process.versions.node,
     scanned: [
-        "spool files raw (every file under FABRIC_WIRE_SPOOL_DIR: records, temps, quarantine, locks, ledger)",
+        "spool files raw (every file under FABRIC_WIRE_SPOOL_DIR: records, temps, quarantine, locks, ledger, registration files)",
+        "the loss ledger's slots decoded, after a full-disk scenario left its losses there, and the spans a drainer exported from them",
         "spool records decrypted (headers, descriptors, every body)",
         "the agent process's output (stdout and stderr)",
         "the OTLP requests a sink received when the SDK's sender delivered the spool (content logs and spans)",
@@ -487,7 +537,6 @@ const report = {
     ],
     not_yet_scanned: {
         "the Node's persistent queue and the store (e2e with the real Node)": "055-t17",
-        "registration files and the loss ledger under faults": "055-t16",
         ...(artifact === undefined ? { "the status file, the exit note and the packed tarball": "run with --artifact" } : {}),
     },
     gates: {

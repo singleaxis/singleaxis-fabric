@@ -29,6 +29,8 @@ export async function deliverSpool(options: {
   const sender = new Sender({ spool, traces, content, serviceName: "svc-privacy" });
   try {
     if (!spool.tryLock()) throw new Error("the spool's drain lock is held");
+    // 055-t16: the ledger slots of a writer that died with unspooled losses, exported first.
+    await sender.recoverOrphans();
     for (let pass = 0; pass < 50 && spool.names().length > 0; pass++) {
       if ((await sender.drain()) === "retry") break;
     }
