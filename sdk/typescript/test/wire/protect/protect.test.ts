@@ -224,7 +224,7 @@ describe("whole-object modes (one golden each)", () => {
     expectNoOriginal(prepared);
   });
 
-  it("original_plus_masked is withheld as a pair until unit 055-t15 builds the review copy", async () => {
+  it("original_plus_masked with no transformation is withheld as a pair (no review copy, no original)", async () => {
     const prepared = await run("original_plus_masked");
     expect(prepared.objects.map((o) => o.descriptor.status)).toEqual(Array(4).fill("not_captured"));
     expectNoOriginal(prepared);

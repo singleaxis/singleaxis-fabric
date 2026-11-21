@@ -11,11 +11,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { encodeJson } from "../../../src/wire/codec.js";
 import { validHeader } from "../../../src/wire/spool-codec.js";
 import { Spool } from "../../../src/wire/spool.js";
-import {
-  CapturePipeline,
-  type PipelineConfig,
-  type PipelineSink,
-} from "../../../src/wire/worker.js";
+import { CapturePipeline } from "../../../src/wire/worker.js";
 import { runPython } from "../registration/helpers.js";
 import { KEY, cleanupDirs, native, spoolDir } from "../spool/helpers.js";
 import {
@@ -27,74 +23,8 @@ import {
   provider,
   settle,
 } from "../undici/helpers.js";
-import { ID_KEY, TENANT, policyDoc } from "./helpers.js";
-
-const MODES = {
-  "model.exchange.request": "retain_original",
-  "model.exchange.response": "retain_original",
-};
-
-function pipelineConfig(overrides: Partial<PipelineConfig> = {}): PipelineConfig {
-  return {
-    sourceId: "s-" + "cd".repeat(16),
-    tenantId: TENANT,
-    serviceName: "svc-test",
-    node: true,
-    store: false,
-    spool: true,
-    policy: policyDoc(MODES, "production") as never,
-    transformations: {},
-    redaction: undefined,
-    maxBodyBytes: 32 * 1024 * 1024,
-    idKey: ID_KEY,
-    spoolKey: KEY,
-    tokenizationKey: undefined,
-    endpoints: [
-      { endpointId: "local-openai", providerName: "openai" },
-      { endpointId: "local-anthropic", providerName: "anthropic" },
-    ],
-    enrichment: {
-      points: { "wire.ts.undici": "wire.ts.undici@1.0.0" },
-      endpointIds: {
-        "local-openai": "lbl-" + "1".repeat(32),
-        "local-anthropic": "lbl-" + "2".repeat(32),
-      },
-      identity: {},
-      requestIdKey: undefined,
-      modelAllowlist: [],
-    },
-    ...overrides,
-  };
-}
-
-interface Recorded {
-  losses: [string, bigint][];
-  notices: [string, string][];
-  sink: PipelineSink;
-}
-
-function recorder(): Recorded {
-  const out: Recorded = { losses: [], notices: [], sink: undefined as never };
-  out.sink = {
-    lose: (reason, sequence) => out.losses.push([reason, sequence]),
-    notice: (id, reason) => out.notices.push([id, reason]),
-  };
-  return out;
-}
-
-/** What the Fabric worker does with each ring record: the pipeline, then the release. */
-async function processJobs(cap: Capture, pipeline: CapturePipeline): Promise<string[]> {
-  const { runtime, table } = cap;
-  const outcomes: string[] = [];
-  for (let record = runtime.jobs.peek(); record !== undefined; record = runtime.jobs.peek()) {
-    const job = table.job(record.byteOffset);
-    outcomes.push(await pipeline.handle(job, table.arena, runtime.epoch));
-    table.arena.release(job.request.words);
-    table.arena.release(job.response.words);
-    runtime.jobs.commit();
-  }
-  return outcomes;
-}
+import { policyDoc } from "./helpers.js";
+import { pipelineConfig, processJobs, recorder } from "./pipeline-helpers.js";
 
 const PROMPT = Buffer.from(
   '{"model":"gpt-4o","messages":[{"role":"user","content":"PIPELINE-CANARY"}]}',
@@ -265,6 +195,29 @@ finally:
     const masked = policyDoc({ "model.exchange.request": "redact" }, "production");
     new CapturePipeline(pipelineConfig({ policy: masked as never }), {} as Spool, seen.sink);
     expect(seen.notices).toEqual([["FW-032", "protection_failed"]]);
+  });
+
+  it("original_plus_masked with nothing to make the review copy is noted at install too (FW-032)", () => {
+    for (const privacy of [
+      { "model.exchange.response": "original_plus_masked" },
+      {
+        "model.exchange.request": "retain_original",
+        "model.exchange.part": "original_plus_masked",
+      },
+    ]) {
+      const seen = recorder();
+      const masked = policyDoc(privacy, "production");
+      new CapturePipeline(pipelineConfig({ policy: masked as never }), {} as Spool, seen.sink);
+      expect(seen.notices).toEqual([["FW-032", "protection_failed"]]);
+    }
+    // A redacted part with no transformation is withheld by policy, not a missing service.
+    const seen = recorder();
+    const policy = policyDoc(
+      { "model.exchange.request": "retain_original", "model.exchange.part": "redact" },
+      "production",
+    );
+    new CapturePipeline(pipelineConfig({ policy: policy as never }), {} as Spool, seen.sink);
+    expect(seen.notices).toEqual([]);
   });
 
   it.skipIf(!PUBLISHES_BODIES)(
