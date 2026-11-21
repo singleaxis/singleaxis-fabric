@@ -240,8 +240,10 @@ export interface OtlpSpan {
   readonly scope: { readonly name: string; readonly version: string };
 }
 
-function hexId(value: string, bytes: number): Buffer {
-  if (!new RegExp(`^[0-9a-f]{${bytes * 2}}$`).test(value))
+const HEX_ID: Readonly<Record<8 | 16, RegExp>> = { 8: /^[0-9a-f]{16}$/, 16: /^[0-9a-f]{32}$/ };
+
+function hexId(value: string, bytes: 8 | 16): Buffer {
+  if (!HEX_ID[bytes].test(value))
     throw new OtlpEncodeError("a trace or span id is not lowercase hex of the right length");
   return Buffer.from(value, "hex");
 }
