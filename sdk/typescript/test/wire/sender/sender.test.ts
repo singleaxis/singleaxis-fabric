@@ -10,7 +10,7 @@
  * Python reads. Restart: records a killed process admitted are delivered by the next one
  * with the same ids and bytes.
  */
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
@@ -203,6 +203,27 @@ describe("drain", { timeout: 60_000 }, () => {
     expect(spool.names()).toHaveLength(1);
     expect(s.stats().spool_undecryptable).toBe(1);
     expect(s.backlog()).toEqual({ deliverable: 0, skipped: 1 });
+  });
+
+  it("a record larger than this spool's bound is left for a larger drainer, counted and warned about with the fix", async () => {
+    const dir = spoolDir();
+    const writer = newSpool(dir, 4_000_003);
+    const [big] = write(writer, 0);
+    writer.close();
+    appendFileSync(join(dir, big!), Buffer.alloc(2 << 20)); // beyond 64 KiB + the reserve
+    const small = new Spool(dir, { maxBytes: 1 << 16, addon: native().addon, key: KEY });
+    const { s, delivery, warnings } = sender(small);
+    small.tryLock();
+    expect(await s.drain()).toBe("more");
+    expect(await s.drain()).toBe("idle"); // skipped, never read again
+    expect(delivery.timeline).toEqual([]);
+    expect(small.names()).toEqual([big]);
+    expect(s.stats().spool_oversized).toBe(1);
+    expect(s.backlog()).toEqual({ deliverable: 0, skipped: 1 });
+    const warned = warnings.filter((w) => w.includes("larger than this process's spool bound"));
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain("FABRIC_WIRE_SPOOL_MAX_BYTES");
+    expect(warned[0]).not.toContain(dir);
   });
 });
 

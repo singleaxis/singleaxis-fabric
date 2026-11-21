@@ -468,6 +468,10 @@ export class Sender {
             );
           } else {
             this.#stats.spool_oversized += 1;
+            this.#warn(
+              "fabric.wire: a spool record larger than this process's spool bound was left for " +
+                "a drainer with a larger one; set FABRIC_WIRE_SPOOL_MAX_BYTES as the writer did",
+            );
           }
           continue;
         }
