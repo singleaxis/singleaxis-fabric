@@ -283,6 +283,29 @@ describe("close: shutdown losses and seals precede final", { timeout: 60_000 }, 
     spool.close();
   });
 
+  it("never spools a loss ahead of a manifest 0 the spool refused", () => {
+    const { dir, spool } = newSpool();
+    const { runtime, table } = sweptRun(1);
+    const pipeline = new CapturePipeline(pipelineConfig(), spool, runtimeSink(runtime));
+    const write = spool.writeBatch.bind(spool);
+    let refuse = true;
+    spool.writeBatch = (records, reserve) =>
+      refuse && (records[0]!.doc.marker as { kind?: string } | undefined)?.kind === "manifest"
+        ? records.map(() => new Error("refused"))
+        : write(records, reserve);
+    handleLosses(pipeline, runtime, table);
+    pipeline.tick(runtime.epoch, 0n);
+    expect(spooledDocs(spool)).toEqual([]);
+    expect(pipeline.losses.pending).toBe(true);
+    refuse = false;
+    pipeline.tick(runtime.epoch, 0n);
+    expect(pythonReads(dir).map((r) => [r.kind, r.marker ?? null])).toEqual([
+      ["marker", "manifest"],
+      ["loss", null],
+    ]);
+    spool.close();
+  });
+
   it("never spools final ahead of a loss the spool refused", () => {
     const { dir, spool } = newSpool();
     const { runtime, table } = sweptRun(1);

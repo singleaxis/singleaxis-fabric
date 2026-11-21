@@ -712,10 +712,12 @@ export class CapturePipeline {
    * be written, so a `final` never precedes a `shutdown` loss.
    */
   #pump(): void {
-    this.markers.pump(
-      this.#spool,
-      (marker) => (marker.doc.marker as { kind?: unknown })?.kind !== "manifest",
-    );
+    const isManifest = (marker: { doc: Record<string, unknown> }): boolean =>
+      (marker.doc.marker as { kind?: unknown } | undefined)?.kind === "manifest";
+    this.markers.pump(this.#spool, (marker) => !isManifest(marker));
+    // A manifest the spool refused still leads: nothing, a loss included, may precede it.
+    const head = this.markers.held[0];
+    if (head !== undefined && isManifest(head)) return;
     if (this.losses.pump(this.#spool)) this.markers.pump(this.#spool);
   }
 
