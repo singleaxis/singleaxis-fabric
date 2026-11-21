@@ -208,7 +208,10 @@ export function install(options: InstallOptions = {}): WireHandle {
     spoolDir: settings.spoolDir,
     sourceId,
     runtime,
-    warn: () => undefined,
+    // Fixed text naming the fix (never a path); only where diagnostics go to stderr.
+    warn: (message) => {
+      if (settings.diagnostics === "stderr") process.stderr.write(`${message}\n`);
+    },
   });
   const build = currentRuntime(native.target);
   const states = initialStates({
