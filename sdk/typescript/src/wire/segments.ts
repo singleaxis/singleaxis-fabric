@@ -479,7 +479,6 @@ export class SegmentTable {
   #envRunId: string | undefined;
   #envTokens: string[] | undefined;
   #closed = false;
-  #warned = false;
   readonly #stats = Object.fromEntries(STAT_NAMES.map((n) => [n, 0])) as Record<
     RunStatName,
     number
@@ -813,12 +812,9 @@ export class SegmentTable {
 
   #rejected(count: number): void {
     if (count === 0) return;
+    // Counted only (the token is never printed): the status document (055-t14) reports
+    // the count with its fix, pass the token exactly as resumeToken() returned it.
     this.#stats.tokens_rejected += count;
-    if (!this.#warned) {
-      this.#warned = true;
-      // One class-only note per process (the token is never printed). The status document
-      // reports the count; the fix is to pass the token exactly as resumeToken() gave it.
-    }
   }
 
   #v2(prefix: string, value: unknown): string | undefined {
