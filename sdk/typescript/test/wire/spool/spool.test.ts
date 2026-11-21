@@ -495,7 +495,6 @@ const FAULT_OPS: readonly Op[] = [
   "unlink",
 ];
 
-
 describe("a fault at every write, fsync and rename", () => {
   /** The commit's calls of each fault op, from one clean write. */
   function stepsOfOneWrite(key?: Buffer): [Op, number][] {
