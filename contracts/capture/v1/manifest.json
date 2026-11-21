@@ -1,6 +1,6 @@
 {
   "contract": "singleaxis.fabric.capture",
-  "version": "1.9.0",
+  "version": "1.11.0",
   "digest_scope": "exact_file_bytes",
   "artifacts": [
     {"path": "schema/content-log-record-v1.schema.json", "sha256": "b8ce9af20eb9499b418698792e67fa9447b1f1d57369ff28af24e15aa3fb178b", "expectation": "schema", "expected_error": null},
@@ -36,7 +36,7 @@
     {"path": "fixtures/invalid/run-reconstruction-scope-without-verdict.json", "sha256": "6d9fb7c6b9463c1f8bd6fe803264496f31fdf0a9229fedfc515c776aa7d27d38", "expectation": "invalid", "expected_error": "capture.reconstruction.scope"},
     {"path": "fixtures/model-names/model-exposure-v1.json", "sha256": "1126576c0d7d814fc0018ed33454c583c9edc08863294152ee276484b37e75ca", "expectation": "vectors", "expected_error": null},
     {"path": "fixtures/run-ids/run-id-pseudonym-v1.json", "sha256": "5d606abfae8566c98bb0f858a2c05fafea6faf0126b4241164a7ae5a043528e5", "expectation": "vectors", "expected_error": null},
-    {"path": "schema/capture-manifest-record-v1.schema.json", "sha256": "613d132977a245f1065872a0457c481929240c69262c2965462e96a57b58ea91", "expectation": "schema", "expected_error": null},
+    {"path": "schema/capture-manifest-record-v1.schema.json", "sha256": "69562efe2f4824f8de2b11a923a23da005cc2942b6fad1c9147837a84d33aa48", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/valid/capture-manifest-record-local.json", "sha256": "44efa4e0f49d542486b8252c6673147cfbe28eb948f09756e574e8721bcce2bd", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/capture-manifest-record-production-disabled.json", "sha256": "c8d961a5db873edf5696f887fe8470087728bdeda4f18a0cd6fe705f578a068f", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/loss-record-run-start-continuation.json", "sha256": "ffaaa4e7be83ffe5d88fcef626ccb080bd5a62ac19c44133b95eeb50fd9383c9", "expectation": "valid", "expected_error": null},
@@ -170,6 +170,13 @@
     {"path": "schema/otlp-mapping-profile-v1.schema.json", "sha256": "681dd25e5192bb8d2a7a519615c83d3c44ca626dccee4b848c3cf5e5020e0deb", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/invalid/run-reconstruction-controls-reason-without-fact.json", "sha256": "1874f8561b92ed3c2b845a19923d86aef2708960efad83bb7c2a952c04291bd5", "expectation": "invalid", "expected_error": "capture.reconstruction.chains"},
     {"path": "fixtures/invalid/run-reconstruction-controls-unbounded-verdict.json", "sha256": "4fa59ddca8a1437795503b86ec1febddff7647d123d4c66d6bdaf2c9d13a88b7", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"},
+    {"path": "fixtures/invalid/spool-record-exchange-typescript-agent-authenticated.json", "sha256": "27977a8f7d7d9835e90483408e2fa5c0624ef564e6bfe900a7cbbb1bb31a15c3", "expectation": "invalid", "expected_error": "capture.schema"},
+    {"path": "fixtures/invalid/spool-record-exchange-typescript-redacted-keeps-original-digest.json", "sha256": "efb8ea1c13a1f5fc51fca6aab0a5138626744d29e584eeee02d78f6ab1d518ec", "expectation": "invalid", "expected_error": "capture.schema"},
+    {"path": "fixtures/invalid/spool-record-exchange-typescript-unregistered-point.json", "sha256": "13a37fb0f93a495304f77eee62826a9ec0adcbc1ffc537e9bf2f9459edc51f4d", "expectation": "invalid", "expected_error": "capture.capture_point"},
+    {"path": "fixtures/valid/spool-record-exchange-typescript-split-redacted.json", "sha256": "b0c7325e9b37a85eeb48a6752a494d809040d43c231a9d54bcadb9cdacf581ae", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/valid/spool-record-exchange-typescript.json", "sha256": "c78d96ce0d8b294f56dfc133cb972e3b418ab077f5e3a46aeb80c3df68a9684d", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/valid/spool-record-record-typescript.json", "sha256": "52ba2f42ff134f3f3d2641580b25e43934face4514510aef3a2e480e6e710b87", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/vectors/spool-bytes-v1.json", "sha256": "7c3539cad01513dad3e46bbc9f50fed0371929b0ecd48bddbb441e008c24be64", "expectation": "vectors", "expected_error": null},
     {"path": "fixtures/host/valid/manifest-sensor-classes.json", "sha256": "d453d714b25116a237d31ff3bd85c535604502531e4102a853452ce3e7fc5a35", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/host/valid/record-exit.json", "sha256": "6bfaa713b2eff7278f786076e3b13025b13870761c1a1f9741c24bd6111958d7", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/host/valid/record-file-watched.json", "sha256": "402751e5049d9dc626746fb8ca04f56c0d24ceb95e12828b36e8af4d26320bc0", "expectation": "valid", "expected_error": null}
