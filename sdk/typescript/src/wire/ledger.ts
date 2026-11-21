@@ -135,6 +135,53 @@ export class LedgerError extends Error {
   }
 }
 
+/** The ledger file exists but is not one this version wrote (size, owner or header). */
+export class ForeignLedgerError extends Error {
+  constructor() {
+    super(
+      "the spool loss ledger is not one this version wrote; fix: remove FABRIC_WIRE_SPOOL_DIR/.ledger " +
+        "while no process uses the spool (it is recreated)",
+    );
+    this.name = "ForeignLedgerError";
+  }
+}
+
+/** The fully written new ledger could not be hard-linked into place. */
+export class LedgerLinkError extends Error {
+  constructor(readonly code: string | undefined) {
+    super(
+      `the spool loss ledger could not be linked into place (${code ?? "unknown"}); fix: check that ` +
+        "FABRIC_WIRE_SPOOL_DIR is on a local volume that supports hard links",
+    );
+    this.name = "LedgerLinkError";
+  }
+}
+
+/**
+ * Why a spool has no loss ledger, as one line naming the cause and the fix and never a
+ * path (an operating-system error's message carries one, so only its code is kept).
+ */
+export function ledgerProblem(error: unknown): string {
+  if (
+    error instanceof LedgerError ||
+    error instanceof ForeignLedgerError ||
+    error instanceof LedgerLinkError
+  ) {
+    return error.message;
+  }
+  const code = (error as { code?: unknown } | null)?.code;
+  const cause =
+    typeof code === "string" && /^E[A-Z0-9]+$/.test(code)
+      ? code
+      : error instanceof Error
+        ? error.name
+        : "unknown";
+  return (
+    `the spool loss ledger could not be opened (${cause}); fix: check the local volume holding ` +
+    "FABRIC_WIRE_SPOOL_DIR (free space, permissions, disk errors)"
+  );
+}
+
 function check(step: string, result: number): number {
   if (result < 0) throw new LedgerError(step, result);
   return result;
@@ -530,10 +577,7 @@ function validate(path: string, addon: NativeAddon, handle: number): void {
     got !== head.length ||
     !head.equals(ledgerHeader().subarray(0, 16))
   ) {
-    throw new Error(
-      "the spool loss ledger is not one this version wrote; fix: remove FABRIC_WIRE_SPOOL_DIR/.ledger " +
-        "while no process uses the spool (it is recreated)",
-    );
+    throw new ForeignLedgerError();
   }
 }
 
@@ -580,13 +624,8 @@ function createLedger(directory: string, addon: NativeAddon, pid: number): void 
     try {
       linkSync(tmp, path);
     } catch (error) {
-      if ((error as { code?: unknown }).code !== "EEXIST") {
-        throw new Error(
-          "the spool loss ledger could not be linked into place; fix: check that " +
-            "FABRIC_WIRE_SPOOL_DIR is on a local volume that supports hard links",
-          { cause: error },
-        );
-      }
+      const code = (error as { code?: unknown }).code;
+      if (code !== "EEXIST") throw new LedgerLinkError(typeof code === "string" ? code : undefined);
     }
     removeQuietly(tmp);
     check("fsync", addon.fsync(dir));

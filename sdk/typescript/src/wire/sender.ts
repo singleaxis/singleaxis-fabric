@@ -350,6 +350,14 @@ export class Sender {
   /** Starts the delivery loop (idempotent). */
   start(): void {
     if (this.#loop !== undefined || this.#stopped) return;
+    const problem = this.spool.ledgerProblem;
+    if (problem !== undefined) {
+      // Never silent: losses during a full disk then live in this process's memory only.
+      this.#warn(
+        `fabric.wire: ${problem}. Until it is fixed, a loss that cannot be spooled ` +
+          "(full disk) is kept in memory only and is lost with this process",
+      );
+    }
     this.#loop = this.#run();
   }
 

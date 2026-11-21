@@ -23,6 +23,7 @@ import {
   decodeSlot,
   encodeSlot,
   ledgerHeader,
+  ledgerProblem,
 } from "../../../src/wire/ledger.js";
 import type { OtlpSpan } from "../../../src/wire/otlp.js";
 import { Sender } from "../../../src/wire/sender.js";
@@ -265,11 +266,45 @@ describe("FWLEDGR1/FWLSLOT1 layout equals Python's (spool-bytes-v1.json)", () =>
     expect(ledgerOf(other).orphans()).toEqual([]);
   });
 
-  it("a foreign or resized ledger is not used (the spool runs without one)", () => {
+  it("a foreign or resized ledger is not used (the spool runs without one)", async () => {
     const dir = freshDir();
     writeFileSync(join(dir, LEDGER), Buffer.alloc(LEDGER_SIZE), { mode: 0o600 });
     expect(() => new LossLedger(dir, lib.addon)).toThrow(/not one this version wrote; fix: remove/);
-    expect(makeSpool(dir).ledger).toBeUndefined();
+    const spool = makeSpool(dir);
+    expect(spool.ledger).toBeUndefined();
+    // Never silent: the sender names the cause and the fix once, without a path.
+    expect(spool.ledgerProblem).toMatch(/not one this version wrote; fix: remove/);
+    const warned: string[] = [];
+    const sender = new Sender({
+      spool,
+      content: undefined,
+      serviceName: "svc",
+      traces: { export: async () => ({ outcome: "ok", status: 200 }) },
+      warn: (text) => warned.push(text),
+    });
+    sender.start();
+    expect(warned.filter((text) => text.includes("loss ledger"))).toEqual([
+      "fabric.wire: the spool loss ledger is not one this version wrote; fix: remove " +
+        "FABRIC_WIRE_SPOOL_DIR/.ledger while no process uses the spool (it is recreated). Until " +
+        "it is fixed, a loss that cannot be spooled (full disk) is kept in memory only and is " +
+        "lost with this process",
+    ]);
+    expect(warned.join("\n")).not.toContain(dir);
+    await sender.close(performance.now() + 200);
+    expect(await sender.stopped(2000)).toBe(true);
+    // An operating-system error keeps only its code: its message carries the path.
+    expect(
+      ledgerProblem(
+        Object.assign(new Error(`EACCES: permission denied, open '${dir}'`), {
+          code: "EACCES",
+        }),
+      ),
+    ).toBe(
+      "the spool loss ledger could not be opened (EACCES); fix: check the local volume holding " +
+        "FABRIC_WIRE_SPOOL_DIR (free space, permissions, disk errors)",
+    );
+    // A spool that did not ask for a ledger has no problem to report.
+    expect(makeSpool(freshDir(), { ledger: false }).ledgerProblem).toBeUndefined();
   });
 });
 
@@ -474,6 +509,38 @@ describe(
           drainer,
         ).toBe(true);
       }
+    });
+
+    it("a header lock another process holds fails the claim within its deadline, counted; the records stay in memory", async () => {
+      const dir = freshDir();
+      const ledger = ledgerOf(dir);
+      const holder = await start(
+        pythonWithFabric(),
+        [
+          "-c",
+          "import fcntl, json, os, sys, time\n" +
+            "fd = os.open(sys.argv[1], os.O_RDWR)\n" +
+            "fcntl.lockf(fd, fcntl.LOCK_EX, 4096, 0, os.SEEK_SET)\n" +
+            "print(json.dumps({'held': True}), flush=True)\n" +
+            "time.sleep(3600)\n",
+          join(dir, LEDGER),
+        ],
+        true,
+      );
+      killers.push(holder.kill);
+      expect(holder.first).toEqual({ held: true });
+      const began = performance.now();
+      expect(ledger.store([LOSS])).toBe(false);
+      const waited = performance.now() - began;
+      // Python blocks in lockf; this claim gives up after about a second (rev 3.16 dev. 3).
+      expect(waited).toBeGreaterThanOrEqual(900);
+      expect(waited).toBeLessThan(5000);
+      expect(ledger.stats()).toMatchObject({ slots: 0, failures: 1, overflows: 1 });
+      expect(ledger.used()).toBe(0);
+      // Once the holder is gone, the next store claims a slot.
+      await holder.kill();
+      expect(ledger.store([LOSS])).toBe(true);
+      expect(ledger.used()).toBe(1);
     });
 
     it("a mirror without a ledger, or with no room, never claims the records are durable", () => {

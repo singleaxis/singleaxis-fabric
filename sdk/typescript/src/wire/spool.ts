@@ -49,7 +49,7 @@ import {
 import { dirname, join } from "node:path";
 import { isMainThread } from "node:worker_threads";
 
-import { LEDGER, LEDGER_SIZE, LossLedger, NEW_PREFIX } from "./ledger.js";
+import { LEDGER, LEDGER_SIZE, LossLedger, NEW_PREFIX, ledgerProblem } from "./ledger.js";
 import {
   FLOCK_EXCLUSIVE,
   FLOCK_UNLOCK,
@@ -578,6 +578,11 @@ export class Spool {
    * as Python's do, and the directory stays within bound + 1 MiB. Once seen, kept.
    */
   ledgerSeen = false;
+  /**
+   * Why the loss ledger could not be opened (cause and fix, never a path); `undefined`
+   * when it is open or was not asked for. The sender warns about it once.
+   */
+  ledgerProblem: string | undefined;
 
   readonly #key: Uint8Array | undefined;
   readonly #addon: NativeAddon;
@@ -663,8 +668,9 @@ export class Spool {
     if (options.ledger !== false) {
       try {
         ledger = new LossLedger(this.dir, this.#addon, { pid: this.#pid });
-      } catch {
+      } catch (error) {
         ledger = undefined;
+        this.ledgerProblem = ledgerProblem(error);
       }
     }
     this.ledger = ledger;
