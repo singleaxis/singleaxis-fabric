@@ -33,7 +33,7 @@
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { Worker, isMainThread, workerData } from "node:worker_threads";
+import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 
 import { DeploymentPolicy, type DeploymentPolicyData } from "../deployment-policy.js";
 import { labelPseudonym, operatorLabel } from "../identity.js";
@@ -44,6 +44,7 @@ import { ExchangeTable, JOB_EXCHANGE, JOB_RELEASING, type ExchangeJob } from "./
 import {
   Heartbeats,
   ManifestChain,
+  emittedAt,
   type ManifestTemplate,
   MarkerQueue,
   type PointState,
@@ -102,6 +103,22 @@ import {
 export const FABRIC_WORKER_MARKER = "fabric.wire.worker/1";
 /** How often the worker wakes without a notification (growth, detached isolates). */
 export const WORKER_TICK_MS = 100;
+/** The `postMessage` key of a request to the Fabric worker (flush, the stop budget). */
+export const WORKER_REQUEST = "fabric.wire.request/1";
+
+/** The key of the orderly stop's result the worker posts before it exits (`fabric-main.ts`). */
+export const STOP_RESULT = "fabric.wire.stop-result/1";
+
+/** A request from the installing thread (`FabricWorker.request`). */
+export interface WorkerRequest {
+  readonly id: number;
+  /** `flush`, or `stop` (the budget of the orderly stop that follows). */
+  readonly kind: "flush" | "stop";
+  /** The caller's budget in ms; the worker turns it into its own deadline on receipt. */
+  readonly budgetMs: number;
+  /** `stop` at process exit: a process that does not drain only leaves its records durable. */
+  readonly exiting?: boolean;
+}
 
 interface FabricWorkerData {
   readonly [FABRIC_WORKER_MARKER]: 1;
@@ -136,6 +153,10 @@ export class FabricWorker {
   private thread: Worker | undefined;
   private stopping: ((clean: boolean) => void) | undefined;
   private quickCrashes = 0;
+  private requests = 0;
+  private readonly replies = new Map<number, (result: unknown) => void>();
+  /** What the last orderly stop reported (`STOP_RESULT`), if it reported anything. */
+  stopResult: unknown;
 
   constructor(
     private readonly runtime: WireRuntime,
@@ -173,9 +194,19 @@ export class FabricWorker {
       this.runtime.fail("worker_start_failed");
       return;
     }
-    worker.unref();
     // An uncaught error in the worker ends it; it is never rethrown on this thread.
     worker.on("error", () => undefined);
+    worker.on("message", (message: unknown) => {
+      const stopped = (message as Record<string, unknown> | null)?.[STOP_RESULT];
+      if (stopped !== undefined) this.stopResult = stopped;
+      const reply = (message as Record<string, unknown> | null)?.[WORKER_REQUEST] as
+        { id?: unknown; result?: unknown } | undefined;
+      if (reply === undefined || typeof reply.id !== "number") return;
+      this.replies.get(reply.id)?.(reply.result);
+    });
+    // After the listeners: a `message` listener refs the worker's port, and an unref'd
+    // worker must never keep the agent's process alive.
+    worker.unref();
     worker.once("exit", (code) => this.exited(worker, startedAt, code));
     this.thread = worker;
   }
@@ -205,13 +236,59 @@ export class FabricWorker {
   }
 
   /**
+   * Sends a request to the worker and resolves with its reply, or `undefined` when none
+   * came within `timeoutMs` (no worker, a crash, a stall). While it waits the worker
+   * holds the process open: the caller awaits the reply. Never rejects.
+   */
+  async request(
+    kind: WorkerRequest["kind"],
+    timeoutMs: number,
+    extra: { exiting?: boolean } = {},
+  ): Promise<unknown> {
+    const worker = this.thread;
+    if (worker === undefined) return undefined;
+    const id = ++this.requests;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    worker.ref();
+    try {
+      return await new Promise<unknown>((resolve) => {
+        this.replies.set(id, resolve);
+        timer = setTimeout(() => resolve(undefined), Math.max(0, timeoutMs));
+        const request: WorkerRequest = { id, kind, budgetMs: Math.max(0, timeoutMs), ...extra };
+        try {
+          worker.postMessage({ [WORKER_REQUEST]: request });
+        } catch {
+          resolve(undefined);
+        }
+      });
+    } finally {
+      clearTimeout(timer);
+      this.replies.delete(id);
+      if (this.thread === worker && this.stopping === undefined) worker.unref();
+    }
+  }
+
+  /**
    * Asks the worker to drain and exit, and terminates it after `timeoutMs`. Resolves
    * `true` only when it drained and exited by itself; `false` when it crashed while
-   * draining or had to be terminated.
+   * draining or had to be terminated. `exiting`: the process is exiting (the stop
+   * handler then only makes records durable unless this process drains the spool).
    */
-  async stop(timeoutMs: number): Promise<boolean> {
+  async stop(timeoutMs: number, options: { exiting?: boolean } = {}): Promise<boolean> {
     const worker = this.thread;
     if (worker === undefined) return true;
+    try {
+      // The budget of the orderly stop: the worker delivers within it, then exits.
+      const request: WorkerRequest = {
+        id: ++this.requests,
+        kind: "stop",
+        budgetMs: Math.max(0, timeoutMs),
+        ...options,
+      };
+      worker.postMessage({ [WORKER_REQUEST]: request });
+    } catch {
+      // the worker uses its default budget
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
     // The caller awaits this stop with a deadline, so the worker and the deadline timer
     // hold the process open until it ends: unref'd, an agent whose last act is an
@@ -239,6 +316,11 @@ export interface FabricWorkerContext {
   readonly runtime: WireRuntime;
   readonly exchanges: ExchangeTable;
   readonly snapshot: unknown;
+  /**
+   * The orderly stop's deadline (`performance.now()` ms of this worker) and whether the
+   * process is exiting, once the installing thread sent them (`FabricWorker.stop`).
+   */
+  stop?: { readonly deadline: number; readonly exiting: boolean };
 }
 
 export interface FabricWorkerHandlers {
@@ -271,6 +353,12 @@ export interface FabricWorkerHandlers {
    * throws is ignored.
    */
   stop?(context: FabricWorkerContext): void | Promise<void>;
+  /**
+   * A `flush` request from the installing thread, with its deadline (`performance.now()`
+   * ms of this worker); the reply is its result. Runs beside the loop. A handler that
+   * throws replies `false`.
+   */
+  flush?(deadline: number, context: FabricWorkerContext): boolean | Promise<boolean>;
 }
 
 /**
@@ -287,7 +375,41 @@ export function runFabricWorker(handlers: FabricWorkerHandlers = {}): Promise<vo
   runtime.lossRing.recover();
   runtime.workerStarted();
   const exchanges = new ExchangeTable(runtime);
-  return consume({ runtime, exchanges, snapshot: data.snapshot }, handlers);
+  const context: FabricWorkerContext = { runtime, exchanges, snapshot: data.snapshot };
+  listen(context, handlers);
+  return consume(context, handlers);
+}
+
+/** Answers the installing thread's requests (flush) and takes the stop budget. */
+function listen(context: FabricWorkerContext, handlers: FabricWorkerHandlers): void {
+  const port = parentPort;
+  if (port === null) return;
+  port.on("message", (message: unknown) => {
+    const request = (message as Record<string, unknown> | null)?.[WORKER_REQUEST] as
+      WorkerRequest | undefined;
+    if (request === undefined || typeof request.id !== "number") return;
+    const deadline = performance.now() + Math.max(0, Number(request.budgetMs) || 0);
+    if (request.kind === "stop") {
+      context.stop = { deadline, exiting: request.exiting === true };
+      return;
+    }
+    if (request.kind !== "flush") return;
+    void (async () => {
+      let result: boolean;
+      try {
+        result = handlers.flush === undefined ? false : await handlers.flush(deadline, context);
+      } catch {
+        result = false;
+      }
+      try {
+        port.postMessage({ [WORKER_REQUEST]: { id: request.id, result } });
+      } catch {
+        // the installing thread times out
+      }
+    })();
+  });
+  // A listening port must not keep the worker (or the process) alive on its own.
+  (port as unknown as { unref?: () => void }).unref?.();
 }
 
 /**
@@ -487,6 +609,12 @@ export interface PipelineConfig {
   readonly manifest?: {
     readonly template: ManifestTemplate;
     readonly unsealed: { readonly epochs: readonly bigint[]; readonly count: number };
+    /**
+     * Manifest 0 as `install()` minted and published it before returning (its manifest
+     * and event ids, its `emitted_at`): the chain issues the identical document, so run
+     * markers, seals and tokens made before the worker's first tick name it.
+     */
+    readonly first?: { readonly ids: readonly [string, string]; readonly stamp: string };
   };
   /** The forced-seal bound (default 1,000,000 positions, spec 055 §4.3; tests scale it). */
   readonly forcedSealPositions?: number;
@@ -705,7 +833,9 @@ export class CapturePipeline {
     this.#spool = spool;
     this.#sink = sink;
     this.manifests =
-      config.manifest === undefined ? undefined : new ManifestChain(config.manifest.template);
+      config.manifest === undefined
+        ? undefined
+        : new ManifestChain(config.manifest.template, firstManifest(config.manifest.first));
     this.seals = new SegmentSeals({
       // Manifest 0 of the seal's epoch goes ahead of its first seal.
       sink: (marker, seal) => {
@@ -1316,6 +1446,26 @@ export class CapturePipeline {
     if (disabled) this.#sink.notice?.("FW-008", this.gate.reason ?? "content_capture_disabled");
     else this.#sink.notice?.("FW-032", "protection_failed");
   }
+}
+
+/**
+ * Chain options that issue manifest 0 with the ids and time `install()` minted (then
+ * fresh ones), so the worker's manifest 0 is the document already published.
+ */
+export function firstManifest(
+  first: { readonly ids: readonly [string, string]; readonly stamp: string } | undefined,
+): { newId?: () => string; stamp?: () => string } {
+  if (first === undefined) return {};
+  const ids = [...first.ids];
+  let stamp: string | undefined = first.stamp;
+  return {
+    newId: () => ids.shift() ?? randomUUID(),
+    stamp: () => {
+      const value = stamp ?? emittedAt(BigInt(Date.now()) * 1_000_000n);
+      stamp = undefined;
+      return value;
+    },
+  };
 }
 
 /** A random, non-zero trace id for an exchange with no host parent (a root span). */
