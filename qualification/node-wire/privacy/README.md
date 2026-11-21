@@ -17,35 +17,48 @@ JSON report. It needs a C compiler.
 
 ## Canary scan
 
-One scenario per privacy mode of the two exchange roles (`retain_original`,
-`metadata_only`, `omit`, `redact`, `masked_only`, `tokenize`) and one with
-content capture disabled (`missing_id_key`). Each scenario runs an agent that
-makes five model calls through global `fetch` (JSON, SSE, a gzip response, a
-transport error mid-response, an abort mid-stream) with canaries planted in:
-the prompt, the tool schema, the response, the URL path and query, the request
-headers (authorization, cookie, API key), the response headers (set-cookie,
-request id), an abort reason's `Error.name` and message, the clear run id
-(`FABRIC_RUN_ID`), the agent id, the service name, the resource attributes and
-the environment.
+One scenario per privacy mode of the exchange roles and the part role
+(`retain_original`, `metadata_only`, `omit`, `redact`, `masked_only`,
+`tokenize`, `original_plus_masked`), one with `original_plus_masked` and no
+transformation (every review copy fails, so every pair is withheld; unit
+055-t15) and one with content capture disabled (`missing_id_key`). Each
+scenario runs an agent that makes six model calls through global `fetch`
+(JSON, a JSON request over `FABRIC_WIRE_MAX_BODY_BYTES` with an inline image,
+which the Fabric worker splits into a skeleton and a `model.exchange.part`,
+SSE, a gzip response, a transport error mid-response, an abort mid-stream)
+with canaries planted in: the prompt, the tool schema, the response, the
+inline image's bytes (scanned for as a slice of their base64 text,
+`lib/part.mjs`), the URL path and query, the request headers (authorization,
+cookie, API key), the response headers (set-cookie, request id), an abort
+reason's `Error.name` and message, the clear run id (`FABRIC_RUN_ID`), the
+agent id, the service name, the resource attributes and the environment.
 
 The scanner reads every byte Fabric produced: every file under the spool
 directory raw (records, temps, quarantine, locks, ledger), each record
 decrypted (as bytes, then parsed: headers, descriptors and every body), and
 the agent process's output. It fails when:
 
-- a canary appears anywhere except inside a content object whose policy mode
-  is `retain_original` (and there only the prompt, tool schema and response);
-- under any other mode an original body's SHA-256, a `source_sha256`, a
-  `byte_range` or (for transformed objects) a `source_byte_length` appears;
-- a scenario's spool holds fewer exchange records than calls, or under
-  `retain_original` the planted body canaries were not found inside the
-  retained objects (a vacuous scan proves nothing).
+- a canary appears anywhere except inside an original the policy retains
+  (`retain_original`, or the original of `original_plus_masked`, never its
+  review copy; there only the prompt, tool schema, response and image);
+- under any other mode an original body's SHA-256, a `source_sha256` or a
+  `byte_range` (top level or in a part's `part_of` link) appears;
+- a transformed object (`redact`, `masked_only`, `tokenize`, an
+  `original_plus_masked` review copy) or a withheld `protection_failed` object
+  carries a `source_sha256`, `source_byte_length` or `byte_range`;
+- a scenario's spool holds fewer exchange records than calls; under a
+  retaining mode the planted body canaries were not found inside the retained
+  objects; a mode did not do its work (every request transformed under
+  `redact`, `masked_only` and `tokenize`; originals and review copies under
+  `original_plus_masked`; every object withheld when no review is possible; the
+  split call left a part, with its range only under a retaining mode): a
+  vacuous scan proves nothing.
 
 Then (unit 055-t13) the SDK's own sender (`src/wire/sender.ts`, run by
 `lib/deliver.ts`) delivers the scenario's spool to a recording sink, and every
 OTLP request the sink received is scanned: no canary may appear in a span
 (`/v1/traces`); in the content logs (`/v1/logs`) only a body canary, and only
-under `retain_original`; no original digest under any other mode. Every
+under a retaining mode; no original digest under any other mode. Every
 record must be delivered. Its self-test is a second scenario whose fault leaks
 the span attribute only (the record stays valid and is delivered): the scan
 must report that canary in the spans the sink received.

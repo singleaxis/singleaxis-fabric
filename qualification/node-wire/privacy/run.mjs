@@ -51,6 +51,7 @@ import { fileURLToPath } from "node:url";
 import { canaryScan, checkTarball, selfTest as artifactSelfTest } from "./lib/artifact.mjs";
 import { REPO, build } from "./lib/build.mjs";
 import { networkStep } from "./lib/network.mjs";
+import { imageNeedle } from "./lib/part.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -68,8 +69,18 @@ const NETWORK_ONLY = args.includes("--network-only");
 const REQUIRE_PROXY_MODE = args.includes("--require-startup-proxy-mode");
 const log = (line) => process.stderr.write(`${line}\n`);
 
-const MODES = ["retain_original", "metadata_only", "omit", "redact", "masked_only", "tokenize", "disabled"];
-const BODY_CANARIES = ["prompt", "tool_schema", "response"];
+const MODES = [
+    "retain_original", "metadata_only", "omit", "redact", "masked_only", "tokenize",
+    // 055-t15: the original and its masked review copy; and with no transformation, so
+    // every review fails and each pair is withheld.
+    "original_plus_masked", "original_plus_masked_unreviewed",
+    "disabled",
+]; // prettier-ignore
+// Modes whose policy authorizes retaining the original bytes.
+const RETAINING = new Set(["retain_original", "original_plus_masked"]);
+// `image` is planted as the bytes of the split call's inline image (lib/part.mjs): the
+// scan looks for a slice of its base64 text, the form in which it travels.
+const BODY_CANARIES = ["prompt", "tool_schema", "response", "image"];
 const OTHER_CANARIES = [
     "url_path", "url_query", "authorization", "cookie", "api_key", "set_cookie", "request_id",
     "error_name", "error_message", "run_id", "agent_id", "service_name", "resource", "environment",
@@ -165,8 +176,10 @@ function scan({ dir, key, mode, C, output, digests }) {
         files: 0, records: 0, exchanges: 0, retained_objects: 0, planted_found: [],
         // non-vacuity: what each mode is expected to have produced
         transformed_objects: 0, descriptor_only_objects: 0, store_reasons: [],
+        // 055-t15: split requests (parts, and the parts' byte ranges)
+        part_objects: 0, part_ranges: 0,
     }; // prettier-ignore
-    const retain = mode === "retain_original";
+    const retain = RETAINING.has(mode);
     const check = (where, text, allowBody) => {
         for (const name of OTHER_CANARIES) if (found(text, C[name])) violations.push({ where, canary: name });
         for (const name of BODY_CANARIES) {
@@ -218,9 +231,27 @@ function scan({ dir, key, mode, C, output, digests }) {
             const masked = Buffer.from(blob);
             for (const body of doc.bodies ?? []) {
                 const d = body.descriptor;
-                const authorized = d.privacy_mode === "retain_original" && retain && "stored_sha256" in d;
+                // An original the policy retains (never a review copy, which is redacted).
+                const authorized =
+                    retain && RETAINING.has(d.privacy_mode) && d.protection_status === "retained" && "stored_sha256" in d;
                 if (authorized) stats.retained_objects++;
-                if (["redact", "masked_only", "tokenize"].includes(d.privacy_mode) && "stored_sha256" in d) {
+                // A part's byte_range lives in its part_of link.
+                const ranged = "byte_range" in d || (d.links ?? []).some((link) => "byte_range" in link);
+                if (d.role === "model.exchange.part") stats.part_objects++;
+                if (ranged) stats.part_ranges++;
+                // Transformed: redact, masked_only, tokenize and an original_plus_masked
+                // review copy. None carries the original's digest, length or range.
+                const transformed =
+                    ["redact", "masked_only", "tokenize"].includes(d.privacy_mode) ||
+                    (d.privacy_mode === "original_plus_masked" && d.protection_status === "redacted");
+                if (transformed && ("source_sha256" in d || "source_byte_length" in d || ranged)) {
+                    violations.push({ where: `${where} descriptor`, transformed_original_evidence: d.role });
+                }
+                // A withheld review pair keeps no digest, length or range of the original.
+                if (d.status_reason === "protection_failed" && ("source_sha256" in d || "source_byte_length" in d || ranged)) {
+                    violations.push({ where: `${where} descriptor`, withheld_original_evidence: d.role });
+                }
+                if (transformed && "stored_sha256" in d) {
                     stats.transformed_objects++;
                     const stored = blob.subarray(body.offset, body.offset + body.length).toString("latin1");
                     // a token is the HMAC text only; a masked object is the service's output
@@ -228,7 +259,7 @@ function scan({ dir, key, mode, C, output, digests }) {
                     if (!expected.test(stored)) violations.push({ where: `${where} body ${d.role}`, unexpected_transformed_bytes: d.privacy_mode });
                 }
                 if (!("stored_sha256" in d)) stats.descriptor_only_objects++;
-                if (!retain && ("source_sha256" in d || "byte_range" in d)) {
+                if (!retain && ("source_sha256" in d || ranged)) {
                     violations.push({ where: `${where} descriptor`, original_digest_or_range: d.role });
                 }
                 if (["redact", "masked_only", "tokenize"].includes(d.privacy_mode) && "source_byte_length" in d) {
@@ -282,7 +313,7 @@ async function deliverAndScan({ dir, key, mode, C, digests }) {
         sink.close();
     }
     const violations = [];
-    const retain = mode === "retain_original";
+    const retain = RETAINING.has(mode);
     for (const { path, body } of received) {
         const text = body.toString("latin1");
         const where = `sink ${path}`;
@@ -342,22 +373,32 @@ async function scenario(mode, options = {}) {
         return { mode, passed: false, error: `scenario exited ${done.status}: ${done.stderr.slice(0, 2000)}` };
     }
     // The scenario's own JSON line carries only digests; everything else is the agent's.
-    const scanned = scan({ dir, key: spoolKey, mode, C, output, digests: result.digests });
+    // The image canary travels as base64: the scan looks for a slice of that text.
+    const needles = { ...C, image: imageNeedle(C.image) };
+    const scanned = scan({ dir, key: spoolKey, mode, C: needles, output, digests: result.digests });
     // 055-t13: the spool delivered by the SDK's sender; every OTLP byte the sink received.
-    const sent = await deliverAndScan({ dir, key: spoolKey, mode, C, digests: result.digests });
+    const sent = await deliverAndScan({ dir, key: spoolKey, mode, C: needles, digests: result.digests });
     scanned.violations.push(...sent.violations);
     rmSync(dir, { recursive: true, force: true });
     // Not vacuous: every call left a record, and where retention is authorized the
     // planted body canaries were found inside the retained objects.
-    const planted = mode !== "retain_original" || BODY_CANARIES.every((n) => scanned.stats.planted_found.includes(n));
+    const planted = !RETAINING.has(mode) || BODY_CANARIES.every((n) => scanned.stats.planted_found.includes(n));
     // Each mode must have done its work, or its scan proves nothing: every request (all
     // five complete) became a stored transformed object under redact, masked_only and
     // tokenize, a descriptor under metadata_only; the disabled run names its reason.
+    // 055-t15: the split call became a skeleton and a part (with its range only where the
+    // original is retained); under original_plus_masked every request has its original
+    // and a review copy, and with no transformation every pair is withheld.
     const s = scanned.stats;
+    const split = s.part_objects >= 1 && (RETAINING.has(mode) ? s.part_ranges >= 1 : s.part_ranges === 0);
     const worked = {
-        redact: s.transformed_objects >= result.calls,
-        masked_only: s.transformed_objects >= result.calls,
-        tokenize: s.transformed_objects >= result.calls,
+        retain_original: split,
+        redact: s.transformed_objects >= result.calls && split,
+        masked_only: s.transformed_objects >= result.calls && split,
+        tokenize: s.transformed_objects >= result.calls && split,
+        original_plus_masked: s.retained_objects >= result.calls && s.transformed_objects >= result.calls && split,
+        original_plus_masked_unreviewed:
+            s.retained_objects === 0 && s.transformed_objects === 0 && s.descriptor_only_objects >= 2 * result.calls,
         metadata_only: s.descriptor_only_objects >= result.calls,
         omit: s.descriptor_only_objects === 0 && s.transformed_objects === 0,
         disabled: s.store_reasons.length === 1 && s.store_reasons[0] === "missing_id_key",

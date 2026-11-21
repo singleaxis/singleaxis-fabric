@@ -4,7 +4,8 @@
 // One privacy scenario in its own process (spec 055 §9.2 `ts-wire-privacy`): an agent
 // that calls a local model provider through global fetch with canaries planted in the
 // prompt, the tool schema, the response, the URL path and query, request and response
-// headers (authorization, cookie, API key, set-cookie, request id), an abort reason's
+// headers (authorization, cookie, API key, set-cookie, request id), an inline image (a
+// split request: a skeleton and a `model.exchange.part`, unit 055-t15), an abort reason's
 // Error.name and message, a transport error, the clear run id, the resource attributes,
 // the service name, the agent id and the environment. Capture runs with the policy mode
 // of the scenario, into the scenario's spool. Prints one JSON line: the number of calls
@@ -18,6 +19,8 @@ import http from "node:http";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
+
+import { SPLIT_MAX_BODY_BYTES, splitRequest } from "../lib/part.mjs";
 
 const config = JSON.parse(process.argv[2]);
 const C = config.canaries;
@@ -78,14 +81,19 @@ const redaction = http.createServer((req, res) => {
 await new Promise((resolve) => redaction.listen(socket, resolve));
 
 // ---------------------------------------------------------------------- configuration
-const roles = ["model.exchange.request", "model.exchange.response"];
+const roles = ["model.exchange.request", "model.exchange.response", "model.exchange.part"];
+// `original_plus_masked_unreviewed`: original_plus_masked with no transformation, so every
+// review copy fails and each pair is withheld (055-t15).
+const policyMode =
+    { disabled: "retain_original", original_plus_masked_unreviewed: "original_plus_masked" }[config.mode] ??
+    config.mode;
 const policy = {
     schema_version: "fabric.deployment-policy/v1",
     policy_id: "privacy-harness",
     policy_version: 1,
     tenant_id: "tenant-privacy",
     workload_id: "harness",
-    privacy: Object.fromEntries(roles.map((role) => [role, config.mode === "disabled" ? "retain_original" : config.mode])),
+    privacy: Object.fromEntries(roles.map((role) => [role, policyMode])),
     storage: { backend: "local", region: "local", key_id: "kid-harness" },
     retention: { days: 1 },
     required_integrations: [],
@@ -116,6 +124,9 @@ const env = {
     OTEL_SERVICE_NAME: C.service_name,
     OTEL_RESOURCE_ATTRIBUTES: `deployment.environment=${C.resource}`,
     FABRIC_HARNESS_SECRET: C.environment,
+    // Small enough that the split call's request is over it (and split), large enough
+    // for its image part and for every other call's whole body.
+    FABRIC_WIRE_MAX_BODY_BYTES: String(SPLIT_MAX_BODY_BYTES),
 };
 // The disabled scenario: production without FABRIC_WIRE_ID_KEY (missing_id_key).
 if (config.mode !== "disabled") env.FABRIC_WIRE_ID_KEY = Buffer.alloc(32, 0x24).toString("hex");
@@ -126,7 +137,7 @@ const agent = startAgent({
     workerEntry: config.worker,
     prebuilds: config.prebuilds,
     digest: config.digest,
-    transformations: ["redact", "masked_only"].includes(config.mode)
+    transformations: ["redact", "masked_only", "original_plus_masked"].includes(config.mode)
         ? Object.fromEntries(roles.map((role) => [role, transform]))
         : undefined,
     fault: config.fault,
@@ -148,11 +159,11 @@ const headers = {
     "x-api-key": C.api_key,
 };
 let calls = 0;
-const call = async (kind, init = {}) => {
+const call = async (kind, init = {}, payload = body) => {
     calls++;
-    digests.push(sha(Buffer.from(body)));
+    digests.push(sha(Buffer.from(payload)));
     try {
-        const response = await fetch(url(kind), { method: "POST", headers, body, ...init });
+        const response = await fetch(url(kind), { method: "POST", headers, body: payload, ...init });
         const received = Buffer.from(await response.arrayBuffer());
         digests.push(sha(received));
     } catch {
@@ -160,6 +171,7 @@ const call = async (kind, init = {}) => {
     }
 };
 await call("json");
+await call("json", {}, splitRequest(C.prompt, C.image));
 await call("sse");
 await call("gzip");
 await call("broken");
