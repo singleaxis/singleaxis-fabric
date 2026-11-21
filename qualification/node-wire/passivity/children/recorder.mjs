@@ -52,12 +52,13 @@ process.stderr.write = (chunk, ...rest) => {
 
 /** A loopback server answering every request with `status`, or never (`hang`). */
 async function server(mode) {
-    const seen = { requests: 0, paths: {} };
+    // Requests per path, in a Map: a path is never used as an object key.
+    const seen = { requests: 0, paths: new Map() };
     const srv = http.createServer((req, res) => {
         req.resume();
         req.on("end", () => {
             seen.requests += 1;
-            seen.paths[req.url] = (seen.paths[req.url] ?? 0) + 1;
+            seen.paths.set(req.url, (seen.paths.get(req.url) ?? 0) + 1);
             if (mode === "hang") return; // never answers: a stalled Node or service
             res.writeHead(200, { "content-type": "application/x-protobuf" }).end();
         });
@@ -245,7 +246,7 @@ console.log(
         rss_max_bytes: rss,
         closed,
         close_ms: closeMs,
-        node_requests: node.seen.paths,
+        node_requests: Object.fromEntries(node.seen.paths),
         redaction_requests: redaction?.seen.requests,
     }),
 );
