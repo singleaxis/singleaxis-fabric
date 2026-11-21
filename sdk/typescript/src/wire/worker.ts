@@ -31,7 +31,7 @@
  * ranges and `segment_seal` markers are spooled on the worker's tick, and at stop the
  * `shutdown` losses and the seals precede the epoch's `final` heartbeat.
  */
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { Worker, isMainThread, workerData } from "node:worker_threads";
 
@@ -57,8 +57,19 @@ import {
   modeOf,
 } from "./protect.js";
 import { LossTable } from "./loss.js";
+import { compactInt, parseInt64 } from "./codec.js";
+import { formatEntry } from "./p1.js";
+import {
+  NO_MANIFEST_DIGEST,
+  RUN_MESSAGE_PART,
+  RunMessages,
+  SEGMENT_PREFIX,
+  type MarkerMessage,
+  type SealMessage,
+} from "./segments.js";
 import {
   MAX_RUNS,
+  RUN_FLAG_RESUMABLE,
   type RuntimeLoss,
   type RuntimeLossReason,
   type RuntimeShared,
@@ -242,6 +253,12 @@ export interface FabricWorkerHandlers {
    */
   loss?(loss: RuntimeLoss, context: FabricWorkerContext): void | Promise<void>;
   /**
+   * Handles one run-structure record (a part of a run marker or seal request,
+   * `segments.ts`). Records are handled before each job, so an exchange's segment is
+   * known when its job is. Without this handler the records stay in the run ring.
+   */
+  run?(body: Uint8Array, context: FabricWorkerContext): void | Promise<void>;
+  /**
    * Called once per loop pass, and between jobs whenever {@link WORKER_TICK_MS} passed
    * since the last call, so a sustained job stream cannot starve it: the manifests' and
    * heartbeats' clock. A handler that throws is ignored until the next call.
@@ -317,6 +334,9 @@ async function consume(
   for (;;) {
     const seen = Atomics.load(jobs.wakeWords, jobs.wakeIndex);
     for (let record = jobs.peek(); record !== undefined; record = jobs.peek()) {
+      // Run markers pushed before this job's allocation are visible now: handle them
+      // first, so the job's segment names its run.
+      await handleRuns(context, handlers);
       if (record.kind === JOB_EXCHANGE || record.kind === JOB_RELEASING) {
         const job = exchanges.job(record.byteOffset);
         if (record.kind === JOB_EXCHANGE) {
@@ -339,6 +359,7 @@ async function consume(
       growPools(pools);
       if (performance.now() - lastTick >= WORKER_TICK_MS) await tick();
     }
+    await handleRuns(context, handlers);
     await handleLosses(context, handlers);
     growPools(pools);
     await tick();
@@ -350,8 +371,10 @@ async function consume(
         stopping = true;
         continue;
       }
-      // Losses recorded just before the stop request (the shutdown sweep) are handled
-      // before the stop handler, so they precede the epoch's final.
+      // Losses recorded just before the stop request (the shutdown sweep) and the seals
+      // the run table requested at final are handled before the stop handler, so they
+      // precede the epoch's final.
+      await handleRuns(context, handlers);
       await handleLosses(context, handlers);
       try {
         await handlers.stop?.(context);
@@ -371,6 +394,25 @@ async function consume(
       }),
     ]);
     clearTimeout(timer);
+  }
+}
+
+/** Hands every queued run record to the `run` handler (left in the ring without one). */
+async function handleRuns(
+  context: FabricWorkerContext,
+  handlers: FabricWorkerHandlers,
+): Promise<void> {
+  const ring = context.runtime.runRing;
+  if (handlers.run === undefined || ring === undefined) return;
+  for (let record = ring.peek(); record !== undefined; record = ring.peek()) {
+    if (record.kind === RUN_MESSAGE_PART) {
+      try {
+        await handlers.run(record.body, context);
+      } catch {
+        // a run record that cannot be handled leaves its run unverified, never stuck
+      }
+    }
+    ring.commit();
   }
 }
 
@@ -577,7 +619,20 @@ export interface PipelineStats {
     | undefined;
   readonly losses: ReturnType<LossTable["stats"]>;
   readonly seals: ReturnType<SegmentSeals["stats"]>;
+  /** Run markers spooled, seal requests taken, records refused, forced rolls. */
+  readonly runs: Readonly<Record<string, number>>;
 }
+
+/** What the worker keeps of an open segment's `run_start` (exchanges and forced rolls). */
+interface SegmentRun {
+  readonly runId: string;
+  readonly scopeId: string;
+  readonly idBasis: string | undefined;
+}
+
+/** Open segments the worker remembers (as many as the seal accumulator keeps open). */
+const MAX_SEGMENT_RUNS = 65_536;
+const RUN_MARKER_KINDS: ReadonlySet<unknown> = new Set(["run_start", "run_end"]);
 
 /** How long one tick may spend building handed-off seals. */
 export const SEAL_BUDGET_MS = 20;
@@ -621,6 +676,14 @@ export class CapturePipeline {
   readonly losses: LossTable;
   /** The result of the orderly close ({@link closeEpoch}), once it ran. */
   closed: boolean | undefined;
+  /** Run markers and seal requests from the run table (`segments.ts`). */
+  readonly #runMessages = new RunMessages();
+  /** Open segments' runs, learned from their `run_start` markers (bounded, oldest out). */
+  readonly #segmentRuns = new Map<string, SegmentRun>();
+  /** Segments at the forced bound, to roll on the next tick ({@link rollForced}). */
+  readonly #forced: string[] = [];
+  #published: string | undefined;
+  readonly #runStats = { markers: 0, seals: 0, rejected: 0, forced_rolls: 0, forced_missed: 0 };
 
   constructor(config: PipelineConfig, spool: Spool, sink: PipelineSink) {
     this.#config = config;
@@ -637,6 +700,9 @@ export class CapturePipeline {
       manifestSeq: (epoch) => this.manifests?.latestSeq(epoch),
       forcedAt: config.forcedSealPositions,
     });
+    this.seals.onForced = (segmentId) => {
+      if (this.#forced.length < MAX_RUNS) this.#forced.push(segmentId);
+    };
     this.losses = new LossTable({
       settle: (segmentId, sequence, entry, sourceId, epoch) => {
         if (segmentId === undefined) return;
@@ -702,6 +768,7 @@ export class CapturePipeline {
             },
       losses: this.losses.stats(),
       seals: this.seals.stats(),
+      runs: { ...this.#runStats, dropped: this.#runMessages.dropped },
     };
   }
 
@@ -747,6 +814,194 @@ export class CapturePipeline {
     } catch {
       // the next tick scans again
     }
+  }
+
+  // -------------------------------------------------------------- run structure (§4.3)
+
+  /** One run-ring record (`segments.ts`): a run marker to spool or a seal request. */
+  runRecord(body: Uint8Array): void {
+    try {
+      const message = this.#runMessages.take(body);
+      if (message === undefined) return;
+      if (message.t === "marker") this.#runMarker(message);
+      else this.#sealRequest(message);
+    } catch {
+      this.#runStats.rejected++;
+    }
+  }
+
+  #runMarker(message: MarkerMessage): void {
+    const fields = { ...message.fields };
+    const last =
+      typeof fields.last_sequence === "string" ? parseInt64(fields.last_sequence) : undefined;
+    const epoch = parseInt64(message.epoch);
+    if (
+      !RUN_MARKER_KINDS.has(fields.kind) ||
+      last === undefined ||
+      epoch === undefined ||
+      message.source !== this.#config.sourceId
+    ) {
+      this.#runStats.rejected++;
+      return;
+    }
+    fields.last_sequence = compactInt(last);
+    this.#ensureManifest(epoch);
+    const queued = this.markers.queue({
+      doc: {
+        record_kind: "marker",
+        source: { source_id: message.source, source_epoch: compactInt(epoch) },
+        marker: fields,
+      },
+      bodies: [],
+    });
+    if (queued) this.#runStats.markers++;
+    if (fields.kind === "run_start" && typeof fields.segment_id === "string") {
+      this.#remember(fields.segment_id, {
+        runId: String(fields.run_id),
+        scopeId: String(fields.scope_id),
+        idBasis: typeof fields.id_basis === "string" ? fields.id_basis : undefined,
+      });
+    }
+  }
+
+  #remember(segmentId: string, run: SegmentRun): void {
+    const runs = this.#segmentRuns;
+    runs.delete(segmentId);
+    runs.set(segmentId, run);
+    while (runs.size > MAX_SEGMENT_RUNS) runs.delete(runs.keys().next().value as string);
+  }
+
+  #sealRequest(message: SealMessage): void {
+    const epoch = parseInt64(message.epoch);
+    const last = parseInt64(message.lastSequence);
+    const positions = parseInt64(message.positions);
+    if (epoch === undefined || last === undefined || positions === undefined) {
+      this.#runStats.rejected++;
+      return;
+    }
+    this.#ensureManifest(epoch);
+    this.seals.requestSeal(message.segment, {
+      lastSequence: last,
+      manifestDigest: message.manifestDigest,
+      terminal: message.terminal,
+      resumable: message.resumable,
+      branchIds: message.branchIds,
+      runId: message.runId,
+      sourceId: message.source,
+      epoch,
+      positions,
+    });
+    this.#runStats.seals++;
+  }
+
+  /** The run of an exchange's segment, from its `run_start` (undefined when unknown). */
+  runOf(segmentId: string | undefined): string | undefined {
+    return segmentId === undefined ? undefined : this.#segmentRuns.get(segmentId)?.runId;
+  }
+
+  /**
+   * Publishes the manifest in force to the control block when it changed, so the run
+   * table names it in run markers, seals and tokens. Never throws.
+   */
+  publishManifest(runtime: WireRuntime): void {
+    try {
+      const ref = this.manifests?.ref;
+      if (ref === undefined || ref.manifestId === this.#published) return;
+      runtime.publishManifest({
+        epoch: ref.epoch,
+        manifestSeq: ref.manifestSeq,
+        manifestId: ref.manifestId,
+        digest: ref.digest,
+      });
+      this.#published = ref.manifestId;
+    } catch {
+      // the run table then names no manifest; the verifier reports the epoch
+    }
+  }
+
+  /**
+   * Rolls each segment at the forced bound (spec 055 §4.3, 050 §3.7): under the run-table
+   * lock the run's slot moves to a new segment and the old one's exact position count is
+   * read; then the old segment's non-terminal seal is requested and the new segment's
+   * continuation `run_start` (predecessor: the old segment) is spooled. A segment whose
+   * `run_start` the worker never saw is not rolled (counted): it seals when its run does.
+   */
+  async rollForced(runtime: WireRuntime): Promise<void> {
+    while (this.#forced.length > 0) {
+      const segmentId = this.#forced.shift()!;
+      try {
+        await this.#roll(runtime, segmentId);
+      } catch {
+        this.#runStats.forced_missed++;
+      }
+    }
+  }
+
+  async #roll(runtime: WireRuntime, segmentId: string): Promise<void> {
+    const run = this.#segmentRuns.get(segmentId);
+    if (run === undefined || !(await runtime.lockAsync(1000))) {
+      this.#runStats.forced_missed++;
+      return;
+    }
+    const next = SEGMENT_PREFIX + randomBytes(16).toString("hex");
+    let positions: bigint | undefined;
+    let resumable = false;
+    let last = -1n;
+    try {
+      for (let slot = 0; slot < MAX_RUNS; slot++) {
+        const [hi, lo] = runtime.runSegment(slot);
+        if (segmentIdOf(hi, lo) !== segmentId) continue;
+        positions = runtime.runPositions(slot);
+        resumable = (runtime.runFlags(slot) & RUN_FLAG_RESUMABLE) !== 0n;
+        const hex = next.slice(SEGMENT_PREFIX.length);
+        runtime.setRunSegment(
+          slot,
+          BigInt.asIntN(64, BigInt("0x" + hex.slice(0, 16))),
+          BigInt.asIntN(64, BigInt("0x" + hex.slice(16))),
+        );
+        last = runtime.nextSequence - 1n;
+        break;
+      }
+    } finally {
+      runtime.unlock();
+    }
+    if (positions === undefined) {
+      this.#runStats.forced_missed++; // the run moved on (sealed or rolled) first
+      return;
+    }
+    const epoch = runtime.epoch;
+    const ref = this.manifests?.ref;
+    const digest = ref !== undefined && ref.epoch === epoch ? ref.digest : NO_MANIFEST_DIGEST;
+    this.seals.requestSeal(segmentId, {
+      lastSequence: last,
+      manifestDigest: digest,
+      terminal: false,
+      resumable,
+      runId: run.runId,
+      sourceId: this.#config.sourceId,
+      epoch,
+      positions,
+    });
+    const fields: Record<string, unknown> = {
+      kind: "run_start",
+      last_sequence: last.toString(),
+      ...(run.idBasis === undefined ? {} : { id_basis: run.idBasis }),
+      ...(ref !== undefined && ref.epoch === epoch
+        ? { manifest_digest: ref.digest, manifest_id: ref.manifestId }
+        : {}),
+      predecessors: [formatEntry(segmentId, this.#config.sourceId, epoch, last, digest)],
+      run_id: run.runId,
+      scope_id: run.scopeId,
+      segment_id: next,
+      event_id: randomUUID(),
+    };
+    this.#runMarker({
+      t: "marker",
+      source: this.#config.sourceId,
+      epoch: epoch.toString(),
+      fields,
+    });
+    this.#runStats.forced_rolls++;
   }
 
   // ------------------------------------------------------------------ manifests (§7.2)
@@ -890,8 +1145,8 @@ export class CapturePipeline {
       sourceEpoch: epoch,
       sequence: job.sequence,
       segmentId: segmentIdOf(job.segmentHi, job.segmentLo),
-      runId: undefined,
-      scopeId: undefined,
+      runId: this.runOf(segmentIdOf(job.segmentHi, job.segmentLo)),
+      scopeId: job.scopeId === undefined ? undefined : uuidText(job.scopeId),
       startNs: job.startNs,
       endNs: job.endNs,
       request: side(job.request, meta.requestMediaType, meta.requestContentEncoding),
@@ -1022,11 +1277,15 @@ export function pipelineHandlers(pipeline: CapturePipeline): FabricWorkerHandler
   return {
     job: async (job, context) => {
       await pipeline.handle(job, context.exchanges.arena, context.runtime.epoch);
+      pipeline.publishManifest(context.runtime);
     },
     loss: (loss, { runtime }) => pipeline.lost(loss, runtime.epoch),
-    tick: ({ runtime }) => {
+    run: (body) => pipeline.runRecord(body),
+    tick: async ({ runtime }) => {
       pipeline.observeRuns(runtime);
+      await pipeline.rollForced(runtime);
       pipeline.tick(runtime.epoch, runtime.nextSequence - 1n);
+      pipeline.publishManifest(runtime);
     },
     stop: ({ runtime }) => {
       pipeline.closeEpoch(runtime.epoch, runtime.nextSequence - 1n);
