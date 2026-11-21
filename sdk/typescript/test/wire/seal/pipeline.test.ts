@@ -161,6 +161,29 @@ describe("settle only after the record is spooled", { timeout: 60_000 }, () => {
   );
 
   it.skipIf(!PUBLISHES_BODIES)(
+    "a spooled position is never also recorded lost when an observer throws after the write",
+    async () => {
+      const { spool } = newSpool();
+      const { runtime, table, job } = await oneExchange();
+      const lost: bigint[] = [];
+      const pipeline = new CapturePipeline(pipelineConfig(), spool, {
+        lose: (_reason, sequence) => {
+          lost.push(sequence);
+        },
+        written: () => {
+          throw new Error("observer failure");
+        },
+      });
+      expect(await pipeline.handle(job, table.arena, runtime.epoch)).toBe("spooled");
+      expect(lost).toEqual([]);
+      expect(pipeline.seals.entries(A.id).map(([s, e]) => [s, e.slice(0, 7)])).toEqual([
+        [job.sequence, "sha256:"],
+      ]);
+      spool.close();
+    },
+  );
+
+  it.skipIf(!PUBLISHES_BODIES)(
     "a position the spool refused settles only as its loss, through the loss funnel",
     async () => {
       const { spool } = newSpool(1); // no room for an exchange record

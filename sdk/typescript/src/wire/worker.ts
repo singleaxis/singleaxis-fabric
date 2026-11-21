@@ -936,9 +936,19 @@ export class CapturePipeline {
         const entry = exchangeEntry(captured.sourceId, epoch, this.#config.serviceName, prepared);
         outcome = admitEntries(this.#spool, [entry])[0]!;
         if (outcome === "spooled") {
-          this.heartbeats?.noteActivity();
+          // The record is in the spool: from here nothing may turn the position into a
+          // loss (a spooled position recorded lost would carry two outcomes).
+          try {
+            this.heartbeats?.noteActivity();
+          } catch {
+            // the heartbeat's activity flag only; the record stands
+          }
           this.#settleWritten(captured, prepared.span);
-          this.#sink.written?.(captured, prepared.span);
+          try {
+            this.#sink.written?.(captured, prepared.span);
+          } catch {
+            // an observer's failure never changes the outcome
+          }
         }
       }
     } catch {
