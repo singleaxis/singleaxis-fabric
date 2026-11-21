@@ -9,6 +9,8 @@
  * and their withholding. Both languages call a redaction service that answers every call
  * with `[redacted]`.
  */
+import { gzipSync } from "node:zlib";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { encodeJson, parseJson } from "../../../src/wire/codec.js";
@@ -98,6 +100,11 @@ const HUGE = Buffer.concat([
   Buffer.alloc(4096, 1),
 ]).toString("base64");
 const TEXT = Buffer.from('{"messages":[{"content":"short text"}]}');
+// Over max_body (1000) and JSON with an inline part, but encoded: never split.
+const GZIPPED_BIG = Buffer.concat([
+  gzipSync(bigRequest([PNG])),
+  Buffer.from(Array.from({ length: 1200 }, (_, i) => (i * 37) % 256)),
+]);
 const CASES: Case[] = [
   {
     name: "retained split, two parts",
@@ -185,6 +192,37 @@ const CASES: Case[] = [
     chunks: [bigRequest([PNG]).subarray(0, 700), bigRequest([PNG]).subarray(700)],
     maxBody: 1100,
     base: { media_type: "text/event-stream" },
+  },
+  {
+    name: "not split: a partial JSON side is cut to whole chunks",
+    modes: undefined,
+    body: bigRequest([PNG]),
+    chunks: [bigRequest([PNG]).subarray(0, 700), bigRequest([PNG]).subarray(700)],
+    maxBody: 1100,
+    partial: true,
+  },
+  {
+    name: "not split: a gzip side is cut to whole chunks",
+    modes: undefined,
+    body: GZIPPED_BIG,
+    chunks: [GZIPPED_BIG.subarray(0, 600), GZIPPED_BIG.subarray(600)],
+    maxBody: 1000,
+    base: { content_encoding: "gzip" },
+  },
+  {
+    name: "original_plus_masked gzip side: the review masks the plaintext, the original stays encoded",
+    modes: { request: "original_plus_masked" },
+    body: gzipSync(TEXT),
+    maxBody: 1100,
+    base: { content_encoding: "gzip" },
+    transformations: { [REQUEST]: MASK },
+  },
+  {
+    name: "original_plus_masked split side and parts, all reviewed",
+    modes: { request: "original_plus_masked", part: "original_plus_masked" },
+    body: bigRequest([PNG, WAV]),
+    maxBody: 1500,
+    transformations: { [REQUEST]: MASK, [PART]: MASK },
   },
   {
     name: "original_plus_masked cut side: review withheld with the cut",

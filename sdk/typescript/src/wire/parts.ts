@@ -10,8 +10,9 @@
  * bytes': half-open `[start, end)`, 0-based, the base64 text only (after a `data:` URL
  * prefix). It finds string values of `url`, `image_url`, `data`, `file_data` and
  * `b64_json` holding a data URL or plain base64 of at least `part_min_bytes`, at most 64
- * per side. Its result equals Python's on the shared vectors
- * (`contracts/capture/v1/fixtures/vectors/split-parts-v1.json`).
+ * per side. Its result equals Python's on the shared split fixtures
+ * (`test/wire/fixtures/split-parts.json`, generated from Python by
+ * `scripts/contracts/generate_ts_wire_vectors.py`).
  */
 import { createHash } from "node:crypto";
 
