@@ -47,8 +47,22 @@ const CONTENT = readdirSync(VALID)
     return { name, text, descriptor, body };
   });
 
+/**
+ * 2xx response bodies for the `partial_success` parity check: well-formed, merged
+ * (repeated sub-messages), negative, unknown fields of every wire type, and malformed.
+ */
+const RESPONSES = [
+  "", "0a00", "0a020802", "0a020800", "0aff", "0a0b08ffffffffffffffffff01",
+  "0a0208050a0412026572", "0a0208050a020800", "0a0608051202657212020a00", "0805",
+  "0a030a0100", "0a1008031900000000000000001d00000000", "0a0408031b1c", "0a0208", "1a00",
+  "0a0208070a0b08ffffffffffffffffff7f", "0a0b0880808080808080808001", "0a06081b041c0802",
+  "0a0408031b24", "0a0208030b1a020800", "0b0a0208070c", "0b0a0208070c0a020801", "0a020803fb01",
+  "0a0d08808080808080808080010a020801",
+]; // prettier-ignore
+
 // Python reads the same JSON text, so both sides start from identical records.
 const python = pythonOtlp({
+  responses: RESPONSES,
   version: SDK_VERSION,
   sdk_name: FABRIC_SDK_NAME_NODE,
   service_name: SERVICE,
@@ -199,6 +213,14 @@ describe("helpers", () => {
     expect(pyRepr([null, true, new PyFloat(1)])).toBe("[None, True, 1.0]");
   });
 
+  it("partial success: rejected or not exactly as Python's _post parses each body", () => {
+    expect(RESPONSES.map((hex) => partialSuccessRejected(Buffer.from(hex, "hex")) !== 0n)).toEqual(
+      python.responses,
+    );
+    // the oracle really saw rejections and acceptances
+    expect(new Set(python.responses)).toEqual(new Set([true, false]));
+  });
+
   it("partial success: rejected counts, malformed and empty bodies", () => {
     expect(partialSuccessRejected(Buffer.from("0a020802", "hex"))).toBe(2n);
     expect(partialSuccessRejected(Buffer.from("0a00", "hex"))).toBe(0n);
@@ -206,5 +228,8 @@ describe("helpers", () => {
     expect(partialSuccessRejected(Buffer.from("0aff", "hex"))).toBe(0n);
     // a negative count (int64 two's complement) is read exactly, never as a float
     expect(partialSuccessRejected(Buffer.from("0a0b08ffffffffffffffffff01", "hex"))).toBe(-1n);
+    // repeated partial_success messages merge; the last count written wins
+    expect(partialSuccessRejected(Buffer.from("0a0208050a0412026572", "hex"))).toBe(5n);
+    expect(partialSuccessRejected(Buffer.from("0a0208050a020800", "hex"))).toBe(0n);
   });
 });

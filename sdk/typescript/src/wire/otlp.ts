@@ -588,9 +588,19 @@ function readVarint(buf: Uint8Array, at: number): [bigint, number] | undefined {
   return undefined;
 }
 
-/** The length-delimited or varint fields of one message; `undefined` when malformed. */
+const WIRE_START_GROUP = 3;
+const WIRE_END_GROUP = 4;
+/** Python's protobuf runtime refuses groups nested deeper than its recursion limit. */
+const MAX_GROUP_DEPTH = 100;
+
+/**
+ * The fields of one message, as Python's protobuf runtime parses it; `undefined` when
+ * malformed. A group (wire types 3/4, never used by OTLP) is skipped as an unknown field,
+ * as Python skips it.
+ */
 function readFields(buf: Uint8Array): Map<number, (bigint | Uint8Array)[]> | undefined {
   const fields = new Map<number, (bigint | Uint8Array)[]>();
+  const groups: number[] = [];
   let at = 0;
   while (at < buf.length) {
     const tag = readVarint(buf, at);
@@ -598,6 +608,16 @@ function readFields(buf: Uint8Array): Map<number, (bigint | Uint8Array)[]> | und
     at = tag[1];
     const field = Number(tag[0] >> 3n);
     const wire = Number(tag[0] & 7n);
+    if (field === 0) return undefined;
+    if (wire === WIRE_START_GROUP) {
+      if (groups.length >= MAX_GROUP_DEPTH) return undefined;
+      groups.push(field);
+      continue;
+    }
+    if (wire === WIRE_END_GROUP) {
+      if (groups.pop() !== field) return undefined;
+      continue;
+    }
     let value: bigint | Uint8Array;
     if (wire === WIRE_VARINT) {
       const v = readVarint(buf, at);
@@ -614,22 +634,32 @@ function readFields(buf: Uint8Array): Map<number, (bigint | Uint8Array)[]> | und
       value = buf.subarray(at, at + size);
       at += size;
     } else return undefined;
-    if (field === 0) return undefined;
+    if (groups.length > 0) continue; // a field inside a skipped group
     fields.set(field, [...(fields.get(field) ?? []), value]);
   }
-  return fields;
+  return groups.length === 0 ? fields : undefined;
 }
 
 /**
  * The `rejected_log_records` (or `rejected_spans`) count of an OTLP export response's
- * `partial_success`; 0 for an empty or unparsable body (Python suppresses the parse
- * error and takes the request as accepted).
+ * `partial_success`, as Python's protobuf runtime reads it: repeated occurrences of the
+ * sub-message merge (the last count written wins), and the count is any int64, so a
+ * negative one is still non-zero (Python's `if reply.partial_success.rejected_log_records`
+ * takes it as a rejection). 0 for an empty or unparsable body (Python suppresses the
+ * parse error and takes the request as accepted).
  */
 export function partialSuccessRejected(body: Uint8Array): bigint {
   const top = readFields(body);
-  const partial = top?.get(1)?.at(-1);
-  if (!(partial instanceof Uint8Array)) return 0n;
-  const inner = readFields(partial);
-  const rejected = inner?.get(1)?.at(-1);
-  return typeof rejected === "bigint" ? BigInt.asIntN(64, rejected) : 0n;
+  if (top === undefined) return 0n;
+  let rejected = 0n;
+  for (const partial of top.get(1) ?? []) {
+    if (!(partial instanceof Uint8Array)) return 0n; // wrong wire type: a parse error
+    const inner = readFields(partial);
+    if (inner === undefined) return 0n;
+    for (const count of inner.get(1) ?? []) {
+      if (typeof count !== "bigint") return 0n;
+      rejected = BigInt.asIntN(64, count);
+    }
+  }
+  return rejected;
 }

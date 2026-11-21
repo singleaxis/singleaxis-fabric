@@ -7,7 +7,9 @@ Reads one JSON request on stdin and prints the exact bytes Python's sender sends
 - ``spans``: for each spool record, the ``ExportTraceServiceRequest`` of the span
   ``fabric.wire._sender.Sender._span`` builds for it, encoded by OpenTelemetry's
   ``encode_spans`` (what ``OTLPSpanExporter`` posts), and the one request of all of them;
-- ``content``: ``fabric.wire._content.encode_content_records`` of each item and of all.
+- ``content``: ``fabric.wire._content.encode_content_records`` of each item and of all;
+- ``responses``: for each hex response body of a 2xx, whether ``NodeContentClient._post``
+  takes it as rejecting records (its own parse, with the parse error suppressed).
 
 The producer labels are substituted as spec 055 §7.3 allows: the capture-point version
 and the SDK scope name are the TypeScript ones given in the request.
@@ -23,6 +25,17 @@ from opentelemetry.exporter.otlp.proto.common.trace_encoder import encode_spans
 from fabric import tracing
 from fabric.wire import _sender
 from fabric.wire._content import encode_content_records
+
+
+def _rejects(body: bytes) -> bool:
+    """``NodeContentClient._post`` on a 2xx: a parse error means accepted."""
+    from opentelemetry.proto.collector.logs.v1 import logs_service_pb2  # noqa: PLC0415
+
+    try:
+        reply = logs_service_pb2.ExportLogsServiceResponse.FromString(body)
+    except Exception:  # noqa: BLE001 - as _post's contextlib.suppress(Exception)
+        return False
+    return bool(reply.partial_success.rejected_log_records)
 
 
 def main() -> None:
@@ -46,6 +59,9 @@ def main() -> None:
             encode_content_records([item], service_name=service).hex() for item in items
         ],
         "content_all": encode_content_records(items, service_name=service).hex(),
+        "responses": [
+            _rejects(bytes.fromhex(body)) for body in request.get("responses", [])
+        ],
     }
     sys.stdout.write(json.dumps(out))
 
