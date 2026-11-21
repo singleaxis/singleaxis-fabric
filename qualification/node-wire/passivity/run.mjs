@@ -253,7 +253,8 @@ function largeShapes() {
             worst = Math.max(worst, row.max_single_ms);
             const expected =
                 row.kind === "oversize"
-                    ? row.chunks_not_retained > 0 && (delivery === "in_memory" || row.chunks_retained > 1)
+                    ? row.chunks_not_retained > 0 &&
+                      row.retained_request_bytes === (delivery === "in_memory" ? 0 : row.max_retain_bytes)
                     : row.chunks_not_retained === 0 && row.chunks_retained > 0;
             if (!expected) notSnapshotted.push(`${label}/${delivery}`);
         }

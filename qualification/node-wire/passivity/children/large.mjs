@@ -106,6 +106,9 @@ for (const [label, body, kind] of SHAPES) {
         shapes[label][delivery] = {
             kind,
             request_bytes: body.length,
+            // The request bytes the hook retained: the gate checks the oversize shape is
+            // cut at max_retain_bytes exactly (streamed) or refused whole (in memory).
+            ...(kind === "oversize" ? { retained_request_bytes: copied - KIB, max_retain_bytes: MAX_RETAIN } : {}),
             publications: times.length,
             chunks_retained: retained,
             chunks_not_retained: refused,
