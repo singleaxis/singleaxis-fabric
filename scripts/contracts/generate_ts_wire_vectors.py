@@ -16,6 +16,10 @@ unit 055-t2), produced from the Python writer itself:
   environment mapping, and for each environment case what ``python -m fabric.wire
   status`` decides: valid (with the resolved settings) or invalid with the catalogue id
   ``wire/_diagnose.py`` gives the message.
+- ``sdk/typescript/test/wire/fixtures/split-parts.json`` (unit 055-t15): request bodies
+  and what ``wire/_protect.py`` ``find_parts`` finds in them (half-open byte ranges and
+  media types, or ``null``), the skeleton's digest, ``sniff_media_type`` cases and
+  ``_roles.part_object_id`` ids: the byte-offset scan the TypeScript worker must equal.
 
 Usage: ``python scripts/contracts/generate_ts_wire_vectors.py [--check]``. Needs the
 Python SDK (``pip install -e sdk/python``) and ``cryptography``. The test key, nonce,
@@ -40,6 +44,7 @@ SPOOL_BYTES = REPO / "contracts/capture/v1/fixtures/vectors/spool-bytes-v1.json"
 TS_FIXTURES = REPO / "sdk/typescript/test/wire/fixtures"
 MATCH_TABLE = TS_FIXTURES / "match-table.json"
 CONFIG_ENV = TS_FIXTURES / "config-env.json"
+SPLIT_PARTS = TS_FIXTURES / "split-parts.json"
 
 TEST_SPOOL_KEY = bytes(range(32))  # a fixed test key: never a deployment's
 TEST_NONCE = bytes.fromhex("000102030405060708090a0b")  # fixed only in these vectors
@@ -933,6 +938,237 @@ def config_env() -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- split parts
+def _chat(parts: list[str], *, key: str = "url", text: str = "describe this") -> bytes:
+    content: list[Any] = [{"type": "text", "text": text}]
+    for part in parts:
+        content.append({"type": "image_url", "image_url": {key: part}})
+    return json.dumps(
+        {"model": "gpt-4o", "messages": [{"role": "user", "content": content}]},
+        separators=(",", ":"),
+    ).encode()
+
+
+def _b64(data: bytes) -> str:
+    return base64.b64encode(data).decode()
+
+
+def _split_bodies() -> list[tuple[str, bytes, int]]:
+    """``(name, body, part_min_bytes)``: hand-written edge cases, then seeded random ones."""
+    import random  # noqa: PLC0415
+
+    png = _b64(b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 3)
+    wav = _b64(b"RIFF\x00\x00\x00\x00WAVEfmt " + bytes(1024))
+    pdf = _b64(b"%PDF-1.7 " + bytes(300))
+    jpeg = _b64(b"\xff\xd8\xff\xe0" + bytes(200))
+    gif = _b64(b"GIF89a" + bytes(200))
+    mp4 = _b64(b"\x00\x00\x00\x18ftypmp42" + bytes(200))
+    plain = _b64(bytes(range(200, 256)) * 6)
+    cases: list[tuple[str, bytes, int]] = [
+        ("image data url", _chat(["data:image/png;base64," + png]), 64),
+        (
+            "image and audio",
+            _chat(["data:image/png;base64," + png, "data:audio/wav;base64," + wav]),
+            64,
+        ),
+        ("magic beats the declared type", _chat(["data:image/gif;base64," + pdf]), 64),
+        ("declared svg kept", _chat(["data:image/svg+xml;base64," + plain]), 64),
+        ("declared text/html refused", _chat(["data:text/html;base64," + plain]), 64),
+        ("plain base64 under data", json.dumps({"data": jpeg}).encode(), 64),
+        ("b64_json", json.dumps({"data": [{"b64_json": gif}]}).encode(), 64),
+        ("file_data", json.dumps({"file": {"file_data": mp4}}).encode(), 64),
+        ("image_url string", json.dumps({"image_url": png}).encode(), 64),
+        (
+            "other keys ignored",
+            json.dumps({"embedding": png, "text": png}).encode(),
+            64,
+        ),
+        (
+            "spaces are not base64",
+            json.dumps({"data": "has spaces " * 20}).encode(),
+            64,
+        ),
+        ("below part_min", _chat(["data:image/png;base64," + png]), len(png) + 1),
+        ("exactly part_min", _chat(["data:image/png;base64," + png]), len(png)),
+        (
+            "data url prefix counts toward the string, not the part",
+            _chat(["data:image/png;base64," + png[:80]]),
+            81,
+        ),
+        (
+            "escaped quotes before a part",
+            json.dumps({"text": 'say \\"' + png + '\\"', "data": png}).encode(),
+            64,
+        ),
+        (
+            "escaped backslash ends a string",
+            ('{"text":"a\\\\","data":"' + png + '"}').encode(),
+            64,
+        ),
+        (
+            "whitespace around the colon",
+            ('{ "data" :\n\t "' + png + '" }').encode(),
+            64,
+        ),
+        (
+            "leading whitespace and an array",
+            (" \r\n[" + json.dumps({"data": png}) + "]").encode(),
+            64,
+        ),
+        ("a string is not a key value", json.dumps(["data", png]).encode(), 64),
+        ("one pad", json.dumps({"data": _b64(bytes(302))}).encode(), 64),
+        ("two pads", json.dumps({"data": _b64(bytes(301))}).encode(), 64),
+        (
+            "three pads is not base64",
+            json.dumps({"data": _b64(bytes(301)) + "="}).encode(),
+            64,
+        ),
+        (
+            "uppercase media type is not a data url",
+            _chat(["data:IMAGE/PNG;base64," + png]),
+            64,
+        ),
+        ("long media type", _chat(["data:image/" + "x" * 64 + ";base64," + plain]), 64),
+        (
+            "media type too long",
+            _chat(["data:image/" + "x" * 65 + ";base64," + plain]),
+            64,
+        ),
+        ("not json", b"not json", 8),
+        ("empty", b"", 8),
+        ("whitespace only", b" \n", 8),
+        ("a scalar", b'"' + png.encode() + b'"', 8),
+        ("unterminated", b'{"a":"unterminated', 8),
+        ("unterminated after a part", ('{"data":"' + png + '","x":"open').encode(), 64),
+        (
+            "non-ascii text",
+            json.dumps(
+                {"text": "h\u00e9llo \u2603", "data": png}, ensure_ascii=False
+            ).encode(),
+            64,
+        ),
+        (
+            "seventy parts, sixty-four found",
+            json.dumps(
+                {"items": [{"data": _b64(bytes([i]) * 60)} for i in range(70)]}
+            ).encode(),
+            64,
+        ),
+    ]
+    # Short heads: Python's lenient b64decode raises on a partial quad without padding.
+    for size in range(1, 9):
+        head = _b64(b"\xff\xd8\xff\xe0\x00\x10JF"[:size])
+        cases.append(
+            (f"jpeg head of {size} bytes", json.dumps({"data": head}).encode(), 1)
+        )
+        cases.append((f"unpadded jpeg head of {size} bytes",
+                      json.dumps({"data": head.rstrip("=")}).encode(), 1))  # fmt: skip
+    rng = random.Random(55015)  # noqa: S311 - reproducible test data
+    keys = [
+        "url",
+        "image_url",
+        "data",
+        "file_data",
+        "b64_json",
+        "text",
+        "content",
+        "dat",
+    ]
+    magics = [
+        b"\x89PNG\r\n\x1a\n",
+        b"\xff\xd8\xff",
+        b"GIF87a",
+        b"RIFF\x00\x00\x00\x00WAVE",
+        b"%PDF-",
+        b"ID3",
+        b"OggS",
+        b"fLaC",
+        b"\x00\x00\x00\x00ftyp",
+        b"",
+    ]
+    declared = [
+        "image/png",
+        "audio/mpeg",
+        "application/pdf",
+        "text/plain",
+        "image/svg+xml",
+        None,
+    ]
+    for seed in range(40):
+        items: list[Any] = []
+        for _ in range(rng.randint(0, 8)):
+            raw = rng.choice(magics) + rng.randbytes(rng.randint(0, 400))
+            value = _b64(raw)
+            if rng.random() < 0.2:
+                value = value.rstrip("=")
+            media = rng.choice(declared)
+            if media is not None:
+                value = f"data:{media};base64,{value}"
+            if rng.random() < 0.1:
+                value = value[: len(value) // 2] + " " + value[len(value) // 2 :]
+            items.append({rng.choice(keys): value, "note": "x" * rng.randint(0, 40)})
+        body = json.dumps({"input": items, "q": '\\"quoted\\"'},
+                          indent=rng.choice([None, 1]),
+                          separators=None if rng.random() < 0.5 else (",", ":"))  # fmt: skip
+        cases.append((f"random {seed}", body.encode(), rng.choice([1, 8, 64, 200])))
+    return cases
+
+
+def split_parts() -> dict[str, Any]:
+    from fabric._roles import part_object_id  # noqa: PLC0415
+    from fabric.wire._protect import (  # noqa: PLC0415
+        MAX_PARTS_PER_SIDE,
+        find_parts,
+        skeleton_of,
+        sniff_media_type,
+    )
+
+    cases = []
+    for name, body, part_min in _split_bodies():
+        found = find_parts(body, part_min)
+        case: dict[str, Any] = {
+            "name": name,
+            "body_base64": base64.b64encode(body).decode(),
+            "part_min_bytes": part_min,
+            "parts": None
+            if found is None
+            else [[p.start, p.end, p.media_type] for p in found],
+        }
+        if found is not None:
+            skeleton = skeleton_of(body, found)
+            case["skeleton_sha256"] = "sha256:" + hashlib.sha256(skeleton).hexdigest()
+            case["skeleton_byte_length"] = len(skeleton)
+        cases.append(case)
+    sniff = [
+        {"base64": b64, "declared": declared, "media_type": sniff_media_type(b64.encode(), declared)}
+        for b64, declared in (
+            (_b64(b"%PDF-1.7 xxxxxxxx"), None), ("AAAA", "image/svg+xml"), ("AAAA", "text/html"),
+            ("!!", None), ("/9j/4A", "image/png"), ("/9j/4A==", None), ("/9j/4AA=", None),
+            ("/9j/4AAQ", None), ("UklGRgAAAABXQVZF", None), ("UklGRgAAAABXRUJQ", None),
+            ("AAAAGGZ0eXBtcDQy", None), ("R0lGODdh", "audio/ogg"), ("AAAA", None),
+            ("AAAA", "image/*"), ("AAAA", "IMAGE/PNG"),
+        )
+    ]  # fmt: skip
+    ids = [
+        {"skeleton_id": skeleton, "index": index, "object_id": part_object_id(skeleton, index)}
+        for skeleton in ("0f4c2a7e-9b1d-4e3f-8a6c-5d2e1b0a9f8e", "00000000-0000-4000-8000-000000000000")
+        for index in (0, 1, 9, 10, 63)
+    ]  # fmt: skip
+    return {
+        "schema": "fabric.ts-split-parts/v1",
+        "comment": (
+            "Generated by scripts/contracts/generate_ts_wire_vectors.py from wire/_protect.py "
+            "find_parts, skeleton_of, sniff_media_type and _roles.part_object_id (spec 055 "
+            "§5 split parity, unit 055-t15). parts: half-open [start, end) byte offsets of "
+            "the base64 text in the body, and the media type; null: not a JSON object or array."
+        ),
+        "max_parts_per_side": MAX_PARTS_PER_SIDE,
+        "cases": cases,
+        "sniff": sniff,
+        "part_object_ids": ids,
+    }
+
+
 # --------------------------------------------------------------------------- driver
 def render(value: Any) -> str:
     return json.dumps(value, indent=2, ensure_ascii=False) + "\n"
@@ -943,6 +1179,7 @@ def outputs() -> dict[Path, str]:
         SPOOL_BYTES: render(spool_bytes()),
         MATCH_TABLE: render(match_table()),
         CONFIG_ENV: render(config_env()),
+        SPLIT_PARTS: render(split_parts()),
     }
 
 
