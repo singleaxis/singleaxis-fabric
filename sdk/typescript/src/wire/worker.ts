@@ -154,6 +154,8 @@ export class FabricWorker {
   private stopping: ((clean: boolean) => void) | undefined;
   private quickCrashes = 0;
   private requests = 0;
+  /** Requests awaiting a reply: the worker holds the process open while any does. */
+  private waiting = 0;
   private readonly replies = new Map<number, (result: unknown) => void>();
   /** What the last orderly stop reported (`STOP_RESULT`), if it reported anything. */
   stopResult: unknown;
@@ -249,6 +251,7 @@ export class FabricWorker {
     if (worker === undefined) return undefined;
     const id = ++this.requests;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    this.waiting += 1;
     worker.ref();
     try {
       return await new Promise<unknown>((resolve) => {
@@ -264,7 +267,10 @@ export class FabricWorker {
     } finally {
       clearTimeout(timer);
       this.replies.delete(id);
-      if (this.thread === worker && this.stopping === undefined) worker.unref();
+      this.waiting -= 1;
+      if (this.waiting === 0 && this.thread === worker && this.stopping === undefined) {
+        worker.unref();
+      }
     }
   }
 
