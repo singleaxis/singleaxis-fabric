@@ -312,6 +312,8 @@ async function consume(
       // the next pass tries again
     }
   };
+  // Set once the stop request is seen: one more full pass, then the stop handler.
+  let stopping = false;
   for (;;) {
     const seen = Atomics.load(jobs.wakeWords, jobs.wakeIndex);
     for (let record = jobs.peek(); record !== undefined; record = jobs.peek()) {
@@ -341,6 +343,13 @@ async function consume(
     growPools(pools);
     await tick();
     if (runtime.stopRequested) {
+      if (!stopping) {
+        // A job queued after this pass drained the ring but before the stop request (it
+        // was enqueued while the losses or the tick were handled) is handled by one more
+        // pass, so the stop handler never writes final over a position still queued.
+        stopping = true;
+        continue;
+      }
       // Losses recorded just before the stop request (the shutdown sweep) are handled
       // before the stop handler, so they precede the epoch's final.
       await handleLosses(context, handlers);

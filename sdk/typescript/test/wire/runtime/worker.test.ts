@@ -123,6 +123,19 @@ describe("starting the Fabric worker", () => {
     expect([report[10], report[16], report[17]]).toEqual([2, 2, 1]);
   });
 
+  it("an orderly stop first handles a job queued after the last drain, before the request", async () => {
+    const { fabric, report, table } = start();
+    Atomics.store(report, 18, 1); // hold the first tick: past the job drain, before stop
+    fabric.start();
+    await until(() => Atomics.load(report, 19) === 1);
+    send(table); // queued while the worker sits between its drain and its stop check
+    const stopped = fabric.stop(5000);
+    Atomics.store(report, 18, 0);
+    expect(await stopped).toBe(true);
+    // The job was handled before the stop handler ran (which writes the epoch's final).
+    expect([report[0], report[20]]).toEqual([1, 2]);
+  });
+
   it("the worker reads each loss record once; a loss it cannot handle stays a gap without a reason", async () => {
     const { fabric, report, runtime } = start();
     fabric.start();

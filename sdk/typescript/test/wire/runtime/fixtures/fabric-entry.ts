@@ -55,16 +55,26 @@ void runFabricWorker({
     Atomics.store(report, 13, loss.reason === "queue_full" ? 1 : 0);
     Atomics.add(report, 10, 1);
   },
-  tick({ runtime, snapshot }) {
+  async tick({ runtime, snapshot }) {
     const report = new Int32Array((snapshot as { report: SharedArrayBuffer }).report);
     Atomics.add(report, 14, 1);
     // A tick while jobs wait: the job stream did not starve the clock.
     if (runtime.stats().queuedJobs > 0) Atomics.add(report, 15, 1);
+    // While a test holds the tick (slot 18), the worker sits between its job drain and its
+    // stop check; slot 19 says it got there.
+    if (Atomics.load(report, 18) === 1) {
+      Atomics.store(report, 19, 1);
+      while (Atomics.load(report, 18) === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2));
+      }
+    }
   },
   stop({ runtime, snapshot }) {
     // 055-t10: the orderly stop, after every loss recorded before the request was handled.
     const report = new Int32Array((snapshot as { report: SharedArrayBuffer }).report);
     Atomics.store(report, 16, Atomics.load(report, 10));
     Atomics.store(report, 17, runtime.peekLoss() === undefined ? 1 : 2);
+    // Jobs handled when the stop handler ran, plus one (0: never ran).
+    Atomics.store(report, 20, Atomics.load(report, 0) + 1);
   },
 });
