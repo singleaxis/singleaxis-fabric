@@ -106,6 +106,9 @@ export const WORKER_TICK_MS = 100;
 /** The `postMessage` key of a request to the Fabric worker (flush, the stop budget). */
 export const WORKER_REQUEST = "fabric.wire.request/1";
 
+/** The `postMessage` key of a class-only warning from the worker (fixed text, never a value). */
+export const WORKER_WARNING = "fabric.wire.warning/1";
+
 /** The key of the orderly stop's result the worker posts before it exits (`fabric-main.ts`). */
 export const STOP_RESULT = "fabric.wire.stop-result/1";
 
@@ -157,6 +160,12 @@ export interface FabricWorkerOptions {
   /** Crashes in a row, each within `quickCrashMs` of its start, before capture stops. */
   readonly maxQuickCrashes?: number;
   readonly quickCrashMs?: number;
+  /**
+   * Receives the worker's class-only warnings ({@link WORKER_WARNING}): the worker's own
+   * stdout and stderr are discarded, so `install()` prints them here, and only with
+   * `FABRIC_WIRE_DIAGNOSTICS=stderr`. A callback that throws is ignored.
+   */
+  readonly warn?: (text: string) => void;
 }
 
 /** The installing thread's handle on the Fabric worker. */
@@ -212,6 +221,14 @@ export class FabricWorker {
     worker.on("message", (message: unknown) => {
       const stopped = (message as Record<string, unknown> | null)?.[STOP_RESULT];
       if (stopped !== undefined) this.stopResult = stopped;
+      const warning = (message as Record<string, unknown> | null)?.[WORKER_WARNING];
+      if (typeof warning === "string" && warning.length <= 1024) {
+        try {
+          this.options.warn?.(warning);
+        } catch {
+          // a warning sink's failure is never the agent's
+        }
+      }
       const reply = (message as Record<string, unknown> | null)?.[WORKER_REQUEST] as
         { id?: unknown; result?: unknown } | undefined;
       if (reply === undefined || typeof reply.id !== "number") return;

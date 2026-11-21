@@ -277,6 +277,7 @@ def run_agent(
     )  # fmt: skip
     assert done.returncode == 0, done.stderr
     result: dict[str, Any] = json.loads(done.stdout.strip().splitlines()[-1])
+    result["stderr"] = done.stderr
     return result
 
 
@@ -330,6 +331,8 @@ def test_a_node_fetch_run_is_verified_complete_and_replays_its_bytes(
     assert result["flushed"] is True, result
     assert result["closed"] is True, result
     assert result["stop"] == {"closed": True, "delivered": True, "backlog": 0}
+    # Fabric's diagnostics are silent on the agent's stderr by default (spec 055 §4.7).
+    assert "fabric.wire" not in result["stderr"], result["stderr"]
     # Every record was delivered and retired; nothing left for a later drainer.
     assert not list(spool.glob("*.rec")), sorted(p.name for p in spool.iterdir())
 
@@ -402,7 +405,20 @@ def test_a_rejected_content_record_is_retired_and_read_as_not_captured_store_fai
     reports each side ``not_captured(store_failed)``, never stored."""
     (sink.directory / "fault-logs").write_text("400")
     spool = tmp_path / "spool"
-    result = run_agent(built, agent_env(tmp_path, provider, sink, spool), provider)
+    env = agent_env(tmp_path, provider, sink, spool)
+    env["FABRIC_WIRE_DIAGNOSTICS"] = "stderr"
+    result = run_agent(built, env, provider)
+    # The refusal is warned about once (FABRIC_WIRE_DIAGNOSTICS=stderr), by class with
+    # its fix: never a URL, a path, an id or a byte of content.
+    warned = [
+        line
+        for line in result["stderr"].splitlines()
+        if "refused a content record" in line
+    ]
+    assert len(warned) == 1, result["stderr"]
+    assert "content limits and tenant allowlist" in warned[0]
+    for secret in (str(spool), str(sink.port), TENANT, "Paris", "sk-test"):
+        assert secret not in result["stderr"], secret
     assert [s["body"].encode() for s in result["seen"]] == [RESPONSE_JSON, RESPONSE_SSE]
     assert result["stop"]["backlog"] == 0
     assert not list(spool.glob("*.rec"))

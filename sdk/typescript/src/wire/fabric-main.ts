@@ -27,6 +27,7 @@ import type { SpoolDoc } from "./spool-codec.js";
 import {
   CapturePipeline,
   STOP_RESULT,
+  WORKER_WARNING,
   type FabricWorkerContext,
   type FabricWorkerHandlers,
   type PipelineConfig,
@@ -57,6 +58,29 @@ export interface FabricMainSnapshot {
   readonly shutdownTimeoutMs: number;
   /** `FABRIC_WIRE_DRAIN_ON_EXIT_S` in ms (written into the exit note). */
   readonly drainOnExitMs: number;
+  /** `FABRIC_WIRE_DIAGNOSTICS`: the sender's class-only warnings reach stderr only on `stderr`. */
+  readonly diagnostics?: "silent" | "stderr";
+}
+
+/** Distinct warnings one worker prints at most (each once). */
+const MAX_WARNINGS = 64;
+
+/**
+ * Fabric's diagnostics channel on the worker (spec 055 §4.7): silent by default; with
+ * `FABRIC_WIRE_DIAGNOSTICS=stderr` each distinct class-only warning goes once to the
+ * installing thread, which prints it (this worker's own stderr is discarded).
+ */
+function warnings(
+  mode: FabricMainSnapshot["diagnostics"],
+  post: (message: unknown) => void,
+): ((text: string) => void) | undefined {
+  if (mode !== "stderr") return undefined;
+  const printed = new Set<string>();
+  return (text) => {
+    if (printed.has(text) || printed.size >= MAX_WARNINGS) return;
+    printed.add(text);
+    post({ [WORKER_WARNING]: text });
+  };
 }
 
 /** What the orderly stop reports back to the installing thread. */
@@ -134,6 +158,7 @@ export function runFabricMain(): Promise<void> | undefined {
     orphans: (): readonly Orphan[] =>
       scanOrphans({ addon: native.addon, spoolDir: spool.dir, runtime }),
     quarantined: (docs) => quarantinedLosses(pipeline, docs),
+    warn: warnings(snapshot.diagnostics, post),
     failures: () => {
       const stats = pipeline.stats();
       return stats.losses.recorded + (stats.manifests?.dropped ?? 0) + spool.failed;

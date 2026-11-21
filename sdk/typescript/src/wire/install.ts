@@ -315,8 +315,17 @@ function installWith(
     concurrency: settings.contentConcurrency,
     shutdownTimeoutMs: settings.shutdownTimeoutMs,
     drainOnExitMs: settings.drainOnExitMs,
+    diagnostics: settings.diagnostics,
   };
-  const worker = new FabricWorker(runtime, { entry, snapshot });
+  const worker = new FabricWorker(runtime, {
+    entry,
+    snapshot,
+    // The worker's class-only warnings (fixed text naming the fix), only where
+    // diagnostics go to stderr (spec 055 §4.7).
+    ...(settings.diagnostics === "stderr"
+      ? { warn: (text: string) => void process.stderr.write(`${text}\n`) }
+      : {}),
+  });
   worker.start();
   undo.push(() => void worker.stop(0));
   const table = new ExchangeTable(runtime);
