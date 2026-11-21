@@ -25,7 +25,7 @@
  */
 import { compactInt } from "./codec.js";
 import { lossEntry } from "./seal.js";
-import type { Spool } from "./spool.js";
+import { type Spool, writePrefix } from "./spool.js";
 
 export const SPAN_LOSS = "fabric.capture_loss";
 export const SPAN_HEARTBEAT = "fabric.capture_heartbeat";
@@ -286,18 +286,23 @@ export class LossTable {
   pump(spool: Pick<Spool, "writeBatch">): boolean {
     const ranges = this.take();
     let index = 0;
-    for (; index < ranges.length; index++) {
-      let result: unknown;
-      try {
-        [result] = spool.writeBatch([lossDoc(ranges[index]!)], true);
-      } catch {
-        result = undefined;
-      }
-      if (typeof result !== "string") break;
-      this.#spooled++;
+    try {
+      index = writePrefix(spool, ranges.map((range) => lossDoc(range)));
+    } catch {
+      index = 0;
     }
+    this.#spooled += index;
     for (const range of ranges.slice(index)) this.retain(range);
     return index === ranges.length;
+  }
+
+  /** The ranges waiting in memory, in the order {@link take} returns them (not removed). */
+  peek(): LossRange[] {
+    const out: LossRange[] = [];
+    for (const { key, ranges } of this.#pending.values()) {
+      for (const [first, last, count] of ranges) out.push({ ...key, first, last, count });
+    }
+    return out;
   }
 
   stats(): LossStats {

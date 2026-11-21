@@ -42,6 +42,12 @@ export interface FabricMainSnapshot {
   readonly pipeline: PipelineConfig;
   readonly spoolDir: string;
   readonly spoolMaxBytes: number;
+  /** `FABRIC_WIRE_SPOOL_MAX_RECEIPTS` (default 4,096). */
+  readonly spoolMaxReceipts?: number;
+  /** `FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY`: where the barrier walk stops. */
+  readonly spoolDurableBoundary?: string;
+  /** The explicit plaintext migration (already refused under the production profile). */
+  readonly spoolMigratePlaintext?: boolean;
   /** Where the native module is (default: the package's prebuilds and digest table). */
   readonly native: {
     readonly prebuildsDir?: string;
@@ -137,6 +143,11 @@ export function runFabricMain(): Promise<void> | undefined {
     maxBytes: snapshot.spoolMaxBytes,
     addon: native.addon,
     ...(config.spoolKey === undefined ? {} : { key: config.spoolKey }),
+    ...(snapshot.spoolMaxReceipts === undefined ? {} : { maxReceipts: snapshot.spoolMaxReceipts }),
+    ...(snapshot.spoolDurableBoundary === undefined
+      ? {}
+      : { durableBoundary: snapshot.spoolDurableBoundary }),
+    migratePlaintext: snapshot.spoolMigratePlaintext === true,
   });
   let runtime: WireRuntime | undefined;
   const pipeline = new CapturePipeline(config, spool, {
@@ -200,6 +211,8 @@ export function runFabricMain(): Promise<void> | undefined {
       await base.tick!(context);
       pipeline.heartbeats?.tick(context.runtime.epoch, context.runtime.nextSequence - 1n, true);
       const delivered = await sender.flush(deadline);
+      // A loss or marker still in memory (perhaps mirrored to the ledger) is not durable
+      // spool evidence yet: the flush does not succeed.
       return handled && delivered && !pipeline.losses.pending && pipeline.markers.held.length === 0;
     },
     stop: async (context) => {
@@ -265,6 +278,9 @@ function exitStats(
     put("traces_rejected", sent.traces_rejected);
     put("quarantined", sent.quarantined);
     put("backlog", result.backlog);
+    put("spool_migrated", sent.spool_migrated);
+    put("ledger_recovered", sent.ledger_recovered);
+    for (const [name, value] of Object.entries(sender.health())) put(name, value);
   } catch {
     // the counters gathered so far
   }
@@ -291,7 +307,8 @@ async function stopDelivery(
   } catch {
     // the note is best effort; the count still reaches the installing thread
   }
-  return { closed, delivered: delivered && backlog === 0, backlog };
+  // 050 §3.2 rule 3: `final` counts only once the spool's directory barrier holds.
+  return { closed: closed && spool.durable, delivered: delivered && backlog === 0, backlog };
 }
 
 /**

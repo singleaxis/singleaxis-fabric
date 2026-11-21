@@ -78,6 +78,10 @@ import {
   observeRunTable,
   segmentIdOf,
 } from "./seal.js";
+import type { LedgerRecord, LossLedger } from "./ledger.js";
+import { type LossRange, lossDoc } from "./loss.js";
+import type { MarkerEntry } from "./manifest.js";
+import { SCHEMA } from "./spool-codec.js";
 import type { Spool } from "./spool.js";
 import type { WireSettings } from "./types.js";
 import {
@@ -858,6 +862,60 @@ const uuidText = (bytes: Uint8Array): string => {
 };
 
 /**
+ * Keeps this process's loss-ledger slots holding exactly the loss ranges and markers
+ * the spool did not take (Python `Sender._mirror`, D1): they then survive a full disk
+ * and this process's death (a drainer exports a dead process's slots). Each record
+ * keeps the order and time it was first held, so an unchanged set rewrites nothing.
+ */
+export class LedgerMirror {
+  #ids = new Map<string, readonly [number, bigint]>();
+  #order = 0;
+
+  /** `true` when every record is in the ledger (or there is nothing to hold). Never throws. */
+  mirror(
+    ledger: LossLedger | undefined,
+    losses: readonly LossRange[],
+    markers: readonly MarkerEntry[],
+  ): boolean {
+    if (ledger === undefined) return losses.length === 0 && markers.length === 0;
+    try {
+      if (losses.length === 0 && markers.length === 0) {
+        this.#ids.clear();
+        return ledger.used() === 0 || ledger.store([]);
+      }
+      const keyed: [string, Record<string, unknown>][] = losses.map((range) => [
+        `loss\u0000${range.sourceId}\u0000${range.epoch}\u0000${range.reason}\u0000${range.segmentId ?? ""}\u0000${range.first}`,
+        lossDoc(range).doc,
+      ]);
+      for (const marker of markers) {
+        const fields = (marker.doc.marker ?? {}) as { event_id?: unknown };
+        keyed.push([`marker\u0000${String(fields.event_id)}`, marker.doc]);
+      }
+      const ids = new Map<string, readonly [number, bigint]>();
+      const records: LedgerRecord[] = [];
+      for (const [key, doc] of keyed) {
+        let fixed = this.#ids.get(key) ?? ids.get(key);
+        if (fixed === undefined) {
+          fixed = [this.#order, BigInt(Date.now()) * 1_000_000n];
+          this.#order += 1;
+        }
+        ids.set(key, fixed);
+        records.push({
+          ...doc,
+          schema_version: SCHEMA,
+          order: fixed[0],
+          written_at_unix_nano: fixed[1],
+        });
+      }
+      this.#ids = ids;
+      return ledger.store(records);
+    } catch {
+      return false;
+    }
+  }
+}
+
+/**
  * The Fabric worker's capture pipeline: one completed exchange in, one protected spool
  * record (or one named loss) out. PROTECT runs before anything is written; a failure
  * anywhere is a loss for that position and never reaches the agent.
@@ -892,6 +950,8 @@ export class CapturePipeline {
   closed: boolean | undefined;
   /** Run markers and seal requests from the run table (`segments.ts`). */
   readonly #runMessages = new RunMessages();
+  /** What the spool did not take, mirrored to the loss ledger (D1). */
+  readonly #mirror = new LedgerMirror();
   /** Open segments' runs, learned from their `run_start` markers (bounded, oldest out). */
   readonly #segmentRuns = new Map<string, SegmentRun>();
   /** Segments at the forced bound, to roll on the next tick ({@link rollForced}). */
@@ -1008,8 +1068,11 @@ export class CapturePipeline {
     this.markers.pump(this.#spool, (marker) => !isManifest(marker));
     // A manifest the spool refused still leads: nothing, a loss included, may precede it.
     const head = this.markers.held[0];
-    if (head !== undefined && isManifest(head)) return;
-    if (this.losses.pump(this.#spool)) this.markers.pump(this.#spool);
+    if (head === undefined || !isManifest(head)) {
+      if (this.losses.pump(this.#spool)) this.markers.pump(this.#spool);
+    }
+    // What is still in memory survives a full disk and this process's death (D1).
+    this.#mirror.mirror(this.#spool.ledger, this.losses.peek(), this.markers.held);
   }
 
   /**

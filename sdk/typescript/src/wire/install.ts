@@ -466,6 +466,13 @@ function installWith(
     },
     spoolDir,
     spoolMaxBytes: Number(settings.spoolMaxBytes),
+    spoolMaxReceipts: settings.spoolMaxReceipts,
+    ...(settings.spoolDurableBoundary === undefined
+      ? {}
+      : { spoolDurableBoundary: settings.spoolDurableBoundary }),
+    // 049 §7.8: the plaintext migration is the local profile's explicit opt-in only; under
+    // production it is refused (FW-022 in the status document) and never run.
+    spoolMigratePlaintext: settings.spoolMigratePlaintext && gate.profile !== "production",
     native: { ...options.native },
     traces: { target: { ...targetOf(settings.otlp) }, headers: { ...settings.otlp.headers } },
     content:

@@ -42,7 +42,7 @@ import { heartbeatSpan } from "./loss.js";
 import { manifestDigest, manifestToSpan } from "./p1.js";
 import { ROLE_TABLE_VERSION } from "./roles.generated.js";
 import type { ContentGate } from "./protect.js";
-import type { Spool } from "./spool.js";
+import { type Spool, writePrefix } from "./spool.js";
 import type { EndpointMatcher, WireSettings } from "./types.js";
 
 export { FIELD_REGISTRY_REVISION, MANIFEST_FIELDS, MANIFEST_POINTS };
@@ -1011,7 +1011,7 @@ function markerBytes(marker: MarkerEntry): number {
 
 /**
  * Markers waiting for the spool (Python `Sender._held` + `_write_docs`): written in
- * order, one record per file (batch files are `055-t16`'s), into the spool's reserve.
+ * order, up to 64 to a batch file (`spool.ts` `writePrefix`), into the spool's reserve.
  * What is spooled is always a prefix: after a refused or failed record nothing later is
  * written in this pump, so a `final` never overtakes an earlier manifest. Bounded; a
  * marker past the bound is dropped and counted (its epoch is then unverified).
@@ -1039,21 +1039,15 @@ export class MarkerQueue {
    * stops before the first held marker it accepts (that marker and the rest stay held).
    */
   pump(spool: Pick<Spool, "writeBatch">, until?: (marker: MarkerEntry) => boolean): number {
+    let take = 0;
+    while (take < this.held.length && until?.(this.held[take]!) !== true) take++;
     let written = 0;
-    while (this.held.length > 0) {
-      const marker = this.held[0]!;
-      if (until?.(marker) === true) break;
-      let result: unknown;
-      try {
-        [result] = spool.writeBatch([marker], true);
-      } catch {
-        break;
-      }
-      if (typeof result !== "string") break;
-      this.held.shift();
-      this.#bytes -= markerBytes(marker);
-      written++;
+    try {
+      written = writePrefix(spool, this.held.slice(0, take));
+    } catch {
+      written = 0;
     }
+    for (const marker of this.held.splice(0, written)) this.#bytes -= markerBytes(marker);
     this.spooled += written;
     return written;
   }

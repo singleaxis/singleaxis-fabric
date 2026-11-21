@@ -504,7 +504,8 @@ export function admitEntries(
 ): AdmitOutcome[] {
   let results: (string | null | Error)[];
   try {
-    results = spool.writeBatch(entries);
+    // several entries: one batch file (D4), as Python `write_group`
+    results = entries.length > 1 ? spool.writeGroup(entries) : spool.writeBatch(entries);
   } catch (error) {
     return entries.map(() => (diskFull(error) ? "disk_full" : "internal_error"));
   }

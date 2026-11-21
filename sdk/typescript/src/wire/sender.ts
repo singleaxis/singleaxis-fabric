@@ -36,6 +36,7 @@ import {
   type SpoolDoc,
   UndecryptableRecordError,
   unframeAll,
+  validHeader,
 } from "./spool-codec.js";
 import { RecordTooLargeError, type Spool } from "./spool.js";
 
@@ -111,6 +112,22 @@ export interface SenderStats {
   orphan_heartbeats: number;
   markers_dropped: number;
   beats_exported: number;
+  /** Plaintext records sealed by the explicit local-profile migration. */
+  spool_migrated: number;
+  /** Loss and marker records exported from dead writers' ledger slots. */
+  ledger_recovered: number;
+}
+
+/** The spool's durability and loss-ledger counters (Python `Sender.stats`). */
+export interface SpoolHealth {
+  /** 1 while the directory barrier is not established (records not durable). */
+  readonly spool_undurable: number;
+  readonly spool_barrier_failures: number;
+  readonly ledger_slots: number;
+  readonly ledger_overflows: number;
+  readonly ledger_failures: number;
+  readonly ledger_corrupt: number;
+  readonly manifests_unledgered: number;
 }
 
 interface BodyJob {
@@ -184,6 +201,8 @@ export class Sender {
     orphan_heartbeats: 0,
     markers_dropped: 0,
     beats_exported: 0,
+    spool_migrated: 0,
+    ledger_recovered: 0,
   };
   /** Body indexes (per record file) the Node accepted or rejected for good. */
   readonly #progress = new Map<string, Set<number>>();
@@ -247,14 +266,85 @@ export class Sender {
     }
   }
 
-  stats(): Readonly<SenderStats> & { readonly retiring: number; readonly backlog: number } {
+  stats(): Readonly<SenderStats> &
+    SpoolHealth & { readonly retiring: number; readonly backlog: number } {
     let backlog: number;
     try {
       backlog = this.backlog().deliverable;
     } catch {
       backlog = -1;
     }
-    return { ...this.#stats, retiring: this.#retiring.size, backlog };
+    return { ...this.#stats, ...this.health(), retiring: this.#retiring.size, backlog };
+  }
+
+  /** The spool's durability and ledger counters (content-free). */
+  health(): SpoolHealth {
+    const ledger = this.spool.ledger?.stats();
+    return {
+      spool_undurable: this.spool.durable ? 0 : 1,
+      spool_barrier_failures: this.spool.barrierFailures,
+      ledger_slots: ledger?.slots ?? 0,
+      ledger_overflows: ledger?.overflows ?? 0,
+      ledger_failures: ledger?.failures ?? 0,
+      ledger_corrupt: ledger?.corrupt ?? 0,
+      manifests_unledgered: ledger?.manifestsUnledgered ?? 0,
+    };
+  }
+
+  /**
+   * Establishes the spool's directory barrier (Python `ensure_durable`); a failure is
+   * warned about once until it succeeds, by class only. Delivery goes on either way, with
+   * `spool_undurable` reported; no flush or close succeeds until it holds.
+   */
+  ensureDurable(): boolean {
+    if (this.spool.durable) return true;
+    const failures = this.spool.barrierFailures;
+    if (this.spool.establishBarrier()) {
+      if (failures > 0) this.#warn("fabric.wire: spool directory barrier established");
+      return true;
+    }
+    if (failures === 0) {
+      this.#warn(
+        "fabric.wire: spool directory barrier not established; spooled records are not durable " +
+          "against power loss (retrying). Fix: put FABRIC_WIRE_SPOOL_DIR on a local volume whose " +
+          "directories the agent's user can open, or set FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY to the " +
+          "highest ancestor it may fsync",
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Drainer: exports the ledger slots of processes that died with unspooled loss or marker
+   * records (D1), directly (a full disk needs no room for this), then clears them; a
+   * failed export leaves the slot for the next attempt. Returns the spans exported.
+   */
+  async recoverOrphans(): Promise<number> {
+    const ledger = this.spool.ledger;
+    if (ledger === undefined || !this.spool.holder) return 0;
+    let recovered = 0;
+    for (const { index, records } of ledger.orphans()) {
+      let delivered = false;
+      let spans: OtlpSpan[] = [];
+      try {
+        spans = records
+          .filter(
+            (doc) =>
+              (doc.record_kind === "loss" || doc.record_kind === "marker") && validHeader(doc, 0),
+          )
+          .map((doc) => this.#span(doc as SpoolDoc));
+        delivered = spans.length === 0 || (await this.#o.traces.export(spans)).outcome === "ok";
+      } catch {
+        delivered = false;
+      }
+      if (delivered && ledger.clear(index)) {
+        this.#stats.ledger_recovered += spans.length;
+        recovered += spans.length;
+      } else if (!delivered) {
+        ledger.releaseSlot(index);
+      }
+    }
+    return recovered;
   }
 
   /** Starts the delivery loop (idempotent). */
@@ -295,20 +385,32 @@ export class Sender {
   async #run(): Promise<void> {
     let scanned = -RESCAN_MS;
     let locked = -LOCK_RETRY_MS;
+    let barrier = -RESCAN_MS;
     const sleep = this.#o.sleep ?? defaultSleep;
     while (!this.#stopped) {
       let state: DrainState;
       try {
+        if (!this.spool.durable && now() - barrier >= RESCAN_MS) {
+          barrier = now();
+          this.ensureDurable();
+        }
         if (now() - scanned >= RESCAN_MS) {
           scanned = now();
           this.spool.rescan();
           this.spool.settle(); // own records drained elsewhere: consume their receipts
-          if (this.spool.holder) this.scanEpochs();
+          if (this.spool.holder) {
+            await this.recoverOrphans();
+            this.scanEpochs();
+          }
         }
         await this.exportBeats();
         if (!this.spool.holder && now() - locked >= LOCK_RETRY_MS) {
           locked = now();
-          if (this.spool.tryLock()) this.scanEpochs();
+          if (this.spool.tryLock()) {
+            // a new drainer: dead processes' ledger slots first
+            await this.recoverOrphans();
+            this.scanEpochs();
+          }
         }
         state = this.spool.holder ? await this.drain() : "idle";
         if (state === "idle" && this.spool.holder) this.idlePasses += 1;
@@ -350,6 +452,11 @@ export class Sender {
    */
   async drain(): Promise<DrainState> {
     if (!this.#retireDelivered()) return "retry";
+    if (this.spool.migrate) {
+      // 049 §7.8: the explicit local migration, before any read (an error: retried)
+      this.#stats.spool_migrated += this.spool.migratePlaintext();
+      this.spool.migrate = false;
+    }
     const skip = this.#skipped;
     const names = this.spool
       .names()
@@ -748,7 +855,9 @@ export class Sender {
   async flush(deadline: number): Promise<boolean> {
     let delivered: boolean;
     try {
-      delivered = (await this.#settle(deadline, false)) && (await this.#beatsUntil(deadline));
+      const durable = this.ensureDurable();
+      delivered =
+        (await this.#settle(deadline, false)) && (await this.#beatsUntil(deadline)) && durable;
     } catch {
       delivered = false;
     }
@@ -776,8 +885,10 @@ export class Sender {
   async close(deadline: number, options: { exiting?: boolean } = {}): Promise<boolean> {
     let settled: boolean;
     try {
+      const durable = this.ensureDurable();
       settled =
-        options.exiting === true && !this.spool.holder ? true : await this.#settle(deadline, true);
+        (options.exiting === true && !this.spool.holder ? true : await this.#settle(deadline, true)) &&
+        durable;
     } catch {
       settled = false;
     }

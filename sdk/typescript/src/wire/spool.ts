@@ -20,9 +20,13 @@
  * other call can interleave with a write or a rescan.
  *
  * Record files use Node `fs` (libuv opens them with `O_CLOEXEC`); the `.admit` and
- * `.lock` files and directory fsyncs use the native module (§4.4). Left to `055-t16`:
- * the loss ledger, `.ack` receipts for other writers, the ancestor directory barrier,
- * batch-file writing and the plaintext migration (a Python batch file is read here).
+ * `.lock` files, the loss ledger (`ledger.ts`) and the spool directory's fsyncs use the
+ * native module (§4.4). Unit `055-t16` adds the loss ledger, `.ack` receipts for other
+ * writers (at least 128 bytes each, at most 4,096 and an eighth of the bound, expired
+ * after an hour), the ancestor directory barrier (`.barrier`), batch files (`FWSPOOLB`)
+ * and the explicit local-profile plaintext migration. The ancestors above the spool
+ * directory are not the agent's (the native module opens only directories it owns), so
+ * the barrier walk fsyncs them with Node `fs`.
  */
 import {
   closeSync,
@@ -35,7 +39,9 @@ import {
   readSync,
   ftruncateSync,
   readdirSync,
+  realpathSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeSync,
   writevSync,
@@ -43,6 +49,7 @@ import {
 import { dirname, join } from "node:path";
 import { isMainThread } from "node:worker_threads";
 
+import { LEDGER, LEDGER_SIZE, LossLedger, NEW_PREFIX } from "./ledger.js";
 import {
   FLOCK_EXCLUSIVE,
   FLOCK_UNLOCK,
@@ -52,11 +59,13 @@ import {
 } from "./native.js";
 import {
   CorruptRecordError,
+  ENVELOPE_MAGIC,
   OverBoundError,
   SCHEMA,
   SPOOL_KEY_BYTES,
   type SpoolDoc,
   UndecryptableRecordError,
+  batchFrame,
   frame,
   overBound,
   recordName,
@@ -69,9 +78,9 @@ import {
 /** Loss and marker records may exceed the bound by this much (the ledger's share included). */
 export const RESERVE_BYTES = 1024 * 1024;
 /** The shared loss ledger (Python `_ledger.LEDGER`), preallocated inside the reserve. */
-export const LEDGER = ".ledger";
+export { LEDGER };
 /** The ledger's size: a 4 KiB header and 64 slots of 4 KiB (Python `_ledger`). */
-export const LEDGER_BYTES = 4096 + 64 * 4096;
+export const LEDGER_BYTES = LEDGER_SIZE;
 /** The shared admission lock every writer of the directory takes (never `.lock`). */
 export const ADMIT_LOCK = ".admit";
 export const DRAIN_LOCK = ".lock";
@@ -82,14 +91,24 @@ export const QUARANTINE_SUFFIX = ".corrupt";
 export const ACK_SUFFIX = ".ack";
 /** A receipt counts at least this much (an inode and a directory entry). */
 export const RECEIPT_OVERHEAD = 128;
-/** Temp files older than this were left by a writer that exited (Python `RECEIPT_TTL_S`). */
+/** Receipts kept for other writers, oldest expired first (Python `DEFAULT_MAX_RECEIPTS`). */
+export const DEFAULT_MAX_RECEIPTS = 4096;
+/**
+ * Temp files and receipts older than this were left by a writer that exited (Python
+ * `RECEIPT_TTL_S`); the drainer removes them.
+ */
 export const STALE_MS = 3600 * 1000;
+/** The spool's directory barrier marker (Python `BARRIER_MARKER`). */
+export const BARRIER_MARKER = ".barrier";
+const BARRIER_CONTENT = Buffer.from("fabric wire spool barrier v1\n", "ascii");
+/** Records of one batch file (Python `MAX_BATCH`'s writer side, `_BATCH`). */
+export const WRITE_BATCH = 64;
 /** Names Python's spool owns beside records (`_own_name`), and the native self-test probe. */
 /** The content-free note of records left at exit with no drainer (Python `EXIT_NOTE`). */
 export const EXIT_NOTE = ".exit-backlog";
 export const EXIT_NOTE_SCHEMA = "fabric.wire-exit-backlog/v1";
-const OWN_NAMES = new Set([DRAIN_LOCK, ADMIT_LOCK, ".barrier", LEDGER, ".epochs", EXIT_NOTE]);
-const OWN_PREFIXES = [TMP_PREFIX, ".ledger-new-", ".fabric-selftest-"];
+const OWN_NAMES = new Set([DRAIN_LOCK, ADMIT_LOCK, BARRIER_MARKER, LEDGER, ".epochs", EXIT_NOTE]);
+const OWN_PREFIXES = [TMP_PREFIX, NEW_PREFIX, ".fabric-selftest-"];
 const OWN_SUFFIXES = [".rec", ACK_SUFFIX, QUARANTINE_SUFFIX];
 
 /** A spool directory or key that cannot be used: what is wrong and how to fix it. */
@@ -254,6 +273,13 @@ export interface SpoolIo {
   truncate(path: string): void;
   /** Writes `data` to `path` with mode 0600 (truncating; never through a symlink). */
   writeFile(path: string, data: Uint8Array): void;
+  /**
+   * fsync an ancestor directory of the spool (the barrier walk). It is not the agent's,
+   * so it is opened with Node `fs` (read-only), never through the native module.
+   */
+  syncAncestor(path: string): void;
+  /** Whether `path` is the root of its filesystem (its entry lives on another one). */
+  mountPoint(path: string): boolean;
 }
 
 /**
@@ -314,6 +340,21 @@ export function nodeSpoolIo(addon: NativeAddon): SpoolIo {
         closeSync(fd);
       }
     },
+    syncAncestor: (path) => {
+      const fd = scrub("open", () => openSync(path, constants.O_RDONLY | (constants.O_DIRECTORY ?? 0)));
+      try {
+        scrub("fsync", () => fsyncSync(fd));
+      } finally {
+        closeSync(fd);
+      }
+    },
+    mountPoint: (path) => {
+      try {
+        return path === dirname(path) || statSync(path).dev !== statSync(dirname(path)).dev;
+      } catch {
+        return false; // unknown is "no": the fsync decides
+      }
+    },
     syncDir: (path) => {
       const handle = addon.openDir(path);
       if (handle < 0) throw new NativeSpoolError("openDir", handle);
@@ -354,7 +395,7 @@ export function accounted(name: string, size: number): number | undefined {
  * another user. Python `_secure_dir`. Exported for `install()`, which prepares the spool
  * directory before the native module's self-test runs in it.
  */
-export function secureDir(path: string): void {
+export function secureDir(path: string): string[] {
   const missing: string[] = [];
   let current = path;
   for (;;) {
@@ -369,7 +410,7 @@ export function secureDir(path: string): void {
       current = parent;
     }
   }
-  for (const directory of missing.reverse()) {
+  for (const directory of [...missing].reverse()) {
     try {
       scrub("mkdir", () => mkdirSync(directory, 0o700));
     } catch (error) {
@@ -390,6 +431,7 @@ export function secureDir(path: string): void {
     );
   }
   scrub("chmod", () => chmodSync(path, 0o700));
+  return missing; // deepest first: their entries are not durable yet
 }
 
 /** A record of {@link Spool.recover}: one pending file and its records, in drain order. */
@@ -428,6 +470,22 @@ export interface SpoolOptions {
   readonly clock?: () => bigint;
   /** The admission lock's retry deadline (default {@link ADMIT_TIMEOUT_MS}). */
   readonly admitTimeoutMs?: number;
+  /** Receipts kept for other writers (`FABRIC_WIRE_SPOOL_MAX_RECEIPTS`, default 4,096). */
+  readonly maxReceipts?: number;
+  /**
+   * `FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY`: the spool directory or an ancestor; the barrier
+   * walk fsyncs it but never its parent. Default: the root of the spool's filesystem.
+   */
+  readonly durableBoundary?: string;
+  /**
+   * The explicit local-profile migration of plaintext records (with a key only; the
+   * caller refuses it under the production profile, 049 §7.8).
+   */
+  readonly migratePlaintext?: boolean;
+  /** Open the shared loss ledger (default `true`; Python's spool always tries). */
+  readonly ledger?: boolean;
+  /** The wall clock in ms for receipt and temp-file ages (tests). */
+  readonly now?: () => number;
 }
 
 /** A record to write: its header fields (kind, source and body) and its body bytes. */
@@ -438,6 +496,19 @@ export interface SpoolEntry {
 
 /** Per record: its file name, `null` (refused: over the bound or the lock busy) or the error. */
 export type WriteOutcome = string | null | Error;
+
+/** The spool's directory barrier marker is not a regular file (never followed). */
+export class BarrierMarkerError extends Error {
+  constructor() {
+    super(
+      "the spool barrier marker is not a regular file; fix: remove FABRIC_WIRE_SPOOL_DIR/.barrier " +
+        "(it is written again by the next barrier walk)",
+    );
+    this.name = "BarrierMarkerError";
+  }
+}
+
+const REFUSED = new Set(["EACCES", "EPERM", "EROFS"]);
 
 const ANCHOR_NS = BigInt(Date.now()) * 1_000_000n - process.hrtime.bigint();
 const wallClockNs = (): bigint => ANCHOR_NS + process.hrtime.bigint();
@@ -479,8 +550,22 @@ export class Spool {
   sharedBytes = 0;
   /** Admissions refused because the lock stayed busy. */
   admissionTimeouts = 0;
-  /** Own records that will never be delivered (quarantined). */
+  /** Own records that will never be delivered (quarantined, or gone without a receipt). */
   failed = 0;
+  /**
+   * The spool's directory and its ancestors' entries are durable (the barrier walk
+   * completed, {@link establishBarrier}); until then records are written and delivered,
+   * but `spool_undurable` is reported and no flush or close succeeds.
+   */
+  durable = false;
+  /** Barrier walks that failed (each retried by the next call). */
+  barrierFailures = 0;
+  /** At most this many receipts are kept (never more than an eighth of the bound). */
+  readonly maxReceipts: number;
+  /** The loss ledger, when it could be opened (created fully allocated while there is room). */
+  readonly ledger: LossLedger | undefined;
+  /** Plaintext records still to be sealed by the explicit migration (key set, opted in). */
+  migrate: boolean;
   /** Whether this process holds the drain lock. */
   holder = false;
   /** Names this process wrote, until their outcome is known. */
@@ -498,6 +583,11 @@ export class Spool {
   readonly #pid: number;
   readonly #clock: () => bigint;
   readonly #admitTimeoutMs: number;
+  readonly #now: () => number;
+  /** The configured durable boundary (resolved), when one is set. */
+  readonly #boundary: string | undefined;
+  /** Parents holding an entry this process created: never accepted as the boundary. */
+  readonly #createdIn: ReadonlySet<string>;
   readonly #files = new Map<string, number>();
   /** Own records being retired: a retry after a failure must still unlink, not rename. */
   readonly #ownRetiring = new Set<string>();
@@ -527,9 +617,21 @@ export class Spool {
     this.#pid = options.pid ?? process.pid;
     this.#clock = options.clock ?? wallClockNs;
     this.#admitTimeoutMs = options.admitTimeoutMs ?? ADMIT_TIMEOUT_MS;
+    this.#now = options.now ?? Date.now;
     this.maxBytes = options.maxBytes;
-    secureDir(directory);
+    this.maxReceipts = Math.max(
+      1,
+      Math.min(
+        options.maxReceipts ?? DEFAULT_MAX_RECEIPTS,
+        Math.floor(options.maxBytes / (8 * RECEIPT_OVERHEAD)),
+      ),
+    );
+    this.migrate = options.migratePlaintext === true && options.key !== undefined;
+    const created = secureDir(directory);
     this.dir = directory.length > 1 ? directory.replace(/\/+$/, "") : directory;
+    this.#boundary =
+      options.durableBoundary === undefined ? undefined : realpathSync(options.durableBoundary);
+    this.#createdIn = new Set(created.map((dir) => dirname(realpathSync(dir))));
     if (this.#io.readdir(this.dir).some((name) => !ownName(name))) {
       throw new SpoolConfigError(
         "FABRIC_WIRE_SPOOL_DIR holds files the wire spool does not own",
@@ -552,6 +654,19 @@ export class Spool {
     } finally {
       this.#addon.close(dirHandle);
     }
+    // The loss ledger (D1): created fully allocated now, while there is room, so the
+    // evidence of a loss survives a full disk and this process. Without it (a volume
+    // already full, a foreign file) losses are spooled or held in memory, as before.
+    let ledger: LossLedger | undefined;
+    if (options.ledger !== false) {
+      try {
+        ledger = new LossLedger(this.dir, this.#addon, { pid: this.#pid });
+      } catch {
+        ledger = undefined;
+      }
+    }
+    this.ledger = ledger;
+    if (ledger !== undefined) this.ledgerSeen = true;
     this.rescan();
   }
 
@@ -569,11 +684,12 @@ export class Spool {
     return this.#key !== undefined;
   }
 
-  /** Releases the drain lock and the admission handle. Idempotent. */
+  /** Releases the drain lock, the admission handle and the ledger's slots. Idempotent. */
   close(): void {
     this.release();
     if (this.#admitHandle > 0) this.#addon.close(this.#admitHandle);
     this.#admitHandle = -1;
+    this.ledger?.close();
   }
 
   // --------------------------------------------------------------------- the ledger
@@ -623,21 +739,33 @@ export class Spool {
 
   /**
    * Rebuilds the ledger from disk (pending, temp and quarantined records and receipts of
-   * all writers). The drainer removes temp files older than an hour (a writer that
-   * exited). When a file cannot be observed, no charge is released.
+   * all writers). The drainer removes temp files and receipts older than an hour (a
+   * writer that exited), finishes an interrupted receipt truncation and expires the
+   * oldest receipts over the count. When a file cannot be observed, no charge is
+   * released: the scan only adds and updates, and a later complete scan settles the rest.
    */
   rescan(): void {
     const scanned = new Map<string, number>();
     let unknown = false;
-    const stale = Date.now() - STALE_MS;
+    const stale = this.#now() - STALE_MS;
     for (const name of this.#io.readdir(this.dir)) {
       if (name === LEDGER) this.ledgerSeen = true;
       const path = this.#path(name);
-      const tmp = name.startsWith(TMP_PREFIX) || name.startsWith(".ledger-new-");
+      const tmp = name.startsWith(TMP_PREFIX) || name.startsWith(NEW_PREFIX);
+      const ack = name.endsWith(ACK_SUFFIX);
       let info: SpoolStat;
       try {
         info = this.#io.lstat(path);
-        if (tmp && this.holder && info.mtimeMs < stale) {
+        if (ack && this.holder && info.size > 0) {
+          // crashed between rename and truncate; else counted at its size
+          try {
+            this.#io.truncate(path); // the truncation also dates the receipt
+            info = this.#io.lstat(path);
+          } catch (error) {
+            if (errnoOf(error) === "ENOENT") throw error;
+          }
+        }
+        if ((tmp || ack) && this.holder && info.mtimeMs < stale) {
           try {
             this.#io.unlink(path);
             continue;
@@ -659,6 +787,35 @@ export class Spool {
     this.bytes = 0;
     this.receipts = 0;
     for (const [name, size] of scanned) this.#account(name, size);
+    this.#trim();
+  }
+
+  /**
+   * Drainer: expires the oldest receipts beyond {@link maxReceipts} (their writers, if
+   * still running, count those records as failures: delivery is no longer provable).
+   * Best effort: a receipt that cannot be removed stays counted.
+   */
+  #trim(): void {
+    if (!this.holder || this.receipts <= this.maxReceipts) return;
+    const entries: [number, string][] = [];
+    for (const name of this.#io.readdir(this.dir)) {
+      if (!name.endsWith(ACK_SUFFIX) || name.startsWith(".")) continue;
+      try {
+        entries.push([this.#io.lstat(this.#path(name)).mtimeMs, name]);
+      } catch {
+        // gone meanwhile
+      }
+    }
+    entries.sort((a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+    for (const [, name] of entries.slice(0, Math.max(0, entries.length - this.maxReceipts))) {
+      try {
+        this.#io.unlink(this.#path(name));
+      } catch (error) {
+        if (errnoOf(error) !== "ENOENT") continue; // still counted
+        // already pruned by another process: still dropped from the count
+      }
+      this.#account(name, undefined);
+    }
   }
 
   /** What loss and marker records may use above the bound (Python `_reserve_bytes`). */
@@ -847,12 +1004,65 @@ export class Spool {
    * A record over its body bound is refused before anything is written
    * ({@link OverBoundError}).
    */
-  writeBatch(records: readonly SpoolEntry[], reserve = false): WriteOutcome[] {
+  writeBatch(records: readonly SpoolEntry[], reserve = false, group = false): WriteOutcome[] {
     const results: WriteOutcome[] = records.map((record) =>
       overBound(record.doc) ? new OverBoundError() : null,
     );
     const kept = records.flatMap((record, index) => (results[index] === null ? [index] : []));
-    const prepared = kept.map((index) => this.#prepare(records[index]!));
+    if (group && kept.length > 0) {
+      // One batch file (D4): every kept record's outcome is the file's.
+      const [outcome] = this.#write([this.#prepareGroup(kept.map((index) => records[index]!))], reserve);
+      for (const index of kept) results[index] = outcome ?? null;
+      return results;
+    }
+    const outcomes = this.#write(
+      kept.map((index) => this.#prepare(records[index]!)),
+      reserve,
+    );
+    kept.forEach((index, at) => {
+      results[index] = outcomes[at] ?? null;
+    });
+    return results;
+  }
+
+  /**
+   * Exchange and records-input entries in one batch file (Python `write_group`, D4): one
+   * temp file, one write, one fsync, one rename and one directory fsync for all of them;
+   * each record's outcome is the file's. When the file does not fit under the bound the
+   * records are written one per file instead, so as many as fit are kept.
+   */
+  writeGroup(records: readonly SpoolEntry[]): WriteOutcome[] {
+    const results: WriteOutcome[] = records.map((record) =>
+      overBound(record.doc) ? new OverBoundError() : null,
+    );
+    const kept = records.flatMap((record, index) => (results[index] === null ? [index] : []));
+    const entries = kept.map((index) => records[index]!);
+    let outcomes: WriteOutcome[];
+    if (entries.length < 2) {
+      outcomes = this.writeBatch(entries);
+    } else {
+      outcomes = this.writeBatch(entries, false, true);
+      if (outcomes[0] === null) outcomes = this.writeBatch(entries);
+    }
+    kept.forEach((index, at) => {
+      results[index] = outcomes[at] ?? null;
+    });
+    return results;
+  }
+
+  /**
+   * Loss and marker records in order, {@link WRITE_BATCH} to a batch file, in the
+   * reserve ({@link writePrefix}). Returns how many (a prefix) are spooled.
+   */
+  writePrefix(records: readonly SpoolEntry[]): number {
+    return writePrefix(this, records);
+  }
+
+  /** Writes prepared files (each one record or one batch): per file its outcome. */
+  #write(
+    prepared: readonly { name: string; pieces: Buffer[]; size: number }[],
+    reserve: boolean,
+  ): WriteOutcome[] {
     const limit = this.#limit(reserve);
     const live: number[] = [];
     prepared.forEach(({ name, size }, at) => {
@@ -934,14 +1144,11 @@ export class Spool {
       this.mine.add(name);
       outcome.set(at, name);
     }
-    kept.forEach((index, at) => {
-      results[index] = outcome.get(at) ?? null;
-    });
-    return results;
+    return prepared.map((_, at) => outcome.get(at) ?? null);
   }
 
-  /** The record framed and (with a key) sealed: its name, pieces and size. */
-  #prepare(record: SpoolEntry): { name: string; pieces: Buffer[]; size: number } {
+  /** The record's name and frame (its order and write time assigned now). */
+  #frame(record: SpoolEntry): { name: string; framed: Buffer[] } {
     const order = this.#order;
     this.#order += 1;
     const doc = {
@@ -955,10 +1162,24 @@ export class Spool {
     if (typeof epoch !== "bigint" && typeof epoch !== "number") {
       throw new TypeError("a spool record needs source.source_epoch");
     }
-    const name = recordName(epoch, this.#pid, order);
-    const framed = frame(doc, record.bodies ?? []);
+    return { name: recordName(epoch, this.#pid, order), framed: frame(doc, record.bodies ?? []) };
+  }
+
+  #sealed(name: string, framed: Buffer[]): { name: string; pieces: Buffer[]; size: number } {
     const pieces = this.#key === undefined ? framed : seal(name, framed, this.#key, this.keyId!);
     return { name, pieces, size: pieces.reduce((sum, piece) => sum + piece.length, 0) };
+  }
+
+  /** The record framed and (with a key) sealed: its name, pieces and size. */
+  #prepare(record: SpoolEntry): { name: string; pieces: Buffer[]; size: number } {
+    const { name, framed } = this.#frame(record);
+    return this.#sealed(name, framed);
+  }
+
+  /** Several records in one batch file named after the first (Python `_prepare(group)`). */
+  #prepareGroup(records: readonly SpoolEntry[]): { name: string; pieces: Buffer[]; size: number } {
+    const framed = records.map((record) => this.#frame(record));
+    return this.#sealed(framed[0]!.name, batchFrame(framed.map((one) => one.framed)));
   }
 
   /**
@@ -1026,31 +1247,14 @@ export class Spool {
    * pending and charged for a drainer configured with a larger bound, never quarantined).
    */
   read(name: string): Buffer {
-    const path = this.#path(name);
-    const info = this.#io.lstat(path);
-    if (info.isSymbolicLink || !info.isFile) throw new CorruptRecordError();
-    const limit = this.maxBytes + RESERVE_BYTES;
-    if (info.size > limit) throw new RecordTooLargeError();
-    let fd: number;
+    let raw: Buffer;
     try {
-      fd = this.#io.openRead(path);
+      raw = this.#readRaw(name);
     } catch (error) {
       if (errnoOf(error) === "ELOOP") throw new CorruptRecordError();
       throw error;
     }
-    try {
-      const buffer = Buffer.alloc(Math.min(info.size, limit) + 1);
-      let filled = 0;
-      while (filled < buffer.length) {
-        const got = this.#io.read(fd, buffer.subarray(filled), filled);
-        if (got === 0) break;
-        filled += got;
-      }
-      if (filled > limit) throw new RecordTooLargeError();
-      return unseal(buffer.subarray(0, filled), name, this.#key, this.keyId);
-    } finally {
-      closeQuietly(this.#io, fd);
-    }
+    return unseal(raw, name, this.#key, this.keyId);
   }
 
   /**
@@ -1131,9 +1335,10 @@ export class Spool {
    * Retires delivered records in order, with one directory fsync for all of them (Python
    * `retire_many`): an own record is unlinked; another writer's becomes its delivery
    * receipt in place (renamed to `<name>.ack`, truncated to zero and fsync'd), which its
-   * writer consumes ({@link settle}). Returns how many (a prefix of `names`) are retired
-   * and the error that stopped the rest (they stay pending and charged; a retry is
-   * idempotent). Receipt expiry and the receipt cap are unit 055-t16's.
+   * writer consumes ({@link settle}). The rename happens under the admission lock, so an
+   * admission's scan never misses the file under both names. Returns how many (a prefix
+   * of `names`) are retired and the error that stopped the rest (they stay pending and
+   * charged; a retry is idempotent). Then the oldest receipts over the cap expire.
    */
   retireMany(names: readonly string[]): { retired: number; error: Error | undefined } {
     const done: { name: string; own: boolean; renamed: boolean }[] = [];
@@ -1151,7 +1356,9 @@ export class Spool {
           }
         } else {
           try {
-            this.#io.rename(this.#path(name), this.#path(name + ACK_SUFFIX));
+            this.#admission(() =>
+              this.#io.rename(this.#path(name), this.#path(name + ACK_SUFFIX)),
+            );
           } catch (failure) {
             if (errnoOf(failure) !== "ENOENT") throw failure; // renamed by an earlier try
           }
@@ -1175,6 +1382,11 @@ export class Spool {
       for (const { name, own, renamed } of done) this.#settleRetired(name, own, renamed);
     }
     if (synced) for (const { name } of done) this.#ownRetiring.delete(name);
+    try {
+      this.#trim();
+    } catch {
+      // retried on the next retirement and rescan
+    }
     return { retired: synced ? done.length : 0, error };
   }
 
@@ -1193,11 +1405,15 @@ export class Spool {
     if (this.mine.size > 0) {
       const present = new Set(this.#io.readdir(this.dir));
       for (const name of [...this.mine]) {
-        if (present.has(name)) continue;
+        if (present.has(name) || this.#exists(name)) continue;
         let receipt = true;
         try {
           this.#io.unlink(this.#path(name + ACK_SUFFIX));
-        } catch {
+        } catch (error) {
+          // A receipt that is there but cannot be removed now: the record stays pending
+          // and the receipt charged; the next settle retries. Only a missing receipt is
+          // a failure (an expired receipt cannot turn a flush into success).
+          if (errnoOf(error) !== "ENOENT") continue;
           receipt = false;
         }
         this.#account(name + ACK_SUFFIX, undefined);
@@ -1208,6 +1424,213 @@ export class Spool {
     let pending = 0;
     for (const name of names) if (this.mine.has(name)) pending += 1;
     return pending;
+  }
+
+  // ---------------------------------------------------------------- the barrier
+
+  /**
+   * Makes the spool directory's own entry, and its ancestors' entries, durable (Python
+   * `establish_barrier`): fsync, top-down, every directory from the spool's parent up to
+   * the durable boundary (`/`, the root of the spool's filesystem, or the configured
+   * boundary, which is fsync'd but never its parent). Once a walk completes,
+   * `.barrier` is written inside the spool (fsync'd, then the spool fsync'd). Only while
+   * that marker is present may a later walk (a restart) take an ancestor whose fsync is
+   * refused (`EACCES`, `EPERM`, `EROFS`) as the boundary, and never one holding a
+   * directory this process created; otherwise the refusal fails the walk, as any other
+   * error does. A marker that is not a regular file (a planted symlink) fails it too.
+   * `true` once established; a failure is counted and retried by the next call.
+   */
+  establishBarrier(): boolean {
+    if (this.durable) return true;
+    try {
+      this.#walk();
+    } catch {
+      this.barrierFailures += 1;
+      return false;
+    }
+    this.durable = true;
+    return true;
+  }
+
+  /** Bottom-up, the directories whose fsync makes the spool's entry durable. */
+  #chain(): string[] {
+    const chain: string[] = [];
+    let current = realpathSync(this.dir);
+    while (current !== this.#boundary && !this.#io.mountPoint(current)) {
+      current = dirname(current);
+      chain.push(current);
+    }
+    return chain;
+  }
+
+  #marked(): boolean {
+    let info: SpoolStat;
+    try {
+      info = this.#io.lstat(this.#path(BARRIER_MARKER));
+    } catch (error) {
+      if (errnoOf(error) === "ENOENT") return false;
+      throw error;
+    }
+    if (info.isSymbolicLink || !info.isFile) throw new BarrierMarkerError();
+    return true;
+  }
+
+  #walk(): void {
+    const marked = this.#marked();
+    for (const parent of this.#chain().reverse()) {
+      try {
+        this.#io.syncAncestor(parent);
+      } catch (error) {
+        const code = errnoOf(error);
+        if (!marked || typeof code !== "string" || !REFUSED.has(code) || this.#createdIn.has(parent)) {
+          throw error;
+        }
+        // A completed walk is on record: this ancestor and those above it were made
+        // durable then. Directories below it must still succeed.
+      }
+    }
+    if (marked) return;
+    const path = this.#path(BARRIER_MARKER);
+    let fd: number | undefined;
+    try {
+      fd = this.#io.openExclusive(path);
+    } catch (error) {
+      if (errnoOf(error) !== "EEXIST" || !this.#marked()) throw error; // another process first
+    }
+    if (fd !== undefined) {
+      try {
+        if (this.#io.write(fd, BARRIER_CONTENT, 0) !== BARRIER_CONTENT.length) {
+          throw new Error("short barrier marker write");
+        }
+        this.#io.fsync(fd);
+      } catch (error) {
+        try {
+          this.#io.unlink(path);
+        } catch {
+          // a leftover marker is not a regular-file problem: the next walk re-checks
+        }
+        throw error;
+      } finally {
+        closeQuietly(this.#io, fd);
+      }
+    }
+    this.#io.syncDir(this.dir);
+  }
+
+  // ------------------------------------------------------------- plaintext migration
+
+  /**
+   * Records on disk without the envelope, pending or quarantined (both hold content at
+   * rest): the spool is encrypted at rest only when this is zero and a key is set.
+   */
+  plaintextRecords(): number {
+    let count = 0;
+    for (const name of this.#io.readdir(this.dir)) {
+      if (name.startsWith(".") || !(name.endsWith(".rec") || name.endsWith(QUARANTINE_SUFFIX))) {
+        continue;
+      }
+      const head = this.#head(name, ENVELOPE_MAGIC.length);
+      if (head !== undefined && head.length > 0 && !head.equals(ENVELOPE_MAGIC)) count += 1;
+    }
+    return count;
+  }
+
+  /** The first `length` bytes of a spool file; `undefined` when it cannot be read. */
+  #head(name: string, length: number): Buffer | undefined {
+    let fd: number;
+    try {
+      fd = this.#io.openRead(this.#path(name));
+    } catch {
+      return undefined; // gone (delivered or renamed) meanwhile
+    }
+    try {
+      const out = Buffer.alloc(length);
+      const got = this.#io.read(fd, out, 0);
+      return out.subarray(0, got);
+    } catch {
+      return Buffer.alloc(0);
+    } finally {
+      closeQuietly(this.#io, fd);
+    }
+  }
+
+  /**
+   * Seals every intact plaintext record in place under the key (Python
+   * `migrate_plaintext`): the explicit, local-profile opt-in
+   * (`FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT`), never in production. The drainer runs it
+   * before it reads any record; only the lock holder reads, so no reader sees a record
+   * mid-migration. Each record is sealed into a temp file (fsync'd), renamed over itself
+   * under the admission lock and the directory fsync'd. A record whose frame does not
+   * verify is left as is, for quarantine. Returns how many were sealed; an I/O error (or a
+   * busy admission lock) propagates, and the caller retries.
+   */
+  migratePlaintext(): number {
+    if (this.#key === undefined) return 0;
+    let sealed = 0;
+    for (const name of this.names()) {
+      const head = this.#head(name, ENVELOPE_MAGIC.length);
+      if (head === undefined || head.equals(ENVELOPE_MAGIC)) continue;
+      let raw: Buffer;
+      try {
+        raw = this.#readRaw(name);
+        unframeAll(raw);
+      } catch (error) {
+        if (error instanceof CorruptRecordError || error instanceof RecordTooLargeError) continue;
+        if (errnoOf(error) === "ENOENT") continue;
+        throw error;
+      }
+      const tmp = TMP_PREFIX + name;
+      try {
+        this.#io.unlink(this.#path(tmp)); // a crashed migration's leftover
+      } catch (error) {
+        if (errnoOf(error) !== "ENOENT") throw error;
+      }
+      const pieces = seal(name, [raw], this.#key, this.keyId!);
+      const fd = this.#io.openExclusive(this.#path(tmp));
+      try {
+        try {
+          writeAll(this.#io, fd, pieces);
+          this.#io.fsync(fd);
+        } finally {
+          closeQuietly(this.#io, fd);
+        }
+        this.#admission(() => this.#io.rename(this.#path(tmp), this.#path(name)));
+      } catch (error) {
+        try {
+          this.#io.unlink(this.#path(tmp));
+        } catch {
+          // counted by every scan until a drainer sweeps it
+        }
+        throw error;
+      }
+      this.#io.syncDir(this.dir);
+      this.#observe(name);
+      sealed += 1;
+    }
+    return sealed;
+  }
+
+  /** A record file's bytes as stored (bounded as {@link read} is), never unsealed. */
+  #readRaw(name: string): Buffer {
+    const path = this.#path(name);
+    const info = this.#io.lstat(path);
+    if (info.isSymbolicLink || !info.isFile) throw new CorruptRecordError();
+    const limit = this.maxBytes + RESERVE_BYTES;
+    if (info.size > limit) throw new RecordTooLargeError();
+    const fd = this.#io.openRead(path);
+    try {
+      const buffer = Buffer.alloc(Math.min(info.size, limit) + 1);
+      let filled = 0;
+      while (filled < buffer.length) {
+        const got = this.#io.read(fd, buffer.subarray(filled), filled);
+        if (got === 0) break;
+        filled += got;
+      }
+      if (filled > limit) throw new RecordTooLargeError();
+      return buffer.subarray(0, filled);
+    } finally {
+      closeQuietly(this.#io, fd);
+    }
   }
 
   /**
@@ -1258,10 +1681,50 @@ export class Spool {
     return total;
   }
 
-  /** The documents of the ledger (name -> charge), for tests and status. */
-  ledger(): ReadonlyMap<string, number> {
+  /** This process's per-file accounting (name -> charge), for tests and status. */
+  charges(): ReadonlyMap<string, number> {
     return new Map(this.#files);
   }
+}
+
+/**
+ * Loss and marker records in order (Python `Sender._write_docs`), {@link WRITE_BATCH} to
+ * a batch file (one admission, one fsync'd file, one rename, one directory fsync), in
+ * the reserve. A batch that does not fit as one file is written one record per file, in
+ * order, until the first refused or failed. What is spooled is always a prefix: nothing
+ * after an unwritten record is written in this pump, so a later marker (a `final` above
+ * all) never overtakes an earlier one. Returns how many are spooled. Never throws.
+ */
+export function writePrefix(spool: Pick<Spool, "writeBatch">, records: readonly SpoolEntry[]): number {
+  let done = 0;
+  for (let start = 0; start < records.length; start += WRITE_BATCH) {
+    const chunk = records.slice(start, start + WRITE_BATCH);
+    if (chunk.length > 1) {
+      let results: WriteOutcome[];
+      try {
+        results = spool.writeBatch(chunk, true, true);
+      } catch {
+        return done;
+      }
+      if (results.length === chunk.length && results.every((r) => typeof r === "string")) {
+        done += chunk.length;
+        continue;
+      }
+      // failed, not merely over the bound as one file: nothing after it is written
+      if (results.some((r) => r instanceof Error)) return done;
+    }
+    for (const record of chunk) {
+      let result: WriteOutcome | undefined;
+      try {
+        [result] = spool.writeBatch([record], true);
+      } catch {
+        return done;
+      }
+      if (typeof result !== "string") return done;
+      done += 1;
+    }
+  }
+  return done;
 }
 
 const ZERO = new Uint8Array(1);
