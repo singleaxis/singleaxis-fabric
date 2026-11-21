@@ -42,7 +42,9 @@ def main() -> None:
     out = {
         "spans": [encode_spans([span]).SerializeToString().hex() for span in spans],
         "spans_all": encode_spans(spans).SerializeToString().hex(),
-        "content": [encode_content_records([item], service_name=service).hex() for item in items],
+        "content": [
+            encode_content_records([item], service_name=service).hex() for item in items
+        ],
         "content_all": encode_content_records(items, service_name=service).hex(),
     }
     sys.stdout.write(json.dumps(out))
