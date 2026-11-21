@@ -38,6 +38,7 @@ import {
   MANIFEST_FIELDS,
   MANIFEST_POINTS,
 } from "./manifest-fields.generated.js";
+import { heartbeatSpan } from "./loss.js";
 import { manifestDigest, manifestToSpan } from "./p1.js";
 import { ROLE_TABLE_VERSION } from "./roles.generated.js";
 import type { ContentGate } from "./protect.js";
@@ -695,10 +696,10 @@ export function finalMarker(beat: Heartbeat): MarkerEntry {
 }
 
 /**
- * `(span name, attributes)` of a heartbeat or manifest marker from its spool form
- * (Python `marker_span`): a `fabric.capture_heartbeat` with the run-marker-v1 keys, or
- * the `fabric.capture_manifest` span. `fabric.event_id` is the persisted one. Run
- * markers are `055-t11`'s.
+ * `(span name, attributes)` of a marker from its spool form (Python `marker_span`): the
+ * `fabric.capture_manifest` span of a manifest, or a `fabric.capture_heartbeat` with the
+ * run-marker-v1 keys placed by kind (heartbeats, run markers, `segment_seal`;
+ * `loss.ts`'s {@link heartbeatSpan}). `fabric.event_id` is the persisted one.
  */
 export function markerSpan(
   sourceId: string,
@@ -713,18 +714,11 @@ export function markerSpan(
     attrs["fabric.source.epoch"] ??= exact(epoch);
     return [SPAN_MANIFEST, attrs];
   }
-  if (kind !== "periodic" && kind !== "final") {
-    throw new ManifestError("markerSpan reads heartbeat and manifest markers");
+  try {
+    return heartbeatSpan(sourceId, epoch, fields);
+  } catch {
+    throw new ManifestError("markerSpan reads marker objects of a known kind");
   }
-  const attrs: Record<string, unknown> = {
-    "fabric.source_id": sourceId,
-    "fabric.source.epoch": exact(epoch),
-    "fabric.heartbeat.last_sequence": fields.last_sequence,
-    "fabric.heartbeat.kind": kind,
-  };
-  if (fields.manifest_seq !== undefined) attrs["fabric.capture.manifest_seq"] = fields.manifest_seq;
-  if (fields.event_id !== undefined) attrs["fabric.event_id"] = fields.event_id;
-  return [SPAN_HEARTBEAT, attrs];
 }
 
 // ------------------------------------------------------------------------- the chain
@@ -1040,11 +1034,15 @@ export class MarkerQueue {
     return true;
   }
 
-  /** Writes the held markers in order; returns how many were spooled now. */
-  pump(spool: Pick<Spool, "writeBatch">): number {
+  /**
+   * Writes the held markers in order; returns how many were spooled now. With `until`,
+   * stops before the first held marker it accepts (that marker and the rest stay held).
+   */
+  pump(spool: Pick<Spool, "writeBatch">, until?: (marker: MarkerEntry) => boolean): number {
     let written = 0;
     while (this.held.length > 0) {
       const marker = this.held[0]!;
+      if (until?.(marker) === true) break;
       let result: unknown;
       try {
         [result] = spool.writeBatch([marker], true);
