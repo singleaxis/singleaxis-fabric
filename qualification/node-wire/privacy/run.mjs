@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // The `ts-wire-privacy` gate of spec 055 §9.2 (unit 055-t8; extended by 055-t13, -t16,
-// -t20, -t21): canary scan and scanner self-test.
+// -t20, -t21): canary scan, scanner self-test and (055-t12) the network step.
 //
 //   node qualification/node-wire/privacy/run.mjs --out report.json
 //
@@ -21,6 +21,12 @@
 // length of an original appears for a withheld or transformed object. Scenarios whose
 // spool holds fewer exchange records than calls fail (a vacuous scan proves nothing).
 //
+// Network step (unit 055-t12, lib/network.mjs): Fabric's delivery clients and redaction
+// client in a child with hostile HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY and Node's
+// startup proxy mode; 301/302/303/307/308 from the delivery and redaction endpoints; a
+// recording socket on every address that was not configured. No Fabric byte or header
+// may reach a proxy, a redirect target or the provider.
+//
 // Scanner self-test: the retain_original scenario again with a test-only fault in the
 // harness's Fabric worker that leaks one canary into a span attribute and one into a
 // spool header; the scanner must report both, or the gate fails.
@@ -36,6 +42,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { REPO, build } from "./lib/build.mjs";
+import { networkStep } from "./lib/network.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -270,6 +277,15 @@ const fault = scenario("retain_original", { fault: "leak" });
 const reported = new Set((fault.violations ?? []).map((v) => v.canary));
 const selfTestDetected = reported.has("leak_attribute") && reported.has("leak_header");
 log(`scanner self-test: ${selfTestDetected ? "reported both leaks" : "did NOT report both leaks"}`);
+// Network step (055-t12): hostile proxy environment and startup proxy mode, redirects
+// from the delivery and redaction endpoints, recording sockets on every other address.
+const network = await networkStep(bundle.network);
+log(`network: ${network.passed ? "passed" : "FAILED"} (${network.violations.length} violations)`);
+// Its self-test: one body sent through the global fetch dispatcher (which honours the
+// proxy environment and follows redirects) must be reported, or the step proves nothing.
+const networkFault = await networkStep(bundle.network, { fault: "fetch" });
+const networkSelfTest = networkFault.violations.some((v) => ["HTTP_PROXY", "redirect Location"].includes(v.where));
+log(`network self-test: ${networkSelfTest ? "reported the leak" : "did NOT report the leak"}`);
 rmSync(bundle.dir, { recursive: true, force: true });
 
 const canaryScan = scenarios.every((row) => row.passed);
@@ -281,15 +297,18 @@ const report = {
         "spool files raw (every file under FABRIC_WIRE_SPOOL_DIR: records, temps, quarantine, locks, ledger)",
         "spool records decrypted (headers, descriptors, every body)",
         "the agent process's output (stdout and stderr)",
+        "network: every byte and connection reaching a hostile proxy, a redirect target, the provider or the configured proxy",
     ],
     not_yet_scanned: {
         "OTLP requests at the sink, the Node queue and the store": "055-t13",
         "registration files and the loss ledger under faults": "055-t16",
         "the status file and the exit note": "055-t14",
     },
-    gates: { canary_scan: canaryScan, scanner_self_test: selfTestDetected },
+    gates: { canary_scan: canaryScan, scanner_self_test: selfTestDetected, network: network.passed, network_self_test: networkSelfTest },
     scenarios,
     self_test: fault,
+    network,
+    network_self_test: networkFault,
 };
 report.result = Object.values(report.gates).every(Boolean) ? "passed" : "failed";
 if (OUT !== undefined) writeFileSync(OUT, `${JSON.stringify(report, null, 2)}\n`);

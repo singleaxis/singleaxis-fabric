@@ -289,8 +289,11 @@ jobs:
     # Spec 055 §9.2 (unit 055-t8): the canary scan over every byte wire capture wrote
     # (spool files raw and decrypted, the agent's output) for each privacy mode and with
     # content capture disabled, and the scanner self-test (a test-only leak into a span
-    # attribute and a spool header must be reported). Runs on the minimum qualified Node
-    # 24 build. Later units add the network, OTLP, ledger and artifact steps.
+    # attribute and a spool header must be reported). 055-t12: the network step (hostile
+    # proxy environment and NODE_USE_ENV_PROXY, redirects from the delivery and redaction
+    # endpoints, recording sockets on every other address; openssl makes its test CA) and
+    # its self-test. Runs on the minimum qualified Node 24 build. Later units add the
+    # OTLP, ledger and artifact steps.
     name: Wire privacy (Node 24.4.0)
     runs-on: ubuntu-24.04
     steps:

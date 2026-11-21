@@ -46,6 +46,35 @@ requests the sink receives, the Node's queue and the store (055-t13), the
 registration files and the ledger under faults (055-t16), the status file and
 the exit note (055-t14).
 
+## Network step
+
+Spec 055 §3.4 and §7.1 (unit 055-t12). `lib/network.mjs` runs Fabric's real
+delivery clients (content logs and trace export, `src/wire/delivery.ts`,
+`src/wire/node-content.ts`) and its redaction client in a child process
+(`lib/network-client.ts`) started with hostile `HTTP_PROXY`, `HTTPS_PROXY`,
+`ALL_PROXY` and an empty `NO_PROXY` (upper and lower case), provider base URLs
+(`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `AZURE_OPENAI_ENDPOINT`) and Node's
+startup proxy mode (`NODE_USE_ENV_PROXY=1`, plus `--use-env-proxy` where the
+Node has it). The delivery and redaction endpoints answer 301, 302, 303, 307
+and 308 with a `Location` on a recording socket; every hostile proxy and the
+provider are recording sockets too. `FABRIC_WIRE_PROXY` is a CONNECT proxy in
+front of a TLS Node whose certificate comes from a test CA (made with
+`openssl`, which the step needs on `PATH`). The child records every TCP
+connection it opens (`net.client.socket`).
+
+It fails when any byte or connection reaches a hostile proxy, a redirect
+target or the provider; when the configured proxy receives anything but
+`CONNECT`, or a canary or the ingress credential in the clear; when the child
+connects to an address that was not configured; or when an outcome differs (a
+redirect is a `retry` for delivery and a withheld object for redaction, and is
+requested exactly once; loopback delivery is direct and accepted even with
+`FABRIC_WIRE_PROXY` set; remote delivery goes only through the tunnel and is
+accepted).
+
+Its self-test runs the child again with one body sent through the global
+`fetch` dispatcher (which honours the proxy environment and follows
+redirects); the step must report it, or the gate fails.
+
 ## Scanner self-test
 
 The `retain_original` scenario again, with a test-only fault in the harness's
