@@ -616,7 +616,11 @@ describe("§3.4 proxies: loopback always direct; FABRIC_WIRE_PROXY is a verified
   it("the Node's client certificate goes only to the Node, never to an https proxy", async () => {
     const certFile = `${pki.dir}/server.pem`;
     const keyFile = `${pki.dir}/server.key`;
-    const server = await scriptedServer(() => ({ status: 200 }), { cert: pki.cert, key: pki.key });
+    const server = await scriptedServer(() => ({ status: 200 }), {
+      cert: pki.cert,
+      key: pki.key,
+      clientCa: pki.ca,
+    });
     const proxy = await tunnelProxy(server.port, { tls: { cert: pki.cert, key: pki.key } });
     // a malformed escape in the proxy's user info is sent as written, never a throw
     const proxyUrl = proxy.url.replace("://", "://user%zz:pw@");

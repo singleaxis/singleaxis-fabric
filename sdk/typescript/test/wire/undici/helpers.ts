@@ -38,8 +38,10 @@ export async function provider(): Promise<Provider> {
   const early = new Map<string, (req: IncomingMessage, res: ServerResponse) => void>();
   const received: Buffer[] = [];
   const server: Server = createServer((req, res) => {
-    const first = early.get((req.url ?? "/").split("?")[0]!);
-    if (first !== undefined) {
+    const path = (req.url ?? "/").split("?")[0]!;
+    // Only a route the test registered under exactly this path is called.
+    const first = early.has(path) ? early.get(path) : undefined;
+    if (typeof first === "function") {
       req.resume();
       first(req, res);
       return;
@@ -49,8 +51,8 @@ export async function provider(): Promise<Provider> {
     req.on("end", () => {
       const body = Buffer.concat(parts);
       received.push(body);
-      const route = routes.get((req.url ?? "/").split("?")[0]!);
-      if (route === undefined) {
+      const route = routes.has(path) ? routes.get(path) : undefined;
+      if (typeof route !== "function") {
         res.writeHead(404).end();
         return;
       }

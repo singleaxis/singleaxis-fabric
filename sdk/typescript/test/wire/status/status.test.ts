@@ -6,7 +6,16 @@
  * status module from real states), and every id TypeScript emits is catalogued; the file
  * is written atomically, mode 0600; `node -p` shows each id's text and fix, the JSON never.
  */
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  fstatSync,
+  mkdtempSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspect } from "node:util";
@@ -295,12 +304,19 @@ describe("the status file", () => {
     const path = join(dir, "status.json");
     const doc = notInstalledDocument({ error: "E", reason: "r", reasonId: "FW-025" });
     expect(writeStatusFile(path, doc)).toBe(true);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
-    const text = readFileSync(path, "utf8");
+    // One descriptor for the mode and the bytes: both describe the same file.
+    const fd = openSync(path, "r");
+    let text: string;
+    try {
+      expect(fstatSync(fd).mode & 0o777).toBe(0o600);
+      text = readFileSync(fd, "utf8");
+    } finally {
+      closeSync(fd);
+    }
     expect(text.endsWith("\n")).toBe(true);
     const keys = Object.keys(JSON.parse(text));
     expect(keys).toEqual([...keys].sort());
-    expect(readFileSync(path, "utf8")).not.toContain(".tmp");
+    expect(text).not.toContain(".tmp");
   });
 
   it("an unwritable path is false and one FW-023 warning naming the fix, never a throw", () => {

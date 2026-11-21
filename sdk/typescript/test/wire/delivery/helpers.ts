@@ -131,10 +131,14 @@ export interface Scripted {
   close(): Promise<void>;
 }
 
-/** An HTTP (or, with `tls`, HTTPS) server that answers each request with `reply(request)`. */
+/**
+ * An HTTP (or, with `tls`, HTTPS) server that answers each request with `reply(request)`.
+ * With `tls.clientCa` it asks for a client certificate and accepts only one that CA
+ * issued; `clientCertificates` then records that each connection presented one.
+ */
 export async function scriptedServer(
   reply: (request: Received, index: number) => Reply | "hang" | "reset",
-  tls?: { cert: Buffer; key: Buffer },
+  tls?: { cert: Buffer; key: Buffer; clientCa?: Buffer },
   host = "127.0.0.1",
 ): Promise<Scripted> {
   const received: Received[] = [];
@@ -162,7 +166,12 @@ export async function scriptedServer(
   const server =
     tls === undefined
       ? http.createServer(handler)
-      : https.createServer({ ...tls, requestCert: true, rejectUnauthorized: false }, handler);
+      : https.createServer(
+          tls.clientCa === undefined
+            ? { cert: tls.cert, key: tls.key }
+            : { cert: tls.cert, key: tls.key, ca: tls.clientCa, requestCert: true },
+          handler,
+        );
   const clientCertificates: boolean[] = [];
   server.on("secureConnection", (socket: import("node:tls").TLSSocket) => {
     clientCertificates.push(Object.keys(socket.getPeerCertificate()).length > 0);
@@ -266,7 +275,10 @@ export async function tunnelProxy(
   const server =
     options.tls === undefined
       ? http.createServer(onPlain)
-      : https.createServer(
+      : // The proxy asks for a client certificate only to observe whether the client
+        // offers one (the test expects it never does), and must still accept a client
+        // that offers none, so it cannot reject: it never trusts or uses the certificate.
+        https.createServer(
           { ...options.tls, requestCert: true, rejectUnauthorized: false },
           onPlain,
         );
