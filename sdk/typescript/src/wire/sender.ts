@@ -201,6 +201,8 @@ export class Sender {
   #failedAtStart: number;
   #failedAtFlush: number;
   #loop: Promise<void> | undefined;
+  /** The loop returned (it released the drain lock as it stopped). */
+  #ended = false;
   #stopped = false;
   #wake: () => void = () => undefined;
   #woken: Promise<void>;
@@ -261,6 +263,29 @@ export class Sender {
     this.#loop = this.#run();
   }
 
+  /**
+   * Whether the delivery loop is still running (after {@link close}: a pass past the
+   * deadline). It holds the drain lock until it stops; the spool must stay open.
+   */
+  get running(): boolean {
+    return this.#loop !== undefined && !this.#ended;
+  }
+
+  /** Resolves `true` once the loop has stopped (or never started), `false` after `ms`. */
+  async stopped(ms: number): Promise<boolean> {
+    const loop = this.#loop;
+    if (loop === undefined || this.#ended) return true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      loop,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, Math.max(0, ms));
+      }),
+    ]);
+    clearTimeout(timer);
+    return this.#ended;
+  }
+
   wake(): void {
     const wake = this.#wake;
     this.#woken = this.#nextWake();
@@ -307,6 +332,15 @@ export class Sender {
         // let the capture loop of this worker run between passes
         await new Promise<void>((resolve) => setImmediate(resolve));
       }
+    }
+    // Stopped: another process (or a later install) may drain. Released here, by the loop,
+    // never while one of its passes is still exporting or retiring (Python's `_run`).
+    try {
+      this.spool.release();
+    } catch {
+      // the lock goes with the process
+    } finally {
+      this.#ended = true;
     }
   }
 
@@ -729,7 +763,8 @@ export class Sender {
 
   /**
    * Settles every record pending now (the drainer delivers other writers' too), then
-   * stops the loop and releases the drain lock; undelivered records stay on disk. A
+   * stops the loop, which releases the drain lock once its last pass ends (see
+   * {@link running}); undelivered records stay on disk. A
    * process that is `exiting` and does not drain the spool only leaves its records
    * durable there, for the drainer. `false` too when any capture event of this process
    * was lost since the sender started.
@@ -757,11 +792,15 @@ export class Sender {
       ]);
       clearTimeout(timer);
     }
-    try {
-      this.spool.release();
-    } catch {
-      // the lock goes with the process
+    if (loop === undefined) {
+      try {
+        this.spool.release();
+      } catch {
+        // the lock goes with the process
+      }
     }
+    // Else the loop releases the lock when its last pass ends: a pass still exporting at
+    // the deadline keeps it, so no other drainer exports or retires the same files.
     return delivered;
   }
 }

@@ -71,6 +71,8 @@ export interface StopResult {
 
 /** Of the stop budget, kept back so the worker exits on its own before it is terminated. */
 const STOP_MARGIN = 0.1;
+/** How long the stop waits for a pass its closed clients cut short to end. */
+const LATE_PASS_MS = 50;
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -172,10 +174,13 @@ export function runFabricMain(): Promise<void> | undefined {
         // the installing thread reads no result: the registration stays unfinalized
       }
       try {
+        // Closing the clients ends a delivery pass still exporting past the stop budget
+        // (its requests resolve `retry`); that pass keeps the drain lock and the spool
+        // until it ends, or until the worker is terminated, which releases both.
         traces.close();
         content?.close();
         await pipeline.close();
-        spool.close();
+        if (await sender.stopped(LATE_PASS_MS)) spool.close();
       } catch {
         // the process is ending this worker either way
       }

@@ -292,6 +292,35 @@ describe("the delivery loop", { timeout: 60_000 }, () => {
     expect(existsSync(join(spool.dir, EXIT_NOTE))).toBe(false);
   });
 
+  it("a pass still exporting at the close deadline keeps the drain lock until it ends", async () => {
+    const delivery = new FakeDelivery();
+    let answer!: () => void;
+    let exporting!: () => void;
+    const started = new Promise<void>((resolve) => (exporting = resolve));
+    const traces = {
+      export: async (spans: readonly unknown[]) => {
+        exporting();
+        await new Promise<void>((resolve) => (answer = resolve));
+        return delivery.traces.export(spans as never);
+      },
+    };
+    const { s, spool } = sender(newSpool(), delivery, { traces });
+    write(spool, 0);
+    s.start();
+    await started;
+    expect(await s.close(performance.now() + 50)).toBe(false);
+    expect(s.running).toBe(true);
+    // Another drainer cannot take the lock and export or retire the same file meanwhile.
+    const other = newSpool(spool.dir);
+    expect(other.tryLock()).toBe(false);
+    answer();
+    expect(await s.stopped(5000)).toBe(true);
+    expect(spool.holder).toBe(false);
+    expect(other.tryLock()).toBe(true);
+    expect(spool.names()).toEqual([]); // the late pass delivered and retired it
+    other.close();
+  });
+
   it("an exiting process that does not drain leaves its records durable for the drainer", async () => {
     const dir = spoolDir();
     const holder = newSpool(dir);
