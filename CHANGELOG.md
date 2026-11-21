@@ -37,7 +37,13 @@ it never makes, applies, waits for or returns one.
   recorder: a 60-second sustained load with a 40 MiB request, and a stalled
   disk, Node, redaction service, admission lock and capture worker each leave
   the application's throughput, responses, cancellations and output unchanged.
-  The privacy gate also scans every OTLP request a sink receives.
+  The privacy gate also scans every OTLP request a sink receives. `close()`
+  records that capture stopped (the capture point becomes
+  `disabled(shutdown)` in the record, as in Python), and the same run captured
+  by Python and by Node.js reconstructs to the same projection. Delivery
+  warnings reach stderr once each with `FABRIC_WIRE_DIAGNOSTICS=stderr`;
+  `install()` throws only for invalid configuration and otherwise reports why
+  capture is off.
 - **Node.js capture groundwork: private delivery clients (spec 055, unit
   055-t12).** Still not installable from the package. Node.js capture now has
   the clients that send its record to the Fabric Node: an OTLP/HTTP protobuf
