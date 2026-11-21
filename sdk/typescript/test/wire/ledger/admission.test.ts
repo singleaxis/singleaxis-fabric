@@ -261,6 +261,73 @@ describe("the plaintext migration (local profile, explicit)", () => {
     expect(python.files.find((f: any) => f.name === name).docs[0].record_kind).toBe("exchange");
   });
 
+  it("the drainer runs it once, before it reads any record, and counts it", async () => {
+    const dir = spoolDir();
+    const plain = make(dir);
+    const name = plain.write(exchange.doc, exchange.bodies)!;
+    plain.close();
+    const keyed = make(dir, { key: KEY, migratePlaintext: true });
+    expect(keyed.tryLock()).toBe(true);
+    const sender = new Sender({
+      spool: keyed,
+      content: undefined,
+      serviceName: "svc",
+      traces: { export: async () => ({ outcome: "ok", status: 200 }) },
+    });
+    await sender.drain();
+    expect(sender.stats().spool_migrated).toBe(1);
+    expect(keyed.migrate).toBe(false);
+    // Whatever the drain did with the record, no plaintext of it is left at rest.
+    for (const file of readdirSync(dir).filter((n) => n.startsWith(name))) {
+      const bytes = readFileSync(join(dir, file)); // pending (sealed) or an empty receipt
+      if (bytes.length > 0) expect(bytes.subarray(0, 8).equals(ENVELOPE_MAGIC), file).toBe(true);
+    }
+    expect(keyed.plaintextRecords()).toBe(0);
+    await sender.drain();
+    expect(sender.stats().spool_migrated).toBe(1); // once
+  });
+
+  it("an I/O error stops the migration before any read; the next drain retries it", async () => {
+    const dir = spoolDir();
+    const plain = make(dir);
+    plain.write(exchange.doc, exchange.bodies);
+    plain.close();
+    let fail = true;
+    const base = nodeSpoolIo(lib.addon);
+    const keyed = make(dir, {
+      key: KEY,
+      migratePlaintext: true,
+      io: {
+        ...base,
+        openExclusive: (path) => {
+          if (fail) throw Object.assign(new Error("injected EIO"), { code: "EIO" });
+          return base.openExclusive(path);
+        },
+      },
+    });
+    expect(keyed.tryLock()).toBe(true);
+    const exported: unknown[] = [];
+    const sender = new Sender({
+      spool: keyed,
+      content: undefined,
+      serviceName: "svc",
+      traces: {
+        export: async (spans) => {
+          exported.push(...spans);
+          return { outcome: "ok", status: 200 };
+        },
+      },
+    });
+    await expect(sender.drain()).rejects.toThrow(/EIO/);
+    expect(keyed.migrate).toBe(true);
+    expect(exported).toEqual([]); // nothing read, nothing delivered
+    expect(keyed.plaintextRecords()).toBe(1);
+    fail = false;
+    await sender.drain();
+    expect(keyed.migrate).toBe(false);
+    expect(sender.stats().spool_migrated).toBe(1);
+  });
+
   it("is off unless asked for, and needs a key", () => {
     const dir = spoolDir();
     make(dir).write(exchange.doc, exchange.bodies);

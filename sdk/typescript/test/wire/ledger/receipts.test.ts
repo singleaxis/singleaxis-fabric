@@ -6,7 +6,7 @@
 // Python 3,600 s TTL), an expired or missing receipt never turning a writer's flush into
 // success, and conservative accounting under a fault at every receipt create (rename),
 // truncate, directory fsync and unlink, including while another process rescans.
-import { lstatSync, readdirSync, utimesSync } from "node:fs";
+import { lstatSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -152,13 +152,13 @@ describe("receipts for other writers", () => {
     // The receipt is gone (expired, removed by anyone): delivery is not provable.
     const io = nodeSpoolIo(lib.addon);
     io.unlink(join(dir, names[0] + ACK_SUFFIX));
-    expect(await flusher.flush(Date.now() + 2000)).toBe(false);
+    expect(await flusher.flush(performance.now() + 2000)).toBe(false);
     expect(writer.failed).toBe(1);
     // A later record delivered with its receipt flushes again.
     const next = writer.write(exchange.doc, exchange.bodies)!;
     drain.rescan();
     expect(drain.retireMany([next]).retired).toBe(1);
-    expect(await flusher.flush(Date.now() + 2000)).toBe(true);
+    expect(await flusher.flush(performance.now() + 2000)).toBe(true);
   });
 
   it("a receipt that cannot be removed keeps the record pending, never failed", () => {
@@ -233,6 +233,45 @@ describe("conservative accounting under a fault at every receipt step", () => {
       expect(drain.bytes).toBe(drain.diskTotal());
     });
   }
+
+  for (const code of ["EIO", "EACCES"]) {
+    it(`${code} at the TTL's unlink: the stale receipt stays counted, and the writer never counts it failed meanwhile`, () => {
+      let clock = Date.now();
+      const harness = faulty(nodeSpoolIo(lib.addon));
+      const { dir, writer, drain, names } = pair(1, { io: harness.io, now: () => clock });
+      expect(drain.retireMany(names).retired).toBe(1);
+      clock += STALE_MS + 60_000;
+      harness.arm("unlink", 0, code);
+      drain.rescan();
+      expect(acks(dir)).toEqual([names[0] + ACK_SUFFIX]); // still on disk, still counted
+      expect(drain.receipts).toBe(1);
+      expect(drain.bytes).toBe(RECEIPT_OVERHEAD);
+      drain.rescan(); // the next rescan removes it
+      expect(acks(dir)).toEqual([]);
+      expect(drain.bytes).toBe(0);
+      expect(writer.settle()).toBe(0);
+      expect(writer.failed).toBe(1); // expired before its writer consumed it
+    });
+  }
+
+  it("a ledger creation that died (a stale .ledger-new-*) is swept by the drainer only, once stale", () => {
+    let clock = Date.now();
+    const dir = spoolDir();
+    const drain = make(dir, { now: () => clock });
+    const leftover = join(dir, ".ledger-new-4242-deadbeef");
+    writeFileSync(leftover, Buffer.alloc(4096), { mode: 0o600 });
+    clock += STALE_MS + 60_000;
+    drain.rescan();
+    expect(readdirSync(dir)).toContain(".ledger-new-4242-deadbeef"); // not the drainer: kept
+    clock = Date.now();
+    expect(drain.tryLock()).toBe(true);
+    drain.rescan();
+    expect(readdirSync(dir)).toContain(".ledger-new-4242-deadbeef"); // not stale yet
+    clock += STALE_MS + 60_000;
+    drain.rescan();
+    expect(readdirSync(dir)).not.toContain(".ledger-new-4242-deadbeef");
+    expect(drain.bytes).toBe(0); // within the reserve, as Python's: never charged
+  });
 
   it("a crash between rename and truncate: rescans count the full receipt; the drainer finishes it", () => {
     const dir = spoolDir();

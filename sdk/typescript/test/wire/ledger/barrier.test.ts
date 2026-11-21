@@ -148,8 +148,8 @@ describe("the barrier walk", () => {
       expect(out.health().spool_undurable).toBe(1);
       expect(out.stats().spool_undurable).toBe(1);
       // Records are still written and delivered meanwhile; only the claim is withheld.
-      expect(await out.flush(Date.now() + 500)).toBe(false);
-      expect(await out.close(Date.now() + 500)).toBe(false);
+      expect(await out.flush(performance.now() + 500)).toBe(false);
+      expect(await out.close(performance.now() + 500)).toBe(false);
       expect(warned).toHaveLength(1);
       expect(warned[0]).toMatch(/not durable.*Fix: put FABRIC_WIRE_SPOOL_DIR on a local volume/);
       failing = false;
