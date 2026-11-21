@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 import { DeploymentPolicy } from "../deployment-policy.js";
 import { labelPseudonym } from "../identity.js";
 import type { Transformation } from "../redaction.js";
-import { resolveConfig, type WireOptions } from "./config.js";
+import { WireConfigError, resolveConfig, type WireOptions } from "./config.js";
 import { targetOf } from "./delivery.js";
 import { ExchangeTable } from "./exchange.js";
 import type { FabricMainSnapshot, StopResult } from "./fabric-main.js";
@@ -172,7 +172,36 @@ export function install(options: InstallOptions = {}): WireHandle {
   } catch {
     return inert("spool_unusable");
   }
-  const native = loadNative({ ...options.native, selfTestDir: settings.spoolDir });
+  // Spec 055 §4.2 (R9): only malformed configuration throws. Any other failure past this
+  // point undoes what was set up (hook, run table, worker, registration) and returns a
+  // handle that captures nothing and names the reason; it never reaches the application.
+  const undo: (() => void)[] = [];
+  try {
+    const handle = installWith(options, env, settings, settings.spoolDir, entry, undo);
+    installed = handle;
+    return handle;
+  } catch (error) {
+    for (const step of undo.reverse()) {
+      try {
+        step();
+      } catch {
+        // best effort: the next drainer declares an unfinalized epoch an orphan
+      }
+    }
+    if (error instanceof WireConfigError) throw error;
+    return inert("internal_error");
+  }
+}
+
+function installWith(
+  options: InstallOptions,
+  env: Readonly<Record<string, string | undefined>>,
+  settings: WireSettings,
+  spoolDir: string,
+  entry: string | URL,
+  undo: (() => void)[],
+): WireHandle {
+  const native = loadNative({ ...options.native, selfTestDir: spoolDir });
   if (!native.ok) return inert(native.reason);
 
   const endpoints = [...settings.extraEndpoints, ...settings.endpoints];
@@ -205,13 +234,18 @@ export function install(options: InstallOptions = {}): WireHandle {
   );
   const registration: Registration = register({
     addon: native.addon,
-    spoolDir: settings.spoolDir,
+    spoolDir,
     sourceId,
     runtime,
     // Fixed text naming the fix (never a path); only where diagnostics go to stderr.
     warn: (message) => {
       if (settings.diagnostics === "stderr") process.stderr.write(`${message}\n`);
     },
+  });
+  // Nothing was captured under this epoch: finalized, its registration file goes.
+  undo.push(() => {
+    registration.final();
+    registration.close();
   });
   const build = currentRuntime(native.target);
   const states = initialStates({
@@ -233,7 +267,7 @@ export function install(options: InstallOptions = {}): WireHandle {
   // Manifest 0, minted and published here, before any hook exists: run markers, seals and
   // tokens made before the worker's first tick name it (rev 3.11 deviation 5). The worker
   // issues the identical document from the same ids and time (`firstManifest`).
-  const unsealed = unsealedPriorEpochs(native.addon, settings.spoolDir);
+  const unsealed = unsealedPriorEpochs(native.addon, spoolDir);
   const first = {
     ids: [randomUUID(), randomUUID()] as [string, string],
     stamp: emittedAt(BigInt(Date.now()) * 1_000_000n),
@@ -259,7 +293,7 @@ export function install(options: InstallOptions = {}): WireHandle {
       ...config,
       manifest: { template, unsealed, first },
     },
-    spoolDir: settings.spoolDir,
+    spoolDir,
     spoolMaxBytes: Number(settings.spoolMaxBytes),
     native: { ...options.native },
     traces: { target: { ...targetOf(settings.otlp) }, headers: { ...settings.otlp.headers } },
@@ -278,12 +312,14 @@ export function install(options: InstallOptions = {}): WireHandle {
   };
   const worker = new FabricWorker(runtime, { entry, snapshot });
   worker.start();
+  undo.push(() => void worker.stop(0));
   const table = new ExchangeTable(runtime);
   const runs = createRunTable(runtime, settings, {
     sourceId,
     production: gate.profile === "production",
   });
   bindRunTable(runs);
+  undo.push(() => bindRunTable(undefined));
   let hook: UndiciHook | undefined;
   if (settings.undici) {
     hook = installUndiciHook({
@@ -292,6 +328,8 @@ export function install(options: InstallOptions = {}): WireHandle {
       scope: captureScope,
       providerRequestId: settings.providerRequestId,
     });
+    const subscribed = hook;
+    undo.push(() => subscribed.uninstall());
   }
 
   let closing: Promise<boolean> | undefined;
@@ -334,6 +372,7 @@ export function install(options: InstallOptions = {}): WireHandle {
     void close(settings.shutdownTimeoutMs + settings.drainOnExitMs, exiting);
   };
   if (options.drainOnExit !== false) process.once("beforeExit", onExit);
+  undo.push(() => process.off("beforeExit", onExit));
 
   const handle: WireHandle = {
     capturing: true,
@@ -351,7 +390,6 @@ export function install(options: InstallOptions = {}): WireHandle {
       return stopResult;
     },
   };
-  installed = handle;
   return handle;
 }
 
