@@ -379,6 +379,7 @@ def _user_run(
     canary_label: str | None,
     findings: list[Finding],
     lines: list[str],
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any] | None:
     """§5.6 step 5 and 6: the last (or named) ``fabric run``, read back, judged, and its
     observed coverage."""
@@ -419,10 +420,8 @@ def _user_run(
         return data
     # --spans: the reader takes the path as given (a file, a directory of span files, or
     # a `fabric up` data directory, 13.4) and names the accepted forms when it is none.
-    files = (
-        [str(options.spans)]
-        if options.spans
-        else _read.span_files(dest.spans_dir, record.started_ns)
+    files, reader, error, runs = _read_until_complete(
+        project, dest, options, record, following, canary_label, sleep
     )
     if not files:
         findings.append(
@@ -434,21 +433,9 @@ def _user_run(
             )
         )
         return data
-    from ..reconstruct._attribute import ActionReader  # noqa: PLC0415
-
-    # every_run: each run's view (its non-model HTTP requests for the coverage report);
-    # the report entries, and so the verdicts, stay as the reader's report has them.
-    reader = ActionReader(every_run=True, keep_runs=True, id_key=dest.id_key)
-    try:
-        document = _read.read(dest, files, actions=reader)
-    except ReconstructInputError as exc:
-        findings.append(Finding("FC-073", _input_error(exc)))
+    if error is not None or reader is None:
+        findings.append(Finding("FC-073", error or "the reader could not read the run"))
         return data
-    exclude = _read.canary_ids(
-        [*_runstate.load_canaries(project.state_dir), *([canary_label] if canary_label else [])],
-        dest.id_key,
-    )
-    runs = _read.runs_of(document, record, following, exclude, dest.id_key)
     data["runs"] = [
         {
             "run_id": r["run_id"],
@@ -477,6 +464,66 @@ def _user_run(
     lines.append("coverage (observed):")
     lines.extend(row.line() for row in rows)
     return data
+
+
+def _read_until_complete(
+    project: _project.Project,
+    dest: _read.Destination,
+    options: argparse.Namespace,
+    record: _runstate.RunRecord,
+    following: _runstate.RunRecord | None,
+    canary_label: str | None,
+    sleep: Callable[[float], None],
+) -> tuple[list[str], Any, str | None, list[dict[str, Any]]]:
+    """The user's run read back: its span files, the action reader, an input error, and
+    its runs in the reader's report.
+
+    Production delivers asynchronously (the Node's queues, then the destination), so a
+    run that has just ended can read as partial until its last records and model bodies
+    arrive: it is re-read, bounded by the same wait as the canary, until the reader's
+    verdict is complete. A --spans export is fixed, and the local profile writes content
+    synchronously, so both are read once."""
+    poll = project.production and not options.spans and record.runtime == "python"
+    wait = _args.DEFAULT_WAIT_S if options.wait is None else options.wait
+    deadline = time.monotonic() + (wait if poll else 0.0)
+    exclude = _read.canary_ids(
+        [*_runstate.load_canaries(project.state_dir), *([canary_label] if canary_label else [])],
+        dest.id_key,
+    )
+    while True:
+        assert dest.spans_dir is not None  # noqa: S101 - the caller checked
+        files = (
+            [str(options.spans)]
+            if options.spans
+            else _read.span_files(dest.spans_dir, record.started_ns)
+        )
+        reader, document, error = _read_run(dest, files)
+        runs = (
+            _read.runs_of(document, record, following, exclude, dest.id_key)
+            if document is not None
+            else []
+        )
+        complete = bool(runs) and all(r["verdict"] in COMPLETE_VERDICTS for r in runs)
+        if complete or not poll or time.monotonic() >= deadline:
+            return files, reader, error, runs
+        sleep(1.0)
+
+
+def _read_run(dest: _read.Destination, files: Sequence[str]
+              ) -> tuple[Any, dict[str, Any] | None, str | None]:  # fmt: skip
+    """One read of the user's run: the action reader, the reader's document, or the input
+    error (no files: nothing read)."""
+    if not files:
+        return None, None, None
+    from ..reconstruct._attribute import ActionReader  # noqa: PLC0415
+
+    # every_run: each run's view (its non-model HTTP requests for the coverage report);
+    # the report entries, and so the verdicts, stay as the reader's report has them.
+    reader = ActionReader(every_run=True, keep_runs=True, id_key=dest.id_key)
+    try:
+        return reader, _read.read(dest, files, actions=reader), None
+    except ReconstructInputError as exc:
+        return None, None, _input_error(exc)
 
 
 def _reported(files: Sequence[str], record: _runstate.RunRecord,
@@ -570,7 +617,9 @@ def run(
         )
     # 5 and 6. the user's run and its coverage
     if not options.canary_only:
-        report.data["run"] = _user_run(project, environ, options, canary_label, findings, lines)
+        report.data["run"] = _user_run(
+            project, environ, options, canary_label, findings, lines, sleep
+        )
     failing = {"error", "warning"} if options.strict else {"error"}
     report.exit_code = EXIT_FINDINGS if any(f.severity in failing for f in findings) else EXIT_OK
     if report.exit_code != EXIT_OK:

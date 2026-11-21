@@ -718,3 +718,50 @@ def test_a_root_operator_runs_the_node_as_container_root_without_reowning_files(
     )
     layout = _produp._layout(loaded, operator, _sensor.SensorPlan(), init.prepare(loaded), True)
     assert layout.user is not None and layout.user.startswith("1000:")
+
+
+def test_verify_rereads_a_production_run_until_its_content_arrives(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Production delivers through the Node's queues: a run that has just ended can read
+    partial (missing_object) until its model bodies land. verify re-reads it within its
+    wait instead of failing at once; the local profile and a --spans export read once."""
+    import argparse  # noqa: PLC0415
+    import types  # noqa: PLC0415
+
+    from fabric.cli import _runstate, _verify  # noqa: PLC0415
+
+    verdicts = iter(["partial", "partial", "complete_for_declared_scope"])
+    reads: list[int] = []
+
+    def read_run(_dest: Any, files: Any) -> tuple[Any, Any, None]:
+        reads.append(1)
+        return object(), {"runs": [{"verdict": next(verdicts)}]}, None
+
+    monkeypatch.setattr(_verify, "_read_run", read_run)
+    monkeypatch.setattr(_read, "span_files", lambda *_a: ["spans.otlp"])
+    monkeypatch.setattr(_read, "runs_of", lambda document, *_a: document["runs"])
+    monkeypatch.setattr(_read, "canary_ids", lambda *_a: set())
+    monkeypatch.setattr(_runstate, "load_canaries", lambda *_a: [])
+    dest = _read.Destination(tmp_path, None, "default", None)
+    record: Any = types.SimpleNamespace(runtime="python", started_ns=0)
+    options = argparse.Namespace(spans=None, wait=30.0)
+    slept: list[float] = []
+    production: Any = types.SimpleNamespace(production=True, state_dir=tmp_path)
+    _files, _reader, error, runs = _verify._read_until_complete(
+        production,
+        dest,
+        options,
+        record,
+        None,
+        None,
+        slept.append,
+    )
+    assert error is None and runs[0]["verdict"] == "complete_for_declared_scope"
+    assert len(reads) == 3 and slept == [1.0, 1.0]
+    # Read once: the local profile writes content synchronously.
+    verdicts = iter(["partial"])
+    reads.clear()
+    local: Any = types.SimpleNamespace(production=False, state_dir=tmp_path)
+    _verify._read_until_complete(local, dest, options, record, None, None, slept.append)
+    assert len(reads) == 1
