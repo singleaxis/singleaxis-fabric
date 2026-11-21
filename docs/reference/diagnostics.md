@@ -1209,7 +1209,8 @@ Fix: run `fabric up` (it renews the Node's and its services' certificates); for 
 
 ### FC-191
 
-`certificate_expired`, error: a generated certificate has expired, so TLS with it fails.
+`certificate_expired`, error: a generated certificate is missing, is not a certificate or has
+expired, so TLS with it fails.
 
 Fix: run `fabric up` to renew the Node's and its services' certificates, or `fabric init --rotate
 client-certs` (`--rotate ca` for the CA), then restart agents and the sensor.

@@ -280,12 +280,17 @@ def _certificates(project: _project.Project, now: dt.datetime) -> list[Check]:
     preset = str(project.destination.get("preset"))
     content = bool(project.resolved["capture.content"]) and preset in _project.CONTENT_PRESETS
     in_use = set(_produp.service_cert_stems(preset, content))
+    # The services' certificates are made by `fabric up`; before it, FC-195 says so.
+    started = _read_json(project.state_dir / "state" / "up.json").get("profile") == "production"
     names += [(f"{stem}.crt", label) for stem, _, label in _secrets.SERVICE_CERTS
-              if stem in in_use]  # fmt: skip
+              if stem in in_use and started]  # fmt: skip
     out = []
     for name, label in names:
         path = directory / name
         if not path.is_file():
+            # `fabric init` (the CA, the Node's and the sources' certificates) and `fabric
+            # up` (its services') make every one: a missing one is never a pass.
+            out.append(Check("FC-191", "fail", f"{label}: {path} is missing"))
             continue
         try:
             _, expires = _secrets.certificate_info(path)

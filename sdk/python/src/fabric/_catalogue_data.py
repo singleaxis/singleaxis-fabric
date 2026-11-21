@@ -1647,7 +1647,8 @@ CATALOGUE: dict[str, Any] = {
             "id": "FC-191",
             "name": "certificate_expired",
             "severity": "error",
-            "text": "a generated certificate has expired, so TLS with it fails",
+            "text": "a generated certificate is missing, is not a certificate or has "
+            "expired, so TLS with it fails",
             "fix": "run `fabric up` to renew the Node's and its services' certificates, or "
             "`fabric init --rotate client-certs` (`--rotate ca` for the CA), then "
             "restart agents and the sensor",

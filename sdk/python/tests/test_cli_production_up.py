@@ -553,10 +553,36 @@ def test_only_the_certificates_of_services_in_use_are_checked(project: Path) -> 
     loaded = _load(project)
     _secrets.ensure_service_cert(loaded.secrets_dir, "trial-otlp")
     _secrets.ensure_service_cert(loaded.secrets_dir, "canary-tap")  # left by another preset
+    _started(loaded)
     soon = dt.datetime.now(dt.UTC) + dt.timedelta(days=80)
     labels = {c.detail.split(" ")[0] for c in _prodchecks._certificates(loaded, soon)}
     assert "trial-otlp-cert" in labels
     assert "canary-tap-cert" not in labels
+
+
+def _started(loaded: _project.Project) -> None:
+    state = loaded.state_dir / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "up.json").write_text('{"profile": "production"}')
+
+
+def test_a_missing_certificate_fails_never_passes(project: Path) -> None:
+    """FC-191: a certificate `init` or `up` makes that is gone is a failure naming it,
+    not silently skipped into a pass."""
+    _init("--destination", "trial")
+    loaded = _load(project)
+    now = dt.datetime.now(dt.UTC)
+    (loaded.secrets_dir / _secrets.NODE_CERT).unlink()
+    checks = _prodchecks._certificates(loaded, now)
+    assert [(c.id, c.outcome) for c in checks] == [("FC-191", "fail")]
+    assert "node-cert" in checks[0].detail and "is missing" in checks[0].detail
+    # A service's certificate is `fabric up`'s to keep: required once it has run.
+    (loaded.secrets_dir / "trial-otlp.crt").unlink(missing_ok=True)
+    details = " ".join(c.detail for c in _prodchecks._certificates(loaded, now))
+    assert "trial-otlp-cert" not in details
+    _started(loaded)
+    details = " ".join(c.detail for c in _prodchecks._certificates(loaded, now))
+    assert "trial-otlp-cert" in details
 
 
 def test_the_clock_check_reads_the_kernel_only_on_linux(monkeypatch: pytest.MonkeyPatch) -> None:
