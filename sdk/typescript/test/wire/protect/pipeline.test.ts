@@ -198,13 +198,14 @@ finally:
   });
 
   it("original_plus_masked with nothing to make the review copy is noted at install too (FW-032)", () => {
-    for (const privacy of [
+    const policies: Record<string, string>[] = [
       { "model.exchange.response": "original_plus_masked" },
       {
         "model.exchange.request": "retain_original",
         "model.exchange.part": "original_plus_masked",
       },
-    ]) {
+    ];
+    for (const privacy of policies) {
       const seen = recorder();
       const masked = policyDoc(privacy, "production");
       new CapturePipeline(pipelineConfig({ policy: masked as never }), {} as Spool, seen.sink);

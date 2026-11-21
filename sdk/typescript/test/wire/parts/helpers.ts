@@ -21,7 +21,7 @@ import { TOKEN_KEY, policyDoc } from "../protect/helpers.js";
 export const REQUEST = "model.exchange.request";
 export const RESPONSE = "model.exchange.response";
 export const PART = "model.exchange.part";
-export const SECRET = "canary-ssn-078-05-1120";
+export const CANARY = "canary-ssn-078-05-1120";
 export const PNG = Buffer.concat([
   Buffer.from("\x89PNG\r\n\x1a\n", "latin1"),
   Buffer.alloc(768).map((_, i) => i % 256),
@@ -50,7 +50,7 @@ export const sha = (data: Uint8Array): string =>
   "sha256:" + createHash("sha256").update(data).digest("hex");
 
 /** A chat request: the text (with the canary), then each part as an image data URL. */
-export function bigRequest(parts: readonly string[], text = "describe " + SECRET): Buffer {
+export function bigRequest(parts: readonly string[], text = "describe " + CANARY): Buffer {
   const content: unknown[] = [{ type: "text", text }];
   for (const part of parts) {
     content.push({ type: "image_url", image_url: { url: "data:image/png;base64," + part } });
@@ -145,7 +145,7 @@ export function expectNothingOriginal(
   expect(text.includes(digest)).toBe(false);
   for (const object of result.objects) {
     const bytes = Buffer.from(object.data).toString("latin1");
-    expect(bytes.includes(SECRET)).toBe(false);
+    expect(bytes.includes(CANARY)).toBe(false);
     for (const part of parts) expect(bytes.includes(part)).toBe(false);
     for (const link of (object.descriptor.links as Record<string, unknown>[] | undefined) ?? []) {
       expect("byte_range" in link).toBe(false);

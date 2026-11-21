@@ -34,7 +34,7 @@ import {
 } from "../undici/helpers.js";
 import { policyDoc } from "../protect/helpers.js";
 import { pipelineConfig, processJobs, recorder } from "../protect/pipeline-helpers.js";
-import { PART, REQUEST, RESPONSE, SECRET } from "./helpers.js";
+import { PART, REQUEST, RESPONSE, CANARY } from "./helpers.js";
 
 const MIB = 1024 * 1024;
 const ANSWER = Buffer.from('{"model":"gpt-4o-2024-08-06","choices":[{"finish_reason":"stop"}]}');
@@ -129,7 +129,7 @@ describe("large request shapes", () => {
         Buffer.from("\x89PNG\r\n\x1a\n", "latin1"),
         Buffer.alloc(22.5 * MIB, 7),
       ]).toString("base64"); // 30 MiB of base64
-      const text = `describe ${SECRET} ` + "lorem ipsum ".repeat(Math.ceil((10.5 * MIB) / 12));
+      const text = `describe ${CANARY} ` + "lorem ipsum ".repeat(Math.ceil((10.5 * MIB) / 12));
       const body = Buffer.from(
         JSON.stringify({
           model: "gpt-4o",
@@ -139,7 +139,7 @@ describe("large request shapes", () => {
               content: [
                 { type: "text", text },
                 { type: "image_url", image_url: { url: "data:image/png;base64," + image } },
-                { type: "text", text: "END-" + SECRET },
+                { type: "text", text: "END-" + CANARY },
               ],
             },
           ],
@@ -184,8 +184,8 @@ describe("large request shapes", () => {
         String(skeleton!.descriptor.stored_sha256).slice(7),
       );
       const skeletonText = Buffer.from(skeleton!.data).toString();
-      expect(skeletonText).toContain(`describe ${SECRET}`);
-      expect(skeletonText).toContain("END-" + SECRET);
+      expect(skeletonText).toContain(`describe ${CANARY}`);
+      expect(skeletonText).toContain("END-" + CANARY);
       expect(part!.descriptor).toMatchObject({
         media_type: "image/png",
         content_encoding: "base64",

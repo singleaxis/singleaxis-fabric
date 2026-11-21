@@ -215,3 +215,15 @@ test; the value is never a deployment, model or service key. A later commit on
 the branch derives it from the test's own stand-in value instead, so the squash
 merge does not carry the line. Only this exact commit/path/rule/line fingerprint
 is baselined.
+
+## Spec 055 T15 split-test privacy canary (2026-11-21)
+
+The spec 055 T15 feature branch (PR #336) added
+`sdk/typescript/test/wire/parts/helpers.ts`, whose split and review-copy tests
+plant a privacy canary in request text and assert it never reaches a protected
+object. The scan flags one line (rule `generic-api-key`) in the feature-branch
+commit `370a9bd…`, line 24: the constant named `SECRET` holding the literal
+`canary-ssn-078-05-1120`, the same made-up canary the Python PROTECT tests use.
+It is never a deployment, model or service key. A later commit on the branch
+renames the constant (`CANARY`), so the squash merge does not carry the line.
+Only this exact commit/path/rule/line fingerprint is baselined.

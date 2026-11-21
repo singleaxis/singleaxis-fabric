@@ -33,7 +33,7 @@ import {
   PNG,
   REQUEST,
   RESPONSE,
-  SECRET,
+  CANARY,
   WAV,
   bigRequest,
   expectNothingOriginal,
@@ -93,7 +93,7 @@ describe("split sides (retain_original)", () => {
       });
     });
     expect(sha(reassemble(skeleton!.data, parts))).toBe(sha(data));
-    expect(Buffer.from(skeleton!.data).toString()).toContain(SECRET); // the text survives
+    expect(Buffer.from(skeleton!.data).toString()).toContain(CANARY); // the text survives
   });
 
   it("a part beyond the object cap is descriptor-only part_cap, keeping its retained digest", async () => {
@@ -282,7 +282,7 @@ describe("split sides under protecting modes", () => {
 describe("original_plus_masked: review copies linked by derived_from", () => {
   it("a whole side keeps the original and a masked review copy derived from it", async () => {
     const masker = await service();
-    const data = Buffer.from('{"messages":[{"content":"' + SECRET + '"}]}');
+    const data = Buffer.from('{"messages":[{"content":"' + CANARY + '"}]}');
     const result = await side(
       protectorOf(policy({ request: "original_plus_masked" }), {
         transformations: { [REQUEST]: MASK },
@@ -394,7 +394,7 @@ describe("a failed review withholds both objects", () => {
   for (const [name, setup] of failures) {
     it(`whole side: ${name}`, async () => {
       const redaction = await setup();
-      const data = Buffer.from('{"messages":[{"content":"' + SECRET + '"}]}');
+      const data = Buffer.from('{"messages":[{"content":"' + CANARY + '"}]}');
       const result = await side(
         protectorOf(policy({ request: "original_plus_masked" }), {
           maxBodyBytes: 1100,
