@@ -104,6 +104,34 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/** The transformation id of a whole-object HMAC token (Python `TOKEN_TRANSFORMATION`). */
+export const TOKEN_TRANSFORMATION = "hmac_sha256_whole_object_v1";
+
+/**
+ * The whole-object HMAC token (`fabric.token.v1:` + hex) of `data`, bound to the policy
+ * digest, tenant, workload and role in `scope`: one construction for the explicit line and
+ * the wire PROTECT stage (spec 049 §7.7; Python `deployment_policy.token_bytes`). `scope`
+ * holds ASCII identifiers or `null`.
+ */
+export function tokenBytes(
+  key: Uint8Array,
+  scope: Readonly<Record<string, string | null>>,
+  data: Uint8Array,
+): Buffer {
+  const bound = Buffer.from(canonical(scope), "ascii");
+  const scopeLength = Buffer.alloc(4);
+  scopeLength.writeUInt32BE(bound.length);
+  const dataLength = Buffer.alloc(8);
+  dataLength.writeBigUInt64BE(BigInt(data.byteLength));
+  const token = createHmac("sha256", key)
+    .update(scopeLength)
+    .update(bound)
+    .update(dataLength)
+    .update(data)
+    .digest("hex");
+  return Buffer.from("fabric.token.v1:" + token, "ascii");
+}
+
 export class DeploymentPolicy {
   readonly #canonical: string;
   readonly #digest: string;
@@ -422,30 +450,20 @@ export class ContentProtector {
         return result("unsupported", "redaction_requires_protect_async");
       }
       if (mode === "tokenize" && this.#key !== undefined) {
-        const scope = Buffer.from(
-          canonical({
+        const payload = tokenBytes(
+          this.#key,
+          {
             schema_version: "fabric.token/v1",
             policy_digest: this.policy.digest,
             tenant_id: this.policy.tenant_id,
             workload_id: this.policy.workload_id,
             role,
-          }),
-          "ascii",
+          },
+          data,
         );
-        const scopeLength = Buffer.alloc(4);
-        scopeLength.writeUInt32BE(scope.length);
-        const dataLength = Buffer.alloc(8);
-        dataLength.writeBigUInt64BE(BigInt(data.byteLength));
-        const token = createHmac("sha256", this.#key)
-          .update(scopeLength)
-          .update(scope)
-          .update(dataLength)
-          .update(data)
-          .digest("hex");
-        const payload = Buffer.from("fabric.token.v1:" + token, "ascii");
         if (payload.byteLength > this.payloadMaxBytes)
           return result("lost", "protected_payload_too_large");
-        metadata.transform = "hmac_sha256_whole_object_v1";
+        metadata.transform = TOKEN_TRANSFORMATION;
         return result("tokenized", "tokenized_by_policy", payload);
       }
     } catch {
