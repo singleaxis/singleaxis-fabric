@@ -123,6 +123,8 @@ export interface Reply {
 }
 
 export interface Scripted {
+  /** For a TLS server: whether each connection presented a client certificate. */
+  readonly clientCertificates: boolean[];
   readonly url: string;
   readonly port: number;
   readonly received: Received[];
@@ -157,7 +159,14 @@ export async function scriptedServer(
       res.end(answer.body === undefined ? undefined : Buffer.from(answer.body));
     });
   };
-  const server = tls === undefined ? http.createServer(handler) : https.createServer(tls, handler);
+  const server =
+    tls === undefined
+      ? http.createServer(handler)
+      : https.createServer({ ...tls, requestCert: true, rejectUnauthorized: false }, handler);
+  const clientCertificates: boolean[] = [];
+  server.on("secureConnection", (socket: import("node:tls").TLSSocket) => {
+    clientCertificates.push(Object.keys(socket.getPeerCertificate()).length > 0);
+  });
   const sockets = new Set<net.Socket>();
   server.on("connection", (socket: net.Socket) => {
     sockets.add(socket);
@@ -172,6 +181,7 @@ export async function scriptedServer(
     url: `${scheme}://${shown}:${port}`,
     port,
     received,
+    clientCertificates,
     close: () =>
       new Promise((resolve) => {
         for (const socket of sockets) socket.destroy();
@@ -226,6 +236,8 @@ export interface TunnelProxy {
   tunnelled(): Buffer;
   /** Plain (non-CONNECT) requests, which a Fabric client must never send. */
   readonly plain: Received[];
+  /** For a TLS proxy: whether each client presented a certificate to the proxy. */
+  readonly clientCertificates: boolean[];
   close(): Promise<void>;
 }
 
@@ -235,6 +247,7 @@ export async function tunnelProxy(
 ): Promise<TunnelProxy> {
   const connects: TunnelProxy["connects"] = [];
   const plain: Received[] = [];
+  const clientCertificates: boolean[] = [];
   const chunks: Buffer[] = [];
   const sockets = new Set<net.Socket>();
   const onPlain = (req: http.IncomingMessage, res: http.ServerResponse): void => {
@@ -253,9 +266,14 @@ export async function tunnelProxy(
   const server =
     options.tls === undefined
       ? http.createServer(onPlain)
-      : https.createServer(options.tls, onPlain);
+      : https.createServer(
+          { ...options.tls, requestCert: true, rejectUnauthorized: false },
+          onPlain,
+        );
   server.on("connect", (req: http.IncomingMessage, client: net.Socket, head: Buffer) => {
     connects.push({ target: req.url ?? "", headers: req.headers });
+    const peer = (client as import("node:tls").TLSSocket).getPeerCertificate?.();
+    if (peer !== undefined) clientCertificates.push(Object.keys(peer).length > 0);
     sockets.add(client);
     client.on("error", () => undefined);
     if (options.refuse === true) {
@@ -284,6 +302,7 @@ export async function tunnelProxy(
     url: `${options.tls === undefined ? "http" : "https"}://127.0.0.1:${port}`,
     connects,
     plain,
+    clientCertificates,
     tunnelled: () => Buffer.concat(chunks),
     close: () =>
       new Promise((resolve) => {

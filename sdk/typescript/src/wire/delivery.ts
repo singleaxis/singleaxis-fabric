@@ -149,6 +149,15 @@ function readTls(path: string | undefined): Buffer | undefined {
   }
 }
 
+/** A URL's percent-encoded user info, decoded; a malformed escape is kept as written. */
+const decoded = (text: string): string => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+};
+
 const unbracket = (host: string): string => host.replace(/^\[(.*)\]$/, "$1");
 const isIp = (host: string): boolean => /^[0-9.]+$/.test(host) || host.includes(":");
 
@@ -186,11 +195,14 @@ class TunnelAgent extends https.Agent {
     const proxy = this.#proxy;
     const headers: http.OutgoingHttpHeaders = { host: authority };
     if (proxy.username !== "" || proxy.password !== "") {
-      const user = `${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`;
+      const user = `${decoded(proxy.username)}:${decoded(proxy.password)}`;
       headers["proxy-authorization"] = `Basic ${Buffer.from(user, "utf8").toString("base64")}`;
     }
     const secureProxy = proxy.protocol === "https:";
     const proxyHost = unbracket(proxy.hostname);
+    // An https:// proxy is verified with the configured CA bundle (else the default
+    // trust store), never shown the Node's client certificate: that is an ingress
+    // credential and goes only inside the tunnel.
     const connect = (secureProxy ? https : http).request({
       host: proxyHost,
       port: Number(proxy.port || (secureProxy ? 443 : 80)),
@@ -201,7 +213,7 @@ class TunnelAgent extends https.Agent {
       timeout: this.#timeoutMs,
       ...(secureProxy
         ? {
-            ...this.#tls,
+            ...(this.#tls.ca === undefined ? {} : { ca: this.#tls.ca }),
             rejectUnauthorized: true,
             ...(isIp(proxyHost) ? {} : { servername: proxyHost }),
           }

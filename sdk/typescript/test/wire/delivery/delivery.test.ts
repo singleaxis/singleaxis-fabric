@@ -533,6 +533,35 @@ describe("§3.4 proxies: loopback always direct; FABRIC_WIRE_PROXY is a verified
     },
   );
 
+  it("the Node's client certificate goes only to the Node, never to an https proxy", async () => {
+    const certFile = `${pki.dir}/server.pem`;
+    const keyFile = `${pki.dir}/server.key`;
+    const server = await scriptedServer(() => ({ status: 200 }), { cert: pki.cert, key: pki.key });
+    const proxy = await tunnelProxy(server.port, { tls: { cert: pki.cert, key: pki.key } });
+    // a malformed escape in the proxy's user info is sent as written, never a throw
+    const proxyUrl = proxy.url.replace("://", "://user%zz:pw@");
+    const client = new DeliveryClient(
+      target(`https://fabric-node.test:${server.port}/v1/logs`, {
+        certificate: pki.caFile,
+        clientCertificate: certFile,
+        clientKey: keyFile,
+      }),
+      { signal: "logs", proxy: proxyUrl },
+    );
+    try {
+      expect(await client.post(Buffer.from("x"))).toEqual({ outcome: "ok", status: 200 });
+      expect(server.clientCertificates).toEqual([true]);
+      expect(proxy.clientCertificates).toEqual([false]);
+      expect(proxy.connects[0]!.headers["proxy-authorization"]).toBe(
+        `Basic ${Buffer.from("user%zz:pw").toString("base64")}`,
+      );
+    } finally {
+      client.close();
+      await server.close();
+      await proxy.close();
+    }
+  });
+
   it("an untrusted or misnamed Node certificate behind the tunnel is a retry; nothing is sent", async () => {
     const rogue = await scriptedServer(() => ({ status: 200 }), {
       cert: pki.rogueCert,
