@@ -304,7 +304,7 @@ def test_release_policy_and_workflow_have_one_build_once_contract_path() -> None
     qualify = workflow[qualify_start:qualify_end]
     github_release = workflow[workflow.index("  github-release:\n") :]
 
-    assert "needs: [verify-tag, changelog]" in qualify
+    assert "needs: [verify-tag, changelog, typescript-native]" in qualify
     assert workflow.count("python scripts/release/package_contracts.py") == 1
     assert "name: qualified-contracts" in qualify
     assert "qualification/contracts/*.tar.gz" in qualify
