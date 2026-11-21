@@ -9,10 +9,10 @@ import type { CatalogueEntry } from "./types.js";
 export const CATALOGUE_SCHEMA = "fabric.diagnostics/v1";
 
 /** Every FW- id of the catalogue. */
-export type CatalogueId = "FW-001" | "FW-002" | "FW-003" | "FW-004" | "FW-005" | "FW-006" | "FW-007" | "FW-008" | "FW-009" | "FW-010" | "FW-011" | "FW-012" | "FW-013" | "FW-014" | "FW-015" | "FW-016" | "FW-017" | "FW-018" | "FW-019" | "FW-020" | "FW-021" | "FW-022" | "FW-023" | "FW-024" | "FW-025" | "FW-026" | "FW-027" | "FW-028" | "FW-029" | "FW-030" | "FW-031" | "FW-032" | "FW-033";
+export type CatalogueId = "FW-001" | "FW-002" | "FW-003" | "FW-004" | "FW-005" | "FW-006" | "FW-007" | "FW-008" | "FW-009" | "FW-010" | "FW-011" | "FW-012" | "FW-013" | "FW-014" | "FW-015" | "FW-016" | "FW-017" | "FW-018" | "FW-019" | "FW-020" | "FW-021" | "FW-022" | "FW-023" | "FW-024" | "FW-025" | "FW-026" | "FW-027" | "FW-028" | "FW-029" | "FW-030" | "FW-031" | "FW-032" | "FW-033" | "FW-034";
 
 /** The ids TypeScript may emit: entries whose `sdk` list names typescript. */
-export type TypeScriptCatalogueId = "FW-002" | "FW-003" | "FW-005" | "FW-006" | "FW-007" | "FW-008" | "FW-010" | "FW-012" | "FW-013" | "FW-014" | "FW-015" | "FW-016" | "FW-017" | "FW-018" | "FW-019" | "FW-020" | "FW-022" | "FW-023" | "FW-024" | "FW-025" | "FW-026" | "FW-027" | "FW-028" | "FW-029" | "FW-030" | "FW-031" | "FW-032" | "FW-033";
+export type TypeScriptCatalogueId = "FW-002" | "FW-003" | "FW-005" | "FW-006" | "FW-007" | "FW-008" | "FW-010" | "FW-012" | "FW-013" | "FW-014" | "FW-015" | "FW-017" | "FW-018" | "FW-019" | "FW-020" | "FW-022" | "FW-023" | "FW-024" | "FW-025" | "FW-026" | "FW-027" | "FW-028" | "FW-029" | "FW-030" | "FW-031" | "FW-032" | "FW-033" | "FW-034";
 
 export const TYPESCRIPT_IDS: readonly TypeScriptCatalogueId[] = [
   "FW-002",
@@ -26,7 +26,6 @@ export const TYPESCRIPT_IDS: readonly TypeScriptCatalogueId[] = [
   "FW-013",
   "FW-014",
   "FW-015",
-  "FW-016",
   "FW-017",
   "FW-018",
   "FW-019",
@@ -42,7 +41,8 @@ export const TYPESCRIPT_IDS: readonly TypeScriptCatalogueId[] = [
   "FW-030",
   "FW-031",
   "FW-032",
-  "FW-033"
+  "FW-033",
+  "FW-034"
 ];
 
 export const CATALOGUE: readonly CatalogueEntry[] = [
@@ -200,8 +200,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
     "name": "protected_global_provider",
     "severity": "error",
     "sdk": [
-      "python",
-      "typescript"
+      "python"
     ],
     "text": "a Fabric-protected global tracer provider cannot carry wire spans",
     "fix": "set FABRIC_OTLP_ENDPOINT (or OTEL_EXPORTER_OTLP_ENDPOINT): capture then delivers through its own private tracer provider"
@@ -379,5 +378,15 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
     ],
     "text": "records wait in the spool and no process is draining it",
     "fix": "start the agent again, or set FABRIC_WIRE_DRAIN_ON_EXIT_S for batch or serverless workers; `python -m fabric.wire drain --until-empty` also drains a Node.js spool"
+  },
+  {
+    "id": "FW-034",
+    "name": "node_spool_unusable",
+    "severity": "warning",
+    "sdk": [
+      "typescript"
+    ],
+    "text": "model-call capture is off: the spool directory is not set or cannot be used",
+    "fix": "set FABRIC_WIRE_SPOOL_DIR to a directory on a local disk that the agent's user owns and no other user can write; the status names the reason"
   }
 ];

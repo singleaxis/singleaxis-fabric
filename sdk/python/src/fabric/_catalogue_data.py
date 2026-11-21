@@ -162,7 +162,7 @@ CATALOGUE: dict[str, Any] = {
             "id": "FW-016",
             "name": "protected_global_provider",
             "severity": "error",
-            "sdk": ["python", "typescript"],
+            "sdk": ["python"],
             "text": "a Fabric-protected global tracer provider cannot carry wire spans",
             "fix": "set FABRIC_OTLP_ENDPOINT (or OTEL_EXPORTER_OTLP_ENDPOINT): capture then "
             "delivers through its own private tracer provider",
@@ -325,6 +325,16 @@ CATALOGUE: dict[str, Any] = {
             "fix": "start the agent again, or set FABRIC_WIRE_DRAIN_ON_EXIT_S for batch or "
             "serverless workers; `python -m fabric.wire drain --until-empty` also "
             "drains a Node.js spool",
+        },
+        {
+            "id": "FW-034",
+            "name": "node_spool_unusable",
+            "severity": "warning",
+            "sdk": ["typescript"],
+            "text": "model-call capture is off: the spool directory is not set or cannot be used",
+            "fix": "set FABRIC_WIRE_SPOOL_DIR to a directory on a local disk that the "
+            "agent's user owns and no other user can write; the status names the "
+            "reason",
         },
         {
             "id": "FC-001",

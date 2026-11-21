@@ -1,6 +1,6 @@
 {
   "contract": "singleaxis.fabric.diagnostics",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "digest_scope": "exact_file_bytes",
   "schema": {
     "path": "schema/messages-v1.schema.json",
@@ -73,7 +73,7 @@
     },
     {
       "path": "messages-v1.json",
-      "sha256": "934a09f879be7d445ae429dd588a364cf83b1c7edf13b406c44c7c232baad0e3"
+      "sha256": "5e773ebd7942023f28ab8cd84fbeb3ba15cd4fd912cf153dedaf9a74c4ca685f"
     },
     {
       "path": "schema/wire-status-v1.schema.json",

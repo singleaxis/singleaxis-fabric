@@ -754,3 +754,11 @@ capture policy.
 
 Fix: start the agent again, or set FABRIC_WIRE_DRAIN_ON_EXIT_S for batch or serverless workers;
 `python -m fabric.wire drain --until-empty` also drains a Node.js spool.
+
+### FW-034
+
+`node_spool_unusable`, warning: model-call capture is off: the spool directory is not set or cannot
+be used.
+
+Fix: set FABRIC_WIRE_SPOOL_DIR to a directory on a local disk that the agent's user owns and no
+other user can write; the status names the reason.
