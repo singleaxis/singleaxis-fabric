@@ -2,21 +2,39 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * Spec 055 §4.2 (R9), unit 055-t13: explicit `install()` throws only for malformed
- * configuration. A failure past configuration (here: a qualification table that is not
- * one) undoes what was set up and returns a handle that captures nothing and names the
- * reason: no hook, no `beforeExit` listener, no registration left behind.
+ * configuration. A failure past configuration (here: the manifest template throws, after
+ * the epoch was registered, on every Node version) undoes what was set up and returns a
+ * handle that captures nothing and names the reason: no hook, no `beforeExit` listener, no
+ * registration left behind.
  */
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { WireConfigError } from "../../../src/wire/config.js";
 import { install, resetInstalledForTests } from "../../../src/wire/install.js";
 
 import { cleanupDirs, native, spoolDir } from "../spool/helpers.js";
 
+const fault = vi.hoisted(() => ({ on: false }));
+
+vi.mock("../../../src/wire/manifest.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../../../src/wire/manifest.js")>();
+  return {
+    ...real,
+    manifestTemplate: (...args: Parameters<typeof real.manifestTemplate>) => {
+      if (fault.on) throw new TypeError("injected");
+      return real.manifestTemplate(...args);
+    },
+  };
+});
+
 afterAll(() => cleanupDirs());
+afterEach(() => {
+  fault.on = false;
+  resetInstalledForTests();
+});
 
 function env(dir: string): Record<string, string> {
   return {
@@ -32,11 +50,11 @@ describe("install()", { timeout: 60_000 }, () => {
     const n = native();
     const listeners = process.listenerCount("beforeExit");
     let handle: ReturnType<typeof install> | undefined;
+    fault.on = true;
     expect(() => {
       handle = install({
         env: env(dir),
         native: { prebuildsDir: n.build.dir, digests: { [n.build.target]: n.digest } },
-        qualification: { tuples: 5 } as never,
       });
     }).not.toThrow();
     expect(handle!.capturing).toBe(false);
@@ -47,7 +65,6 @@ describe("install()", { timeout: 60_000 }, () => {
     // The epoch registered before the failure was finalized and removed.
     const epochs = join(dir, ".epochs");
     expect(existsSync(epochs) ? readdirSync(epochs) : []).toEqual([]);
-    resetInstalledForTests();
   });
 
   it("malformed configuration still throws its fixed text", () => {
