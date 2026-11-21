@@ -44,6 +44,13 @@ it never makes, applies, waits for or returns one.
   nothing is compiled on install. The release workflow refuses to publish a
   tarball that exports the preload while qualification gate `TS-1U` or `TS-1D`
   has not passed, so the next npm release waits for those gates (unit 055-t17).
+- **Review fixes for unit 055-t14.** When a Node.js agent sends a model-looking
+  request to a host no endpoint covers (`FW-006`), the status now lists that
+  host with the exact `FABRIC_WIRE_ENDPOINTS` value that records it, as Python's
+  does. After `capture.close()`, `install()` starts afresh instead of returning
+  the closed handle or throwing. An `install()` whose settings differ from the
+  running capture, including its own `transformations`, now throws a message
+  naming the fix instead of silently returning the other handle.
 - **The first verified record of a Node.js agent (spec 055, unit 055-t13).**
   Still not installable from the package; the source build proves it in CI. A
   Node.js script that calls global `fetch` after an explicit `install()` now
