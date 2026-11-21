@@ -235,20 +235,27 @@ function forbidden() {
 }
 
 /**
- * Large shapes (unit 055-t8): the longest single synchronous snapshot of 0 B to 32 MiB
- * requests, in memory and streamed. Reported per shape, never averaged into the medians;
- * fails when one publication stalls the application longer than 25 ms × scale.
+ * Large shapes (unit 055-t8; the 40 MiB inline-media and 70 MiB oversize shapes from
+ * 055-t15): the longest single synchronous snapshot of 0 B to 70 MiB requests, in memory
+ * and streamed. Reported per shape, never averaged into the medians; fails when one
+ * publication stalls the application longer than 25 ms × scale.
  */
 function largeShapes() {
     const result = child("large.mjs", common).json;
     const ceilingMs = REFERENCE.budgets.large_shapes.max_single_ms;
     let worst = 0;
-    // A shape whose chunks the hook refused was never snapshotted: its time proves nothing.
+    // A whole shape whose chunks the hook refused was never snapshotted: its time proves
+    // nothing. The oversize shape must be cut at max_retain_bytes: streamed, its chunks up
+    // to the cap are retained and the rest refused; in memory, its one chunk is refused.
     const notSnapshotted = [];
     for (const [label, deliveries] of Object.entries(result.shapes)) {
         for (const [delivery, row] of Object.entries(deliveries)) {
             worst = Math.max(worst, row.max_single_ms);
-            if (row.chunks_not_retained !== 0 || row.chunks_retained === 0) notSnapshotted.push(`${label}/${delivery}`);
+            const expected =
+                row.kind === "oversize"
+                    ? row.chunks_not_retained > 0 && (delivery === "in_memory" || row.chunks_retained > 1)
+                    : row.chunks_not_retained === 0 && row.chunks_retained > 0;
+            if (!expected) notSnapshotted.push(`${label}/${delivery}`);
         }
     }
     return (scale) => ({

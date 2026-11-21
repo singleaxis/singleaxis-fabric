@@ -55,13 +55,18 @@ Steps (child script, then what fails the gate):
   backpressure, keep-alive, the caller's request buffer and the exit code must
   be identical.
 - **Large shapes** (`large.mjs`, unit 055-t8; 40 and 70 MiB from 055-t15):
-  matched requests of 0 B, 64 KiB, 1 MiB and 32 MiB through real `fetch`, once
-  as one in-memory body (undici publishes it as one chunk: the largest single
-  snapshot copy) and once streamed in 64 KiB chunks. The report lists, per
-  shape, the bytes copied, the publications and the longest synchronous time
-  one publication spent in the hook; these shapes are never averaged into the
-  small-body medians. Fails when one publication exceeds 25 ms × scale or a
-  shape lost a position.
+  matched requests of 0 B, 64 KiB, 1 MiB and 32 MiB, a 40 MiB JSON request
+  with one ~30 MiB inline image (the shape the Fabric worker splits into a
+  skeleton and a part) and a 70 MiB request over `max_retain_bytes` (64 MiB)
+  through real `fetch`, once as one in-memory body (undici publishes it as one
+  chunk: the largest single snapshot copy) and once streamed in 64 KiB chunks.
+  The report lists, per shape, the bytes copied, the publications and the
+  longest synchronous time one publication spent in the hook; these shapes are
+  never averaged into the small-body medians. Fails when one publication
+  exceeds 25 ms × scale, a shape lost a position, a whole shape was not
+  retained in full, or the 70 MiB shape was not cut at the cap (streamed: the
+  chunks up to 64 MiB retained, the rest refused; in memory: its one chunk
+  refused).
 - **Memory bound** (`memory.mjs`): tiny-chunk storms and zero-body requests in
   10 batches with small configured bounds, with the Fabric worker draining and
   with none (saturated). RSS over baseline within the shared buffers' maximum
