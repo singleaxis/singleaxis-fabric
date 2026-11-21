@@ -15,6 +15,21 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: named losses and segment seals (spec 055,
+  unit 055-t10).** Still not installable from the package. When a Node.js
+  process loses a model call before it reaches the record (a full queue, a
+  full disk, an internal error, or a call still open at shutdown), the record
+  now says so: each lost position is written to the spool as a loss range with
+  its reason and the run segment it belonged to, and ranges of different
+  segments, reasons or epochs are never merged. Each run segment is closed by a
+  seal whose digest covers every recorded call and every loss in it, sorted by
+  position, so a reader can recompute it and tell a complete segment from a
+  partial one. A seal is computed only after the calls it covers are on disk; a
+  very long segment is sealed every 1,000,000 positions and the run continues
+  in a new segment; at close, calls still open become `shutdown` losses and
+  are written, with the seals, before the final heartbeat. The record bytes
+  match the Python recorder's, so Python's drainer and verifier read them
+  unchanged.
 - **Node.js capture groundwork: capture manifests and heartbeats (spec 055,
   unit 055-t9).** Still not installable from the package. A Node.js process
   can now state, in the record itself, what it could and could not capture:
