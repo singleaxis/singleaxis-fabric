@@ -230,6 +230,15 @@ describe("fail open by default, throw in strict mode (FABRIC_RECORDS_STRICT=1)",
     expect(calls).toBe(0);
   });
 
+  it("strict: a misused argument is counted once, by the failure path", () => {
+    harness();
+    setStrictModeForTesting(true);
+    const before = RUN_COUNTERS.apiMisuse;
+    expect(() => run({ runId: 42 as never }, () => 1)).toThrow(RunApiMisuse);
+    expect(() => run({ links: "one" as never }, () => 1)).toThrow(/links/);
+    expect(RUN_COUNTERS.apiMisuse - before).toBe(2);
+  });
+
   it("strict: an internal failure throws fixed text, never the original object", () => {
     const h = harness();
     setStrictModeForTesting(true);

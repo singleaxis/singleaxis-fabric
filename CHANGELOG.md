@@ -29,7 +29,8 @@ it never makes, applies, waits for or returns one.
   adds baggage and never changes a child process's arguments or environment;
   the application carries the token. Misused arguments are dropped and counted;
   `FABRIC_RECORDS_STRICT=1` makes them throw an error that names the argument
-  and the rule.
+  and the rule. A resume token that cannot be used is dropped with one warning
+  that names the fix (the token itself is never printed).
 - **Node.js capture groundwork: named losses and segment seals (spec 055,
   unit 055-t10).** Still not installable from the package. When a Node.js
   process loses a model call before it reaches the record (a full queue, a

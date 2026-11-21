@@ -13,11 +13,16 @@ import { runPseudonym } from "../../../src/wire/p1.js";
 import {
   bindRunTable,
   createRunTable,
+  endRun,
   resumeToken,
   resumeTokens,
   run,
 } from "../../../src/wire/run-api.js";
-import { IdentityRule, resolveIdentity } from "../../../src/wire/segments.js";
+import {
+  IdentityRule,
+  TOKEN_DROPPED_WARNING,
+  resolveIdentity,
+} from "../../../src/wire/segments.js";
 
 import { isolate } from "../runtime/helpers.js";
 import {
@@ -181,6 +186,37 @@ describe("token accept/reject vectors through run({resume})", () => {
       run_id: "billing-run.42:eu",
       id_basis: "token",
     });
+  });
+
+  it("a dropped token is counted and warned about once, by class and fix, never by value", async () => {
+    const h = harness();
+    const bad = "fr3/r-" + "ee".repeat(16) + "/not-a-segment";
+    run({ resume: bad }, () => undefined);
+    run({ resume: [bad, "fr9/x"] }, () => undefined);
+    expect(endRun({ outcome: "completed", resume: bad })).toBe("refused_no_token");
+    expect(h.table.stats().tokens_rejected).toBe(4);
+    expect(h.warnings).toEqual([TOKEN_DROPPED_WARNING]);
+    expect(TOKEN_DROPPED_WARNING).toMatch(/MalformedResumeToken/);
+    expect(TOKEN_DROPPED_WARNING).toMatch(/resumeToken\(\)/); // the fix
+    expect(h.warnings.join()).not.toContain("ee".repeat(16));
+    // The default goes to process.emitWarning (a FabricWarning), never thrown.
+    const seen: Error[] = [];
+    const listener = (w: Error): void => void seen.push(w);
+    process.on("warning", listener);
+    try {
+      const d = harness({ warn: undefined });
+      run({ resume: bad }, () => undefined);
+      expect(d.table.stats().tokens_rejected).toBe(1);
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      process.off("warning", listener);
+    }
+    expect(seen.map((x) => [x.name, (x as { code?: string }).code, x.message])).toEqual([
+      ["FabricWarning", "FABRIC_RESUME_TOKEN_DROPPED", TOKEN_DROPPED_WARNING],
+    ]);
+    const w = harness({ warn: () => { throw new Error("listener"); } });
+    expect(run({ resume: bad }, () => 5)).toBe(5);
+    expect(w.table.stats().tokens_rejected).toBe(1);
   });
 
   it("a comma-separated join is split as the reference does; one entry counts once", () => {

@@ -75,6 +75,8 @@ export interface Harness {
   readonly runtime: WireRuntime;
   readonly table: SegmentTable;
   readonly messages: RunMessage[];
+  /** The warnings the table emitted (its `warn` option). */
+  readonly warnings: string[];
   /** The marker field objects of `kind`, in the order sent. */
   markers(kind?: "run_start" | "run_end"): Record<string, any>[];
   seals(): SealMessage[];
@@ -86,6 +88,7 @@ export interface Harness {
 export function harness(options: Partial<BindOptions> = {}): Harness {
   const runtime = options.runtime ?? isolate().runtime;
   const messages: RunMessage[] = [];
+  const warnings: string[] = [];
   const table = new SegmentTable({
     runtime,
     sourceId: SOURCE,
@@ -95,6 +98,7 @@ export function harness(options: Partial<BindOptions> = {}): Harness {
       messages.push(message);
       return encodeRunMessage(runtime, message);
     },
+    warn: (text) => warnings.push(text),
     ...options,
   });
   bindRunTable(table);
@@ -102,6 +106,7 @@ export function harness(options: Partial<BindOptions> = {}): Harness {
     runtime,
     table,
     messages,
+    warnings,
     markers: (kind) =>
       messages
         .filter((m): m is MarkerMessage => m.t === "marker")

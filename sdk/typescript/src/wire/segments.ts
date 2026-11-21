@@ -114,10 +114,27 @@ export function setStrictModeForTesting(value: boolean | undefined): void {
   strictOverride = value;
 }
 
-/** One misused input that is dropped while the call proceeds; throws only when strict. */
+/**
+ * One misused input that is dropped while the call proceeds; throws only when strict
+ * (the run API's failure path then counts it, once).
+ */
 export function misuse(what: string): void {
-  RUN_COUNTERS.apiMisuse++;
   if (strictMode()) throw new RunApiMisuse(what);
+  RUN_COUNTERS.apiMisuse++;
+}
+
+/** The one class-only warning of a dropped resume token (050 §3.6); never the token. */
+export const TOKEN_DROPPED_WARNING =
+  "fabric.wire: a resume token was dropped (MalformedResumeToken): pass each token exactly " +
+  "as resumeToken() or resumeTokens() returned it (percent-decode a fabric.resume baggage " +
+  "value first); a pseudonymous consumer also drops a token issued in the clear identity mode";
+
+function emitWarning(text: string): void {
+  try {
+    process.emitWarning(text, { type: "FabricWarning", code: "FABRIC_RESUME_TOKEN_DROPPED" });
+  } catch {
+    // a warning never reaches the agent as an error
+  }
 }
 
 // ------------------------------------------------------------------- run identity
@@ -444,6 +461,8 @@ export interface BindOptions {
   readonly manifest?: () => { readonly manifestId: string; readonly digest: string } | undefined;
   /** Hands a message to the worker (default: the run ring). Tests observe it. */
   readonly send?: (message: RunMessage) => boolean;
+  /** The once-per-table warning of a dropped token (default: `process.emitWarning`). */
+  readonly warn?: (text: string) => void;
 }
 
 const STAT_NAMES = [
@@ -476,6 +495,8 @@ export class SegmentTable {
   readonly #correlationOk: (id: string) => boolean;
   readonly #manifest: () => { readonly manifestId: string; readonly digest: string } | undefined;
   readonly #send: (message: RunMessage) => boolean;
+  readonly #warn: (text: string) => void;
+  #warned = false;
   #envRunId: string | undefined;
   #envTokens: string[] | undefined;
   #closed = false;
@@ -507,6 +528,7 @@ export class SegmentTable {
         return published !== undefined && published.epoch === runtime.epoch ? published : undefined;
       });
     this.#send = options.send ?? ((message) => encodeRunMessage(runtime, message));
+    this.#warn = options.warn ?? emitWarning;
     this.#envRunId = options.envRunId?.trim() || undefined;
     this.#envTokens =
       options.envTokens !== undefined && options.envTokens.length > 0
@@ -812,9 +834,16 @@ export class SegmentTable {
 
   #rejected(count: number): void {
     if (count === 0) return;
-    // Counted only (the token is never printed): the status document (055-t14) reports
-    // the count with its fix, pass the token exactly as resumeToken() returned it.
+    // Counted, with one class-only warning per process that names the fix; the token is
+    // never printed (it may carry a clear-mode run id or label).
     this.#stats.tokens_rejected += count;
+    if (this.#warned) return;
+    this.#warned = true;
+    try {
+      this.#warn(TOKEN_DROPPED_WARNING);
+    } catch {
+      // never the agent's problem
+    }
   }
 
   #v2(prefix: string, value: unknown): string | undefined {
