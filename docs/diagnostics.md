@@ -686,3 +686,71 @@ Fix: point FABRIC_WIRE_STATUS_FILE at a writable path in a directory that exists
 
 Fix: headers are k=v pairs separated by commas, timeouts are numbers, compression is gzip, deflate
 or none, and a client key and certificate are set together.
+
+### FW-025
+
+`node_capture_not_installed`, error: wire capture is not installed in this Node.js process: the
+configuration is invalid.
+
+Fix: run the status command (node -p with require('@singleaxis/fabric/wire').envStatus()) with the
+agent's environment; it names the setting and the fix.
+
+### FW-026
+
+`node_runtime_unqualified`, warning: model-call capture is off: this Node.js or undici build is not
+in the Fabric compatibility table.
+
+Fix: run the agent on a Node.js 24 build listed in the compatibility table of the release notes,
+then start it again.
+
+### FW-027
+
+`node_platform_unsupported`, warning: model-call capture is off: Fabric has no native lock module
+for this operating system or CPU.
+
+Fix: run the agent on Linux or macOS, x64 or arm64.
+
+### FW-028
+
+`node_native_unusable`, warning: model-call capture is off: Fabric's native lock module could not be
+used.
+
+Fix: reinstall @singleaxis/fabric so its prebuilds directory is complete, and keep the spool
+directory on a local disk; the status names the reason.
+
+### FW-029
+
+`node_hook_disabled`, info: a capture point is switched off by its FABRIC_WIRE_UNDICI or
+FABRIC_WIRE_NODE_HTTP setting.
+
+Fix: set the variable to 1 to record through that capture point.
+
+### FW-030
+
+`node_worker_unattached`, warning: a worker thread records nothing: Fabric was not loaded in the
+main thread before the worker started, or the worker did not inherit the preload.
+
+Fix: load Fabric with NODE_OPTIONS=--import=@singleaxis/fabric/register so every thread inherits it.
+
+### FW-031
+
+`node_autoload_off`, info: @singleaxis/fabric/register was loaded but did nothing:
+FABRIC_WIRE_AUTOLOAD is not 1.
+
+Fix: set FABRIC_WIRE_AUTOLOAD=1 in the agent's environment (`fabric run` sets it for you once it
+ships).
+
+### FW-032
+
+`node_redacted_roles`, warning: the capture policy masks some content roles and no redaction service
+is configured: their content is withheld.
+
+Fix: set FABRIC_REDACTION_ENDPOINT, or give those roles retain_original or metadata_only in the
+capture policy.
+
+### FW-033
+
+`node_spool_backlog`, warning: records wait in the spool and no process is draining it.
+
+Fix: start the agent again, or set FABRIC_WIRE_DRAIN_ON_EXIT_S for batch or serverless workers;
+`python -m fabric.wire drain --until-empty` also drains a Node.js spool.
