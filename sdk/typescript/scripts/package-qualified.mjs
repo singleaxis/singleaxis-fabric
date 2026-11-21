@@ -11,7 +11,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+    copyFileSync,
+    existsSync,
+    mkdtempSync,
+    mkdirSync,
+    readFileSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,7 +30,20 @@ const PACKAGE_ROOT = resolve(SCRIPT_DIR, "..");
 
 export const PACKAGE_NAME = "@singleaxis/fabric";
 
-export const EXPECTED_PACKAGE_FILES = Object.freeze([
+/** The six native prebuild targets of spec 055 §4.4, shipped as prebuilds/<target>/. */
+export const NATIVE_TARGETS = Object.freeze([
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64-glibc",
+    "linux-arm64-musl",
+    "linux-x64-glibc",
+    "linux-x64-musl",
+]);
+
+export const NATIVE_FILE = "fabric_wire.node";
+
+/** The tarball's files besides the prebuilds (spec 055 §9.4: the wire entry points). */
+export const BASE_PACKAGE_FILES = Object.freeze([
     "LICENSE",
     "README.md",
     "dist/index.cjs",
@@ -31,8 +52,32 @@ export const EXPECTED_PACKAGE_FILES = Object.freeze([
     "dist/index.d.ts",
     "dist/index.js",
     "dist/index.js.map",
+    "dist/register.cjs",
+    "dist/register.cjs.map",
+    "dist/register.js",
+    "dist/register.js.map",
+    "dist/wire-qualification.json",
+    "dist/wire.cjs",
+    "dist/wire.cjs.map",
+    "dist/wire.d.cts",
+    "dist/wire.d.ts",
+    "dist/wire.js",
+    "dist/wire.js.map",
+    "dist/wire/core.cjs",
+    "dist/wire/core.cjs.map",
     "package.json",
 ]);
+
+/** The exact file list of a tarball carrying the prebuilds of `targets`. */
+export function expectedPackageFiles(targets = NATIVE_TARGETS) {
+    return Object.freeze([
+        ...BASE_PACKAGE_FILES,
+        ...targets.map((target) => `prebuilds/${target}/${NATIVE_FILE}`),
+    ]);
+}
+
+/** A release tarball: every prebuild. */
+export const EXPECTED_PACKAGE_FILES = expectedPackageFiles();
 
 export const FORBIDDEN_RECORDER_TOKENS = Object.freeze([
     "recordGuardrail",
@@ -58,8 +103,8 @@ function digest(buffer, algorithm, encoding) {
     return createHash(algorithm).update(buffer).digest(encoding);
 }
 
-function compareExactFiles(observed) {
-    const expected = [...EXPECTED_PACKAGE_FILES].sort();
+function compareExactFiles(observed, expectedFiles = EXPECTED_PACKAGE_FILES) {
+    const expected = [...expectedFiles].sort();
     const actual = [...observed].sort();
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
         const missing = expected.filter((path) => !actual.includes(path));
@@ -71,7 +116,12 @@ function compareExactFiles(observed) {
     }
 }
 
-export function validatePackRecord(record, artifactBytes, expectedVersion) {
+export function validatePackRecord(
+    record,
+    artifactBytes,
+    expectedVersion,
+    expectedFiles = EXPECTED_PACKAGE_FILES,
+) {
     if (record.name !== PACKAGE_NAME) {
         fail(`package name is ${String(record.name)}, expected ${PACKAGE_NAME}`);
     }
@@ -89,7 +139,7 @@ export function validatePackRecord(record, artifactBytes, expectedVersion) {
     if (new Set(paths).size !== paths.length) {
         fail("npm pack metadata contains duplicate file paths");
     }
-    compareExactFiles(paths);
+    compareExactFiles(paths, expectedFiles);
 
     const sha1 = digest(artifactBytes, "sha1", "hex");
     const integrity = `sha512-${digest(artifactBytes, "sha512", "base64")}`;
@@ -149,9 +199,57 @@ export function validateRecorderPayloads(payloads) {
     }
 }
 
-function verifyRecorderBoundary(artifact) {
+/** The loader's embedded SHA-256 table (`src/wire/native-digests.generated.ts`). */
+export function nativeDigests(
+    source = readFileSync(join(PACKAGE_ROOT, "src", "wire", "native-digests.generated.ts"), "utf8"),
+) {
+    const table = {};
+    for (const match of source.matchAll(/"([a-z0-9-]+)":\s*"([0-9a-f]{64})"/g))
+        table[match[1]] = match[2];
+    return table;
+}
+
+/**
+ * Copies the prebuilds from `source` (laid out as <target>/fabric_wire.node, as the
+ * `fabric-wire-prebuilds` artifact of typescript-native-prebuilds.yml is) into the
+ * package's prebuilds/ directory. Each file must have the digest the loader embeds: a
+ * prebuild the loader would refuse is never shipped. Returns the staged targets. With
+ * `requireAll`, every one of the six targets must be present (a release tarball).
+ */
+export function stagePrebuilds(source, { requireAll = true, root = PACKAGE_ROOT } = {}) {
+    const digests = nativeDigests();
+    const destination = join(root, "prebuilds");
+    rmSync(destination, { recursive: true, force: true });
+    const staged = [];
+    for (const target of NATIVE_TARGETS) {
+        const file = join(source, target, NATIVE_FILE);
+        if (!existsSync(file)) {
+            if (requireAll) {
+                fail(
+                    `prebuild ${target}/${NATIVE_FILE} is missing from ${source}: download the ` +
+                        "fabric-wire-prebuilds artifact of typescript-native-prebuilds.yml into it",
+                );
+            }
+            continue;
+        }
+        const actual = digest(readFileSync(file), "sha256", "hex");
+        if (actual !== digests[target]) {
+            fail(
+                `prebuild ${target}/${NATIVE_FILE} has SHA-256 ${actual}, not the loader's ` +
+                    `${String(digests[target])}: build it with scripts/typescript/prebuild/prebuild.mjs ` +
+                    "or use the fabric-wire-prebuilds artifact of the same commit",
+            );
+        }
+        mkdirSync(join(destination, target), { recursive: true });
+        copyFileSync(file, join(destination, target, NATIVE_FILE));
+        staged.push(target);
+    }
+    return staged;
+}
+
+function verifyRecorderBoundary(artifact, files) {
     const payloads = {};
-    for (const path of EXPECTED_PACKAGE_FILES.filter((name) => name.startsWith("dist/"))) {
+    for (const path of files.filter((name) => name.startsWith("dist/"))) {
         payloads[path] = run("tar", ["-xOzf", artifact, `package/${path}`], { capture: true });
     }
     validateRecorderPayloads(payloads);
@@ -308,6 +406,11 @@ function smokeInstall(artifact) {
                 "client.decision(ids, (decision) => void decision);",
                 'const store: GovernedStore = new LocalFilesystemContentStore("/tmp/x", "artifact-smoke");',
                 'const capture: ContentCaptureConfig = { store, roles: "all", durability: "inline" };',
+                'import { envStatus, type StatusDocument, type WireHandle } from "@singleaxis/fabric/wire";',
+                "const status: StatusDocument = envStatus();",
+                "const handle: WireHandle | undefined = undefined;",
+                "void status;",
+                "void handle;",
                 "const resolver: ContentResolver = new ContentResolver([store]);",
                 "void capture;",
                 "void resolver;",
@@ -332,6 +435,31 @@ function smokeInstall(artifact) {
             )}\n`,
         );
 
+        // Spec 055 §9.4: the wire entry loads in both formats, the root import installs
+        // nothing, and envStatus() answers without installing.
+        writeFileSync(
+            join(fixture, "wire.mjs"),
+            [
+                'import * as root from "@singleaxis/fabric";',
+                'import { envStatus, install, run } from "@singleaxis/fabric/wire";',
+                'import diagnostics from "node:diagnostics_channel";',
+                'if (typeof install !== "function" || typeof run !== "function") throw new Error("bad wire ESM export");',
+                'if (diagnostics.channel("undici:request:create").hasSubscribers) throw new Error("the root import installed a hook");',
+                'if ("install" in root) throw new Error("the root package exports the wire API");',
+                "const doc = envStatus({});",
+                'if (doc.schema !== "fabric.wire-status/v1" || doc.sdk_language !== "typescript") throw new Error("bad status document");',
+            ].join("\n"),
+        );
+        writeFileSync(
+            join(fixture, "wire.cjs"),
+            [
+                'const wire = require("@singleaxis/fabric/wire");',
+                'if (typeof wire.envStatus !== "function") throw new Error("bad wire CJS export");',
+                'if (wire.envStatus({}).capture === undefined) throw new Error("bad status document");',
+            ].join("\n"),
+        );
+        run(process.execPath, [join(fixture, "wire.mjs")]);
+        run(process.execPath, [join(fixture, "wire.cjs")]);
         run(process.execPath, [join(fixture, "smoke.mjs")]);
         run(process.execPath, [join(fixture, "smoke.cjs")]);
         run(join(PACKAGE_ROOT, "node_modules", ".bin", "tsc"), [
@@ -344,12 +472,22 @@ function smokeInstall(artifact) {
 }
 
 function parseArgs(argv) {
-    const options = { destination: undefined, expectedVersion: undefined, smoke: false };
+    const options = {
+        destination: undefined,
+        expectedVersion: undefined,
+        smoke: false,
+        prebuilds: "prebuilds-build",
+        partialPrebuilds: false,
+    };
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index];
         if (arg === "--destination") options.destination = argv[++index];
         else if (arg === "--expected-version") options.expectedVersion = argv[++index];
         else if (arg === "--smoke") options.smoke = true;
+        else if (arg === "--prebuilds") options.prebuilds = argv[++index];
+        // Development only: pack whichever prebuilds are present (none on a machine that
+        // built none). A release tarball carries all six.
+        else if (arg === "--allow-partial-prebuilds") options.partialPrebuilds = true;
         else fail(`unknown argument: ${String(arg)}`);
     }
     const packageJson = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"));
@@ -365,6 +503,10 @@ export function main(argv = process.argv.slice(2)) {
     const options = parseArgs(argv);
     const destination = resolve(PACKAGE_ROOT, options.destination);
     mkdirSync(destination, { recursive: true });
+    const targets = stagePrebuilds(resolve(PACKAGE_ROOT, options.prebuilds), {
+        requireAll: !options.partialPrebuilds,
+    });
+    const expectedFiles = expectedPackageFiles(targets);
     const npmCache = mkdtempSync(join(tmpdir(), "singleaxis-fabric-npm-pack-"));
     let rawMetadata;
     try {
@@ -395,9 +537,14 @@ export function main(argv = process.argv.slice(2)) {
     const record = records[0];
     const artifact = resolve(destination, record.filename);
     const artifactBytes = readFileSync(artifact);
-    const verified = validatePackRecord(record, artifactBytes, options.expectedVersion);
+    const verified = validatePackRecord(
+        record,
+        artifactBytes,
+        options.expectedVersion,
+        expectedFiles,
+    );
     verifyArchiveMembers(artifact, verified.files);
-    verifyRecorderBoundary(artifact);
+    verifyRecorderBoundary(artifact, verified.files);
     if (options.smoke) smokeInstall(artifact);
 
     const qualification = {
@@ -411,6 +558,7 @@ export function main(argv = process.argv.slice(2)) {
         package_size: record.size,
         unpacked_size: record.unpackedSize,
         files: verified.files,
+        prebuilds: targets,
         smoke: options.smoke ? ["esm", "cjs", "types"] : [],
     };
     writeFileSync(

@@ -65,13 +65,20 @@ jobs:
           echo "version=$(tr -d '\n' < VERSION)" >> "${GITHUB_OUTPUT}"
           echo "source-commit=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
 
+  typescript-native:
+    # Spec 055 §4.4, §9.4: the six native lock module prebuilds the npm tarball carries,
+    # built and digest-checked by the same reusable workflow CI runs.
+    name: TypeScript native lock module
+    needs: verify-tag
+    uses: ./.github/workflows/typescript-native-prebuilds.yml
+
   qualify-release:
     name: Qualify release artifacts
     runs-on: ubuntu-latest
     # Release-note validation is part of the pre-publication gate. Every
     # registry publisher depends on this job, so a missing changelog entry
     # cannot create a partial registry release.
-    needs: [verify-tag, changelog]
+    needs: [verify-tag, changelog, typescript-native]
     permissions:
       contents: read
     env:
@@ -105,6 +112,10 @@ jobs:
         run: |
           ../../scripts/ci/install-python-locked.sh --only-group ci
           python -m build --no-isolation
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fabric-wire-prebuilds
+          path: sdk/typescript/prebuilds-build
       - name: Build and qualify TypeScript distribution once
         working-directory: sdk/typescript
         run: |
@@ -119,6 +130,12 @@ jobs:
             --destination "${GITHUB_WORKSPACE}/qualification/npm" \
             --expected-version "${VERSION}" \
             --smoke
+      - name: Refuse a Node.js preload whose qualification gates have not passed
+        # Spec 055 §9.4: a tarball exporting @singleaxis/fabric/register is published only
+        # once gates TS-1U and TS-1D are passed in its wire-qualification.json.
+        run: |
+          python scripts/release/check_npm_wire_gates.py \
+            --tarball "$(ls qualification/npm/singleaxis-fabric-*.tgz)"
       - name: Build and qualify public contracts once
         run: |
           python scripts/release/package_contracts.py \
