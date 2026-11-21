@@ -15,6 +15,21 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: runs, segments and resume tokens (spec 055,
+  unit 055-t11).** Still not installable from the package. A Node.js agent can
+  group its model calls into runs: `run(options, fn)` runs `fn` in a run scope
+  that follows its promises, timers and microtasks, and returns exactly what
+  `fn` returns (a thrown or rejected object is passed on as the same object).
+  `resumeToken()` and `resumeTokens(n)` return tokens another process, Python
+  or Node.js, uses to continue the same run (`run({ resume: [token] })`, or
+  `FABRIC_RUN_RESUME_TOKEN` for a child on the same host); `endRun()` ends a
+  run from its tokens with an outcome. Run ids follow the same five rules as
+  Python: a caller's clear run id (or same-host `FABRIC_RUN_ID`) is never
+  written as given unless `FABRIC_IDENTITY_MODE=clear` is set. Fabric never
+  adds baggage and never changes a child process's arguments or environment;
+  the application carries the token. Misused arguments are dropped and counted;
+  `FABRIC_RECORDS_STRICT=1` makes them throw an error that names the argument
+  and the rule.
 - **Node.js capture groundwork: named losses and segment seals (spec 055,
   unit 055-t10).** Still not installable from the package. When a Node.js
   process loses a model call before it reaches the record (a full queue, a
