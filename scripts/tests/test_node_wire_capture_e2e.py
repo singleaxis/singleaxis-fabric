@@ -427,15 +427,29 @@ handle.close(2.0)
 """
 
 PY_FRAMES = """
-import json, sys
-from fabric.wire._spool import Spool, unframe_all
+import json, struct, sys
+from fabric.wire._spool import BATCH_MAGIC, Spool, frame, unframe_all
 spool = Spool(sys.argv[1], 1 << 30, key=bytes.fromhex(sys.argv[2]))
 out = []
+
+def frames(data):
+    # Each record's frame bytes as the file holds them (one frame, or a batch file's).
+    if not data.startswith(BATCH_MAGIC):
+        return [data]
+    found, offset = [], 12
+    for _ in range(struct.unpack(">I", data[8:12])[0]):
+        (size,) = struct.unpack(">Q", data[offset : offset + 8])
+        found.append(data[offset + 8 : offset + 8 + size])
+        offset += 8 + size
+    return found
+
 try:
     for name in spool.names():
-        for doc, blob in unframe_all(spool.read(name)):
+        data = spool.read(name)
+        for (doc, blob), raw in zip(unframe_all(data), frames(data), strict=True):
             if doc["record_kind"] == "exchange":
-                out.append({"doc": doc, "blob": bytes(blob).hex()})
+                out.append({"doc": doc, "blob": bytes(blob).hex(), "frame": bytes(raw).hex(),
+                            "python_frame": b"".join(frame(doc, [bytes(blob)])).hex()})
 finally:
     spool.release()
 print(json.dumps(out))
@@ -563,6 +577,9 @@ def test_python_and_node_write_the_same_frames_for_the_same_fixture(
     py_frames = frames_of(tmp_path / "py-spool")
     assert len(node_frames) == len(py_frames) == len(REQUESTS), (node, len(py_frames))
     for ts, py in zip(node_frames, py_frames, strict=True):
+        # The frame Node wrote is, byte for byte, the frame Python's writer makes of the
+        # same header and bodies (canonical JSON header, length, bodies, digest).
+        assert ts["frame"] == ts["python_frame"]
         assert ts["blob"] == py["blob"]  # the protected bodies, byte for byte
         ts_doc, py_doc = substituted(ts["doc"]), substituted(py["doc"])
         assert ts_doc == py_doc
