@@ -1,7 +1,7 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Spec 058 I4: no phone-home, for every E1 command (``init``, ``up``, ``run``, ``verify``,
-``show``, ``doctor``, ``down``).
+"""Spec 058 I4: no phone-home, for every local command (``plan``, ``init``, ``up``, ``run``,
+``verify``, ``show``, ``doctor``, ``down``); ``plan`` makes no connection at all.
 
 The commands contact only what the operator configured: the local Docker daemon (through
 the ``docker`` command) and the project's own Node on loopback. Two tests run the same
@@ -33,9 +33,12 @@ def _drive(prefix: list[str], work: Path, *extra: str) -> dict[str, Any]:
 
 
 def _assert_only_configured_endpoints(outcome: dict[str, Any]) -> None:
-    assert outcome["codes"] == {"init": 0, "up": 0, "up again": 0, "run": 0,
+    assert outcome["plan_attempts"] == 0, "plan attempted a network operation"
+    assert outcome["codes"] == {"plan": 0, "init": 0, "init --kubernetes --render": 0, "up": 0,
+                                "up again": 0, "run": 0,
                                 "verify --canary-only": 0, "show --list": 0, "doctor": 0,
-                                "down": 0, "down --purge": 0}  # fmt: skip
+                                "down": 0, "down --purge": 0, "init --production": 0,
+                                "init --rotate all": 0}  # fmt: skip
     attempts = outcome["attempts"]
     # The only connection any command opens is the health probe of the project's own Node.
     assert attempts["connect"], "the Node probe did not run"

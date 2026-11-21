@@ -47,7 +47,14 @@ _NODE_NAMES = frozenset({"node", "node.exe", "nodejs", "npx", "tsx", "ts-node"})
 _OTHER_JS = frozenset({"bun", "deno"})
 _RUNNERS = frozenset({"uv", "poetry", "pipenv", "pdm", "hatch"})
 #: The variables the TypeScript SDK's explicit API reads today (before 055 TS-1U).
-NODE_VARIABLES = ("FABRIC_TENANT_ID", "FABRIC_AGENT_ID", "FABRIC_RUN_ID")
+#: What a Node.js agent gets (before zero-code Node capture): the variables the TypeScript
+#: SDK's explicit API reads, and Fabric's own OTLP route (§6.4) that
+#: `fabricExporterOptions()` turns into the exporter's URL, CA and headers.
+NODE_VARIABLES = (
+    "FABRIC_TENANT_ID", "FABRIC_AGENT_ID", "FABRIC_RUN_ID", "FABRIC_OTLP_ENDPOINT",
+    "FABRIC_OTLP_CERTIFICATE", "FABRIC_OTLP_CLIENT_CERTIFICATE", "FABRIC_OTLP_CLIENT_KEY",
+    "FABRIC_OTLP_HEADERS_FILE", "FABRIC_WIRE_ID_KEY_FILE",
+)  # fmt: skip
 #: What the interpreter probe runs (``-I``: no PYTHONPATH, no user site, no current
 #: directory on sys.path). It imports nothing of Fabric: it finds the package and the
 #: OTLP exporter and reads the distribution's version.
@@ -380,7 +387,7 @@ def build(
             Finding(
                 "FC-053",
                 "Node.js: zero-code capture is not built yet; "
-                "the explicit API gets the tenant, agent and run label",
+                "the explicit API gets the tenant, agent, run label and the Fabric Node",
             )
         )
     else:
@@ -680,7 +687,13 @@ _IN_CONTAINER = {
     "FABRIC_OTLP_CERTIFICATE": "/var/run/fabric/ca.crt",
     "FABRIC_WIRE_ID_KEY_FILE": "/var/run/fabric/id.key",
     "FABRIC_CAPTURE_POLICY": "/var/run/fabric/capture-policy.json",
+    # Production (§7.1): the names of the agent Secret the Kubernetes generator writes.
+    "FABRIC_OTLP_HEADERS_FILE": "/var/run/fabric/headers",
+    "FABRIC_OTLP_CLIENT_CERTIFICATE": "/var/run/fabric/tls.crt",
+    "FABRIC_OTLP_CLIENT_KEY": "/var/run/fabric/tls.key",
+    "FABRIC_WIRE_SPOOL_KEY_FILE": "/var/run/fabric/spool.key",
 }
+_SPOOL_IN_CONTAINER = "/var/lib/fabric/spool"
 _AUTOLOAD_NOTE = (
     "PYTHONPATH: put the output of `python -m fabric.wire --print-autoload-path`, "
     "run with the agent's own interpreter, first on PYTHONPATH"
@@ -733,6 +746,10 @@ def _systemd(env: Mapping[str, str], notes: list[str], autoload: str | None) -> 
     credentials = {
         "FABRIC_OTLP_CERTIFICATE": "fabric-ca.crt",
         "FABRIC_WIRE_ID_KEY_FILE": "fabric-id.key",
+        "FABRIC_OTLP_HEADERS_FILE": "fabric-headers",
+        "FABRIC_OTLP_CLIENT_CERTIFICATE": "fabric-client.crt",
+        "FABRIC_OTLP_CLIENT_KEY": "fabric-client.key",
+        "FABRIC_WIRE_SPOOL_KEY_FILE": "fabric-spool.key",
     }
     if "FABRIC_WIRE_AUTOLOAD" in env:
         notes.append(f"PYTHONPATH: prepend {autoload}" if autoload else _AUTOLOAD_NOTE)
@@ -759,6 +776,11 @@ def _docker(env: Mapping[str, str], project: _project.Project, notes: list[str])
         inside = value
         if name == "FABRIC_OTLP_ENDPOINT" and local:
             inside = f"https://{_templates.NODE_SERVICE}:4318"
+        elif name == "FABRIC_WIRE_CONTENT_ENDPOINT" and local:
+            inside = f"https://{_templates.NODE_SERVICE}:4319/v1/logs"
+        elif name == "FABRIC_WIRE_SPOOL_DIR":
+            flags.append(f"-v {_shell(value + ':' + _SPOOL_IN_CONTAINER)}")
+            inside = _SPOOL_IN_CONTAINER
         elif name in _IN_CONTAINER:
             flags.append(f"-v {_shell(value + ':' + _IN_CONTAINER[name] + ':ro')}")
             inside = _IN_CONTAINER[name]
@@ -785,15 +807,19 @@ def _k8s(env: Mapping[str, str], project: _project.Project, notes: list[str]) ->
     )
     if project.resolved["node.mode"] == "docker":
         notes.append(
-            "FABRIC_OTLP_ENDPOINT: set it to the Node your cluster reaches; the "
+            "FABRIC_OTLP_ENDPOINT"
+            + (" and FABRIC_WIRE_CONTENT_ENDPOINT" if "FABRIC_WIRE_CONTENT_ENDPOINT" in env else "")
+            + ": set it to the Node your cluster reaches; the "
             "local Node of `fabric up` listens on this machine only"
         )
     if "FABRIC_WIRE_AUTOLOAD" in env:
         notes.append(_AUTOLOAD_NOTE + " (the image's own SDK)")
     lines = [f"# {note}" for note in notes] + ["env:"]
     for name, value in env.items():
-        if name == "FABRIC_WIRE_STORE":
+        if name == "FABRIC_WIRE_STORE" and value != "node":
             continue  # a file store on this machine means nothing in a pod
+        if name == "FABRIC_WIRE_SPOOL_DIR":
+            continue  # a directory on this machine: the pod's spool is its own volume
         lines += [f"- name: {name}", f"  value: {json.dumps(_IN_CONTAINER.get(name, value))}"]
     if files:
         lines += [

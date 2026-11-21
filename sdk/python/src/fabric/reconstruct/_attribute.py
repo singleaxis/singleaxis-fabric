@@ -2363,7 +2363,7 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         **{key: result.attribution[key] for key in _M2_SUMMARY if key in result.attribution},
         "output_match": result.attribution["output_match"],
         # Recorded by http.nonmodel, never attributed nor joined to host connects (spec
-        # 056 defines no rule for it; docs/action-reconstruction.md, Known limitations).
+        # 056 defines no rule for it; docs/reference/action-reconstruction.md, Known limitations).
         "http_requests_unattributed": len(inp.get("http_requests", ())),
         "complete": all(c["verdict"] in ("complete", "not_observed")
                         for c in result.chains.values()),

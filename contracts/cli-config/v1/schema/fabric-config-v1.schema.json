@@ -52,7 +52,8 @@
       "properties": {
         "mode": {"enum": ["docker", "helm", "external"]},
         "endpoint": {"oneOf": [{"const": "auto"}, {"$ref": "#/$defs/http_url"}]},
-        "queue_size": {"oneOf": [{"const": "auto"}, {"type": "integer", "minimum": 1}]}
+        "queue_size": {"oneOf": [{"const": "auto"}, {"type": "integer", "minimum": 1},
+                                 {"type": "string", "not": {"const": "auto"}, "pattern": "^[0-9]+(\\.[0-9]+)? ?([kKMGT]i?B|B)?$"}]}
       }
     },
     "destination": {
@@ -76,9 +77,9 @@
         {"if": {"properties": {"preset": {"enum": ["local-dir", "trial"]}}},
          "then": {"propertyNames": {"enum": ["preset", "path"]}}},
         {"if": {"properties": {"preset": {"const": "s3"}}},
-         "then": {"required": ["bucket", "region"], "propertyNames": {"enum": ["preset", "bucket", "region", "sse_kms_key"]}}},
+         "then": {"required": ["bucket", "region"], "propertyNames": {"enum": ["preset", "bucket", "region", "sse_kms_key", "otlp_endpoint", "otlp_ca_file", "otlp_headers_file"]}}},
         {"if": {"properties": {"preset": {"const": "s3-compatible"}}},
-         "then": {"required": ["endpoint", "bucket"], "propertyNames": {"enum": ["preset", "endpoint", "bucket", "ca_file", "credentials_file", "region"]}}},
+         "then": {"required": ["endpoint", "bucket"], "propertyNames": {"enum": ["preset", "endpoint", "bucket", "ca_file", "credentials_file", "region", "otlp_endpoint", "otlp_ca_file", "otlp_headers_file"]}}},
         {"if": {"properties": {"preset": {"const": "otlp"}}},
          "then": {"required": ["otlp_endpoint"], "propertyNames": {"enum": ["preset", "otlp_endpoint", "otlp_ca_file", "otlp_headers_file"]}}}
       ]

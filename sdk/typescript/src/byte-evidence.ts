@@ -7,6 +7,7 @@
  * OTLP delivery receipt, or run-completeness verdict.
  */
 
+import { idKeyBytesFromEnv } from "./id-key-env.js";
 import { randomUUID } from "node:crypto";
 import { sha256BytesPrefixed as digest } from "./hash.js";
 
@@ -90,12 +91,12 @@ function checkIdKey(key: Uint8Array | undefined): Uint8Array | undefined {
   return key;
 }
 
-/** The id key named by `FABRIC_WIRE_ID_KEY` (unset or empty: undefined); a secret. */
+/** The id key named by `FABRIC_WIRE_ID_KEY`, or held by the file `FABRIC_WIRE_ID_KEY_FILE`
+ * names (unset or empty: undefined); a secret. */
 export function idKeyFromEnv(
   env: Record<string, string | undefined> = typeof process !== "undefined" ? process.env : {},
 ): Uint8Array | undefined {
-  const value = env[ID_KEY_ENV] ?? "";
-  return value === "" ? undefined : checkIdKey(Buffer.from(value, "utf8"));
+  return checkIdKey(idKeyBytesFromEnv(env));
 }
 
 function productionMarked(policy: unknown): boolean {

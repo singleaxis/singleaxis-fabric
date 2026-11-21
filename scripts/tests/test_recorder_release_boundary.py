@@ -8,6 +8,8 @@ import json
 import re
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 
 # Canonical legacy component names (single source of truth for every
@@ -40,7 +42,8 @@ def test_release_policy_is_recorder_only() -> None:
         "first_party_app_charts": ["otel-collector"],
         "third_party_app_charts": [],
     }
-    assert policy["images"] == ["fabric-otelcol", "fabric-host-emitter"]
+    # Spec 058 §11.1: the operator CLI image (its content check: test_cli_image_check.py).
+    assert policy["images"] == ["fabric-otelcol", "fabric-host-emitter", "fabric-cli"]
     # Spec 058 §5.1 (I1, OQ-1): the operator CLI and its alias, exactly; nothing else.
     assert policy["python_distribution"]["required_console_scripts"] == {
         "fabric": "fabric.cli:main",
@@ -176,7 +179,9 @@ def test_redaction_service_example_is_not_a_release_artifact() -> None:
     package = json.loads(
         (ROOT / "sdk/typescript/package.json").read_text(encoding="utf-8")
     )
-    assert set(package["files"]) <= {"dist", "README.md", "LICENSE"}
+    # bin/: the npm launcher (spec 058 §1.4), `fabric run` and `fabric doctor` only.
+    assert set(package["files"]) <= {"bin", "dist", "README.md", "LICENSE"}
+    assert package["bin"] == {"fabric": "bin/fabric.mjs"}
     scanned = [
         *(ROOT / ".github/workflows").glob("release*.yml"),
         *(ROOT / "scripts/release").rglob("*"),
@@ -219,19 +224,40 @@ def test_default_wheel_installs_no_provider_sdk() -> None:
 
 
 def test_chart_packages_no_privileged_workload() -> None:
-    """OD-10: the chart adds only the host ingress groups; the privileged eBPF sensor
-    stays a customer-deployed example under deploy/kubernetes."""
+    """Spec 056 OD-10 and its fallback, taken by spec 058 §10.5 (owner-accepted): the one
+    host workload of the chart is the opt-in host sensor DaemonSet, disabled by default
+    and never privileged; every other template holds no host access at all. The default
+    render has no privileged workload (charts/fabric/tests/test-package-boundary.sh renders
+    both); the eBPF and auditd examples under deploy/kubernetes stay."""
     templates = [
         p
         for p in (ROOT / "charts").rglob("*")
         if p.is_file() and "templates" in p.parts
     ]
     assert templates
+    sensor = ROOT / "charts/fabric/templates/hostsensor.yaml"
     for path in templates:
         text = path.read_text(encoding="utf-8", errors="replace")
-        for forbidden in ("privileged: true", "hostPID: true", "hostNetwork: true",
-                          "SYS_ADMIN", "CAP_BPF", "/sys/fs/cgroup", "/sys/kernel"):  # fmt: skip
+        for forbidden in ("privileged: true", "hostNetwork: true", "hostIPC: true",
+                          "SYS_ADMIN"):  # fmt: skip
             assert forbidden not in text, (path, forbidden)
+        if path == sensor:
+            continue
+        for forbidden in ("hostPID: true", "CAP_BPF", "/sys/fs/cgroup", "/sys/kernel"):
+            assert forbidden not in text, (path, forbidden)
+    # Opt-in only: the template renders nothing unless hostSensor.enabled, off by default.
+    body = [
+        line for line in sensor.read_text(encoding="utf-8").split("*/ -}}", 1)[1].splitlines()
+        if line.strip()
+    ]  # fmt: skip
+    assert body[0] == "{{- if .Values.hostSensor.enabled }}", body[0]
+    assert body[-1] == "{{- end }}", body[-1]
+    for defaults in (
+        "charts/fabric/values.yaml",
+        "charts/fabric/presets/defaults.yaml",
+    ):
+        values = yaml.safe_load((ROOT / defaults).read_text(encoding="utf-8"))
+        assert values["hostSensor"]["enabled"] is False, defaults
     example = (ROOT / "deploy/kubernetes/host-emitter-daemonset.yaml").read_text(
         encoding="utf-8"
     )

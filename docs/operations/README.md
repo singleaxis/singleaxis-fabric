@@ -186,7 +186,7 @@ After any change to the Node, the store or the agents:
 
    Exit code `0` proves the whole path. `missing_object`,
    `source_unauthenticated` or `unverified` names the broken leg without
-   exposing content. See [reconstruct](../reconstruct.md).
+   exposing content. See [reconstruct](../reference/reconstruct.md).
 
 ## Troubleshooting
 
@@ -232,7 +232,7 @@ PY
 - Upgrading the Node to v0.8 requires the source binding and content key
   settings (source id, and with content the content key); agents in node mode need a capture policy,
   `FABRIC_WIRE_ID_KEY` and `FABRIC_WIRE_SPOOL_KEY`. See
-  [deployment](../deployment.md#upgrading-from-earlier-releases).
+  [deployment](../reference/manual-setup/deployment.md#upgrading-from-earlier-releases).
 - Losing the Node content key loses queued and file-stored content. Rotate
   it only with an empty content queue. Rotating the id key changes every
   pseudonym from that point on.

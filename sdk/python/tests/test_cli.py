@@ -88,10 +88,17 @@ def test_version_with_an_invalid_config_still_succeeds_and_says_why(
     assert "FC-003" in err and "did you mean capture.exec?" in err
 
 
-@pytest.mark.parametrize("command", sorted(set(SPEC_COMMANDS) - cli.BUILT - {"help"}))
-def test_unbuilt_commands_say_so_with_exit_2(
-    command: str, capsys: pytest.CaptureFixture[str]
+def test_every_spec_command_is_built() -> None:
+    """Spec 058 E3 (WP8-17) builds `plan`, the last of the §5.1 commands."""
+    assert set(SPEC_COMMANDS) == cli.BUILT
+
+
+def test_an_unbuilt_command_says_so_with_exit_2(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A release that leaves a command out answers it with FC-010 (exit 2), never a crash."""
+    command = "plan"
+    monkeypatch.setattr(cli, "BUILT", cli.BUILT - {command})
     code, out, err = _run([command, "--json"], capsys)
     assert code == _report.EXIT_USAGE
     report = json.loads(out)
@@ -140,9 +147,10 @@ def test_console_scripts_and_cli_extra() -> None:
     # PyYAML and cryptography for the CLI itself; the OTLP/HTTP exporter so that the one
     # install line of G1 is also everything `fabric run` needs to deliver records.
     # httpx: `fabric verify`'s canary sends its model exchange through a client wire
-    # capture hooks (§5.6).
+    # capture hooks (§5.6). boto3: in the production profile `verify` and `show` read model
+    # bodies back from the destination's S3 store (§9.1); agents never need it.
     assert cli_extra == {"PyYAML", "cryptography", "opentelemetry-exporter-otlp-proto-http",
-                         "urllib3", "httpx"}  # fmt: skip
+                         "urllib3", "httpx", "boto3"}  # fmt: skip
     otlp = set(project["optional-dependencies"]["otlp"])
     assert otlp <= set(project["optional-dependencies"]["cli"]), "[cli] must cover [otlp]"
     base = {req.split(">")[0].split("=")[0].split("<")[0] for req in project["dependencies"]}
@@ -184,7 +192,7 @@ print(json.dumps({"code": code}))
 
 
 @pytest.mark.parametrize("args", [["version", "--json"], ["help"], ["init", "--json"],
-                                  ["bogus"]])  # fmt: skip
+                                  ["plan", "--json"], ["bogus"]])  # fmt: skip
 def test_no_command_opens_a_network_connection(args: list[str], tmp_path: Path) -> None:
     """I4: no phone-home. Every E1a command runs with any socket use aborting the process."""
     result = subprocess.run([sys.executable, "-c", _NO_NETWORK, *args],  # noqa: S603

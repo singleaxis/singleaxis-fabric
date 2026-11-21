@@ -16,6 +16,8 @@
 
 import { createHash, createHmac } from "node:crypto";
 
+import { idKeyBytesFromEnv } from "./id-key-env.js";
+
 /** Environment variable naming the identity mode (049 §2.9 rule 7). */
 export const ENV_IDENTITY_MODE = "FABRIC_IDENTITY_MODE";
 /** Environment variable holding the pseudonym key (a secret). */
@@ -192,10 +194,11 @@ export function checkIdKey(key: string | Uint8Array): Uint8Array {
   return bytes;
 }
 
-/** `FABRIC_WIRE_ID_KEY` as UTF-8 bytes (unset or empty: `undefined`); a secret. */
+/** `FABRIC_WIRE_ID_KEY` as UTF-8 bytes, or the bytes of the file `FABRIC_WIRE_ID_KEY_FILE`
+ * names (unset or empty: `undefined`); a secret. */
 export function idKeyFromEnv(env: Record<string, string | undefined>): Uint8Array | undefined {
-  const value = env[ENV_ID_KEY];
-  return value ? checkIdKey(value) : undefined;
+  const bytes = idKeyBytesFromEnv(env);
+  return bytes === undefined ? undefined : checkIdKey(bytes);
 }
 
 let warnedMissingKey = false;

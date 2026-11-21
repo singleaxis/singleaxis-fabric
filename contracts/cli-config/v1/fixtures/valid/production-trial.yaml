@@ -1,0 +1,14 @@
+schema: fabric.config/v1
+project: support-agent
+profile: production
+shape: linux-host
+tenant: acme
+agent: support-agent
+capture:
+  privacy: ./fabric-capture-policy.json
+node:
+  mode: docker
+  queue_size: 20GiB
+destination:
+  preset: trial
+  path: ./fabric-data

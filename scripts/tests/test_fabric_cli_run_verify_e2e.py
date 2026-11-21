@@ -113,8 +113,9 @@ def test_up_run_verify_show_doctor(
     assert run["exchanges"] == 3 and run["chains"]["decisions"] == "complete", run
     rows = {row["row"]: row for row in verify["data"]["run"]["coverage"]}
     assert rows["model calls (requests and responses)"]["state"] == "recorded"
-    assert rows["commands the agent ran"] == {
-        "row": "commands the agent ran",
+    assert rows["commands the agent runs"] == {
+        "id": "commands",
+        "row": "commands the agent runs",
         "state": "fix",
         "note": "fabric init --exec",
     }

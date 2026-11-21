@@ -1,0 +1,111 @@
+{
+  "schema": "fabric.plan-scenarios/v1",
+  "comment": "Spec 058 G5 and WP8-21: the five 'Which layers do I need?' scenarios of the 2026-11-09 friction audit (Path 5), each a fixture environment `fabric plan` must answer in one command with recorded / invisible / fix rows, in at most budget_s seconds, with no network access. The expected states assume a Linux host with BTF, not inside a container (the CI runner; the SDK tests fake that host). Used by scripts/plan_scenarios/run.py (CI job plan-scenarios) and sdk/python/tests/test_cli_plan.py. Distributions are installed as metadata only (a dist-info directory), never as code. A row in `rows` must have that state; `notes` must appear in the row's note.",
+  "budget_s": 10,
+  "scenarios": [
+    {
+      "id": "vm-shell-browser",
+      "audit": "Agent in a VM with shell and browser tools (Python)",
+      "agent": {"runtime": "python", "script": "agent.py", "distributions": {"httpx": "0.28.1", "openai": "1.99.0", "playwright": "1.48.0"}},
+      "env": {"OPENAI_API_KEY": "fixture-not-a-key"},
+      "args": [],
+      "expect": {
+        "shape": "linux-host",
+        "rows": {
+          "model calls (requests and responses)": "recorded",
+          "tool calls and results": "recorded",
+          "commands the agent runs": "fix",
+          "network contacts (non-model HTTP)": "fix",
+          "host evidence (kernel sensor)": "recorded",
+          "browser and UI automation": "invisible",
+          "files the agent touched": "invisible"
+        },
+        "notes": {
+          "model calls (requests and responses)": "httpx",
+          "commands the agent runs": "fabric init --exec",
+          "network contacts (non-model HTTP)": "fabric init --http-host",
+          "browser and UI automation": "the browser's launch is a command"
+        }
+      }
+    },
+    {
+      "id": "remote-sandbox",
+      "audit": "Control plane with a remote sandbox",
+      "agent": {"runtime": "python", "script": "agent.py", "distributions": {"httpx": "0.28.1", "anthropic": "0.69.0", "e2b": "2.62.0"}},
+      "env": {"ANTHROPIC_API_KEY": "fixture-not-a-key"},
+      "args": [],
+      "expect": {
+        "shape": "linux-host",
+        "rows": {
+          "model calls (requests and responses)": "recorded",
+          "commands in a remote sandbox": "fix",
+          "commands the agent runs": "fix"
+        },
+        "notes": {
+          "commands in a remote sandbox": "FABRIC_WIRE_REMOTE_SANDBOX=e2b fabric run -- CMD"
+        }
+      }
+    },
+    {
+      "id": "multi-tenant-service",
+      "audit": "Multi-tenant service (one process, many tenants)",
+      "agent": {"runtime": "python", "script": "server.py", "distributions": {"httpx": "0.28.1", "openai": "1.99.0", "uvicorn": "0.38.0"}},
+      "env": {"OPENAI_API_KEY": "fixture-not-a-key"},
+      "args": [],
+      "expect": {
+        "shape": "linux-host",
+        "rows": {
+          "model calls (requests and responses)": "recorded",
+          "end user and session": "needs code",
+          "tenant per request (one process, many tenants)": "invisible"
+        },
+        "notes": {
+          "end user and session": "fabric.wire.run(session_id=..., user_id=...)",
+          "tenant per request (one process, many tenants)": "not_configured"
+        }
+      }
+    },
+    {
+      "id": "compiled-binary",
+      "audit": "Compiled agent binary (Go/Rust)",
+      "agent": {"runtime": "compiled", "script": "agent"},
+      "env": {"OPENAI_API_KEY": "fixture-not-a-key"},
+      "args": [],
+      "expect": {
+        "shape": "linux-host",
+        "rows": {
+          "model calls (requests and responses)": "invisible",
+          "tool calls and results": "invisible",
+          "commands the agent runs": "invisible",
+          "network contacts (non-model HTTP)": "invisible",
+          "host evidence (kernel sensor)": "recorded"
+        },
+        "notes": {
+          "model calls (requests and responses)": "unsupported_runtime",
+          "commands the agent runs": "the host sensor records every process the agent starts"
+        }
+      }
+    },
+    {
+      "id": "mcp-heavy",
+      "audit": "MCP-heavy agent",
+      "agent": {"runtime": "python", "script": "agent.py", "distributions": {"httpx": "0.28.1", "openai": "1.99.0", "mcp": "1.20.0"}},
+      "env": {"OPENAI_API_KEY": "fixture-not-a-key"},
+      "mcp_config": {"mcpServers": {"files": {"command": "npx", "args": ["-y", "example-files-server"]}, "search": {"url": "https://mcp.example.com/mcp"}}},
+      "args": ["--mcp-config", "mcp.json"],
+      "expect": {
+        "shape": "linux-host",
+        "rows": {
+          "model calls (requests and responses)": "recorded",
+          "tool calls and results": "recorded",
+          "MCP traffic (stdio server files)": "fix",
+          "MCP traffic (http server search)": "fix"
+        },
+        "notes": {
+          "MCP traffic (stdio server files)": "fabric init --mcp",
+          "MCP traffic (http server search)": "fabric init --http-host mcp.example.com"
+        }
+      }
+    }
+  ]
+}

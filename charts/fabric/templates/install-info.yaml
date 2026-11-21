@@ -1,0 +1,86 @@
+{{- /*
+What `fabric verify --kubernetes` and `fabric doctor --kubernetes` read
+(spec 058 §10.6): the release, its preset and the names of what it installed.
+Names and ports only, never a secret. Rendered with the secrets Job (a
+preset, agentNamespaces, the injector or the host sensor): an install from
+the profile files alone is unchanged.
+*/ -}}
+{{- $plan := include "fabric.secretsPlan" . | fromYaml }}
+{{- if or $plan.render .Values.hostSensor.enabled }}
+{{- $collector := include "fabric.collectorValues" . | fromYaml }}
+{{- $agents := list }}
+{{- range $agent := $plan.agents }}
+{{- $entry := dict "name" $agent.name "source" $agent.source "tenantId" $agent.tenantId "secret" $.Values.secretsJob.agentSecretName }}
+{{- if $plan.production }}
+{{- $_ := set $entry "nodeSecret" $agent.nodeSecret }}
+{{- $_ := set $entry "ports" (include "fabric.agentGroupPorts" (dict "root" $ "index" $agent.index) | fromYaml) }}
+{{- end }}
+{{- $agents = append $agents $entry }}
+{{- end }}
+{{- $sensor := dict "enabled" .Values.hostSensor.enabled }}
+{{- if .Values.hostSensor.enabled }}
+{{- $_ := set $sensor "daemonSet" (include "fabric.hostSensorName" .) }}
+{{- $_ := set $sensor "podSelector" (.Values.hostSensor.agentPodSelector | toString) }}
+{{- $_ := set $sensor "idKeySecret" .Values.hostSensor.idKeySecretName }}
+{{- $_ := set $sensor "tlsSecret" .Values.hostSensor.tlsSecretName }}
+{{- $_ := set $sensor "nodes" (include "fabric.hostSensorNodes" . | fromYamlArray) }}
+{{- end }}
+{{- $injector := dict "enabled" .Values.injector.enabled }}
+{{- if .Values.injector.enabled }}
+{{- $_ := set $injector "deployment" (include "fabric.injectorName" .) }}
+{{- $_ := set $injector "webhook" (include "fabric.webhookName" .) }}
+{{- $_ := set $injector "tlsSecret" .Values.injector.tlsSecretName }}
+{{- $_ := set $injector "capturePolicy" (not (empty .Values.injector.capturePolicy)) }}
+{{- end }}
+{{- /* Where the Node writes model bodies, so verify can read them back with the
+     operator's own credentials (spec 058 §5.6 step 5): location only. */ -}}
+{{- $store := dict "backend" "" }}
+{{- if dig "content" "enabled" false $collector }}
+{{- $s3 := dig "content" "s3" dict $collector }}
+{{- $store = dict "backend" (dig "content" "backend" "" $collector | toString) }}
+{{- if eq $store.backend "s3" }}
+{{- $_ := set $store "bucket" ($s3.bucket | default "" | toString) }}
+{{- $_ := set $store "prefix" ($s3.prefix | default "" | toString) }}
+{{- $_ := set $store "region" ($s3.region | default "" | toString) }}
+{{- $_ := set $store "endpoint" ($s3.endpoint | default "" | toString) }}
+{{- $_ := set $store "pathStyle" ($s3.usePathStyle | default false) }}
+{{- end }}
+{{- end }}
+{{- $secrets := list }}
+{{- if $plan.render }}
+{{- $secrets = include "fabric.secretsReleaseNames" . | fromYamlArray }}
+{{- end }}
+{{- $info := dict
+      "schema" "fabric.install-info/v1"
+      "version" .Chart.AppVersion
+      "release" .Release.Name
+      "namespace" .Release.Namespace
+      "preset" (.Values.preset | toString)
+      "profile" .Values.profile.name
+      "production" $plan.production
+      "tenantId" (.Values.tenant.id | toString)
+      "clusterDomain" .Values.clusterDomain
+      "node" (dict
+          "service" (include "fabric.collectorFullname" .)
+          "healthPort" 13133
+          "content" (dig "content" "enabled" false $collector)
+          "contentStore" $store
+          "networkPolicy" (dig "networkPolicy" "enabled" false $collector)
+          "denyDefault" .Values.networkPolicy.denyDefault)
+      "caSecret" .Values.secretsJob.caSecretName
+      "secrets" $secrets
+      "agentNamespaces" $agents
+      "injector" $injector
+      "hostSensor" $sensor
+}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fabric.objectName" (dict "root" . "suffix" "fabric-install") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fabric.componentLabels" (dict "root" . "component" "install-info") | nindent 4 }}
+    fabric.singleaxis.ai/install-info: "true"
+data:
+  info.json: {{ toJson $info | quote }}
+{{- end }}

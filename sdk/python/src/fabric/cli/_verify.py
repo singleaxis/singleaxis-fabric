@@ -1,8 +1,10 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""``fabric verify`` (spec 058 §5.6), local profile: check the configuration, the Node,
-send a canary through the whole path, read it back, then read the user's last
-``fabric run`` and print the observed coverage report (§12.4).
+"""``fabric verify`` (spec 058 §5.6): check the configuration, the Node, send a canary
+through the whole path, read it back, then read the user's last ``fabric run`` and print
+the observed coverage report (§12.4). ``--production`` adds the hardening checks of §13.4
+(:mod:`._prodchecks`); in the production profile the canary has its own ingress group, and
+a destination Fabric cannot read spans from is read through the canary tap (§9.3).
 
 Exit 0 when no finding is an error (``--strict``: and no warning). A run passes when the
 reader's own verdict is complete for every process of it and the ``decisions`` chain is
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import json
 import os
 import secrets as _random
@@ -30,7 +33,7 @@ from urllib.parse import urlsplit
 
 from ..reconstruct._inputs import ACCEPTED_INPUTS, ReconstructInputError
 from ..reconstruct._report import COMPLETE_VERDICTS, EXIT_RUN_STATES
-from . import _config, _project, _read, _run, _runstate, _secrets, _up
+from . import _args, _config, _project, _read, _run, _runstate, _secrets, _up
 from ._report import EXIT_FINDINGS, EXIT_OK, CliError, Finding, Report
 
 CANARY_TIMEOUT_S = 90.0
@@ -100,8 +103,12 @@ def run_canary(
 ) -> dict[str, Any]:
     """Start ``python -m fabric.cli._canary`` with the environment ``fabric run`` gives a
     Python agent (the shell's ``FABRIC_*`` win), without the autoload."""
-    plan = _run.Plan(added=dict(_project.compile_environment(project)))
+    # The canary's own source, token, listeners and spool in production (§7.1); the
+    # agent's environment in the local profile.
+    plan = _run.Plan(added=dict(_project.canary_environment(project)))
     env, _ = _run.child_environment(environ, plan)
+    if project.production:
+        _secrets.ensure_private_dir(Path(env["FABRIC_WIRE_SPOOL_DIR"]))
     for name in ("FABRIC_WIRE_AUTOLOAD", "FABRIC_RUN_ID", "FABRIC_WIRE_STATUS_FILE"):
         env.pop(name, None)
     with contextlib.suppress(OSError):
@@ -210,26 +217,64 @@ def _canary(
         findings.append(Finding("FC-074", dest.reason))
         lines.append(f"canary: recorded and delivered to the Node ({dest.reason}: not read back)")
         return label, data
-    run, error = _poll_canary(dest, label, started, options.wait, sleep)
+    wait = _args.DEFAULT_WAIT_S if options.wait is None else options.wait
+    run, error = _poll_canary(dest, label, started, wait, sleep)
+    tapped = dest.spans_dir == canary_tap_dir(project)
     if run is None:
         findings.append(
             Finding("FC-073", error)
             if error
             else Finding(
-                "FC-063", f"none of its records in {dest.spans_dir} after {options.wait:g} s"
+                "FC-197" if tapped else "FC-063",
+                f"none of its records in {dest.spans_dir} after {wait:g} s",
             )
         )
         lines.append("canary: delivered to the Node, not found in the destination")
         return label, data
     data.update(verdict=run["verdict"], exchanges=run["counts"]["exchanges"])
     if run["verdict"] not in COMPLETE_VERDICTS:
-        reasons = "; ".join(_read.words(r) for r in _read.run_reasons(run)) or run["verdict"]
+        reasons = "; ".join(_read.explain_run(run)) or run["verdict"]
         findings.append(Finding("FC-064", reasons))
         lines.append(f"canary: read back {run['verdict']}")
         return label, data
     findings.append(Finding("FC-065", f"{run['counts']['exchanges']} exchange, {run['verdict']}"))
     lines.append(f"canary: recorded, delivered and read back {run['verdict']}")
     return label, data
+
+
+def canary_tap_dir(project: _project.Project) -> Path:
+    """Where the Node's canary tap writes the canary's spans (§9.3)."""
+    return project.state_dir / "state" / "canary-tap"
+
+
+def canary_destination(project: _project.Project, environ: Mapping[str, str]
+                       ) -> _read.Destination:  # fmt: skip
+    """Where the canary is read back: the project's destination, or, in production with a
+    destination Fabric cannot read spans from, the canary tap (§9.3, OQ-9) with the
+    destination's content store."""
+    dest = _read.destination(project, environ)
+    if project.production and dest.spans_dir is None:
+        return dataclasses.replace(dest, spans_dir=canary_tap_dir(project), reason=None)
+    return dest
+
+
+def _production_checks(project: _project.Project, environ: Mapping[str, str],
+                       findings: list[Finding], lines: list[str]) -> dict[str, Any]:  # fmt: skip
+    """§5.6 ``--production``: the hardening checks, with ids shared with preflight-prod.sh."""
+    from . import _prodchecks  # noqa: PLC0415
+
+    checks, extra = _prodchecks.run(project, environ)
+    failed = _prodchecks.findings(checks)
+    findings.extend(extra)
+    findings.extend(failed)
+    counts = {outcome: sum(1 for c in checks if c.outcome == outcome)
+              for outcome in ("pass", "warn", "fail", "skip")}  # fmt: skip
+    if not failed:
+        findings.append(Finding("FC-196", f"{counts['pass']} passed"))
+    lines.append(f"production checks: {counts['pass']} passed, {counts['warn']} warning(s), "
+                 f"{counts['fail']} failed" + (f", {counts['skip']} not applicable"
+                                               if counts["skip"] else ""))  # fmt: skip
+    return {"checks": [c.to_json() for c in checks], "outcomes": _prodchecks.outcomes(checks)}
 
 
 # ---------------------------------------------------------------- the user's run
@@ -290,7 +335,7 @@ def _judge(runs: Sequence[Mapping[str, Any]], record: _runstate.RunRecord) -> li
     for run in runs:
         state = run.get("run_state")
         if run["verdict"] not in COMPLETE_VERDICTS or state not in EXIT_RUN_STATES:
-            reasons = "; ".join(_read.words(r) for r in _read.run_reasons(run))
+            reasons = "; ".join(_read.explain_run(run))
             problems.append(
                 f"{run['run_id']}: {run['verdict']}"
                 + (f" ({state})" if state not in EXIT_RUN_STATES else "")
@@ -334,6 +379,7 @@ def _user_run(
     canary_label: str | None,
     findings: list[Finding],
     lines: list[str],
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any] | None:
     """§5.6 step 5 and 6: the last (or named) ``fabric run``, read back, judged, and its
     observed coverage."""
@@ -362,7 +408,7 @@ def _user_run(
         f"started {record.started_at}"
     )
     status = _runstate.read_status(record, project.state_dir)
-    if record.capture != "on":
+    if record.capture != "on" and not _read.reports_by_code(record):
         why = ", ".join(f["id"] for f in record.findings) or "capture off"
         findings.append(Finding("FC-070", f"{record.label}: {why} (fabric doctor shows each)"))
         if record.runtime == "python":
@@ -374,10 +420,8 @@ def _user_run(
         return data
     # --spans: the reader takes the path as given (a file, a directory of span files, or
     # a `fabric up` data directory, 13.4) and names the accepted forms when it is none.
-    files = (
-        [str(options.spans)]
-        if options.spans
-        else _read.span_files(dest.spans_dir, record.started_ns)
+    files, reader, error, runs = _read_until_complete(
+        project, dest, options, record, following, canary_label, sleep
     )
     if not files:
         findings.append(
@@ -389,21 +433,9 @@ def _user_run(
             )
         )
         return data
-    from ..reconstruct._attribute import ActionReader  # noqa: PLC0415
-
-    # every_run: each run's view (its non-model HTTP requests for the coverage report);
-    # the report entries, and so the verdicts, stay as the reader's report has them.
-    reader = ActionReader(every_run=True, keep_runs=True, id_key=dest.id_key)
-    try:
-        document = _read.read(dest, files, actions=reader)
-    except ReconstructInputError as exc:
-        findings.append(Finding("FC-073", _input_error(exc)))
+    if error is not None or reader is None:
+        findings.append(Finding("FC-073", error or "the reader could not read the run"))
         return data
-    exclude = _read.canary_ids(
-        [*_runstate.load_canaries(project.state_dir), *([canary_label] if canary_label else [])],
-        dest.id_key,
-    )
-    runs = _read.runs_of(document, record, following, exclude, dest.id_key)
     data["runs"] = [
         {
             "run_id": r["run_id"],
@@ -419,16 +451,97 @@ def _user_run(
             f"  {run['run_id']}  {run['verdict']}  {run['counts']['exchanges']} "
             f"exchange(s)  decisions: {chains.get('decisions', {}).get('verdict', '-')}"
         )
+    if record.runtime == "node":
+        _reported(files, record, following, data, findings, lines)
     if not runs and record.runtime == "python":
         findings.append(_nothing_found(record, status))
     elif record.runtime == "python":
         findings.extend(_judge(runs, record))
     effective = _config.resolve(project.document, {}, environ, project.directory)
-    rows = _read.coverage(effective, record, runs, status, _read.http_requests(reader, runs))
+    observed = _read.observations(reader, runs)
+    rows = _read.coverage(effective, record, runs, status, observed=observed, findings=findings)
     data["coverage"] = [row.to_json() for row in rows]
     lines.append("coverage (observed):")
     lines.extend(row.line() for row in rows)
     return data
+
+
+def _read_until_complete(
+    project: _project.Project,
+    dest: _read.Destination,
+    options: argparse.Namespace,
+    record: _runstate.RunRecord,
+    following: _runstate.RunRecord | None,
+    canary_label: str | None,
+    sleep: Callable[[float], None],
+) -> tuple[list[str], Any, str | None, list[dict[str, Any]]]:
+    """The user's run read back: its span files, the action reader, an input error, and
+    its runs in the reader's report.
+
+    Production delivers asynchronously (the Node's queues, then the destination), so a
+    run that has just ended can read as partial until its last records and model bodies
+    arrive: it is re-read, bounded by the same wait as the canary, until the reader's
+    verdict is complete. A --spans export is fixed, and the local profile writes content
+    synchronously, so both are read once."""
+    poll = project.production and not options.spans and record.runtime == "python"
+    wait = _args.DEFAULT_WAIT_S if options.wait is None else options.wait
+    deadline = time.monotonic() + (wait if poll else 0.0)
+    exclude = _read.canary_ids(
+        [*_runstate.load_canaries(project.state_dir), *([canary_label] if canary_label else [])],
+        dest.id_key,
+    )
+    while True:
+        assert dest.spans_dir is not None  # noqa: S101 - the caller checked
+        files = (
+            [str(options.spans)]
+            if options.spans
+            else _read.span_files(dest.spans_dir, record.started_ns)
+        )
+        reader, document, error = _read_run(dest, files)
+        runs = (
+            _read.runs_of(document, record, following, exclude, dest.id_key)
+            if document is not None
+            else []
+        )
+        complete = bool(runs) and all(r["verdict"] in COMPLETE_VERDICTS for r in runs)
+        if complete or not poll or time.monotonic() >= deadline:
+            return files, reader, error, runs
+        sleep(1.0)
+
+
+def _read_run(dest: _read.Destination, files: Sequence[str]
+              ) -> tuple[Any, dict[str, Any] | None, str | None]:  # fmt: skip
+    """One read of the user's run: the action reader, the reader's document, or the input
+    error (no files: nothing read)."""
+    if not files:
+        return None, None, None
+    from ..reconstruct._attribute import ActionReader  # noqa: PLC0415
+
+    # every_run: each run's view (its non-model HTTP requests for the coverage report);
+    # the report entries, and so the verdicts, stay as the reader's report has them.
+    reader = ActionReader(every_run=True, keep_runs=True, id_key=dest.id_key)
+    try:
+        return reader, _read.read(dest, files, actions=reader), None
+    except ReconstructInputError as exc:
+        return None, None, _input_error(exc)
+
+
+def _reported(files: Sequence[str], record: _runstate.RunRecord,
+              following: _runstate.RunRecord | None, data: dict[str, Any],
+              findings: list[Finding], lines: list[str]) -> None:  # fmt: skip
+    """§13.3, G2: a Node.js agent's explicit-API records, labelled reported, with the
+    decisions chain stated ``unsupported(unsupported_runtime)``, never judged a pass."""
+    try:
+        shown = _read.reported(files, record, following)
+    except ReconstructInputError as exc:
+        findings.append(Finding("FC-073", _input_error(exc)))
+        return
+    data["reported"] = [run.to_json() for run in shown]
+    lines.extend(f"  {run.summary()}" for run in shown)
+    if shown:
+        findings.append(Finding("FC-163", f"{record.label}: {len(shown)} reported run(s)"))
+    else:
+        findings.append(Finding("FC-164", record.label))
 
 
 # ---------------------------------------------------------------- the command
@@ -447,9 +560,13 @@ def run(
     """``fabric verify``."""
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
-    for name in ("production", "kubernetes"):
-        if getattr(options, name):
-            raise CliError([Finding("FC-011", f"--{name}")])
+    if options.production and options.kubernetes:
+        raise CliError([Finding("FC-011", "--production with --kubernetes (the chart's "
+                                "production preset is checked by --kubernetes)")])  # fmt: skip
+    if options.kubernetes:
+        from . import _kubecmd  # noqa: PLC0415 - loaded only for the Kubernetes shape
+
+        return _kubecmd.run_verify(options, environ)
     located = _config.discover(options.config, environ, cwd)
     project = _project.load(located, {}, environ)
     if options.project and options.project != project.name:
@@ -461,6 +578,9 @@ def run(
                 )
             ]
         )
+    if options.production and not project.production:
+        why = "--production: this is a local project; run `fabric init --production`, `fabric up`"
+        raise CliError([Finding("FC-004", why)])
     findings: list[Finding] = []
     lines: list[str] = []
     report = Report("verify", findings=findings, config=located.to_json())
@@ -479,6 +599,8 @@ def run(
         f"{project.resolved['profile']})"
     )
     report.data = {"project": project.name}
+    if options.production:
+        report.data["production"] = _production_checks(project, environ, findings, lines)
     # 2. the Node
     endpoint = compiled["FABRIC_OTLP_ENDPOINT"]
     node = not unreadable and node_ok(project, compiled)
@@ -489,17 +611,23 @@ def run(
         findings.append(Finding("FC-061", endpoint))
     else:
         # 3 and 4. the canary through the whole path
-        dest = _read.destination(project, environ)
+        dest = canary_destination(project, environ)
         canary_label, report.data["canary"] = _canary(
             project, environ, dest, options, findings, lines, canary, sleep, now_ns
         )
     # 5 and 6. the user's run and its coverage
     if not options.canary_only:
-        report.data["run"] = _user_run(project, environ, options, canary_label, findings, lines)
+        report.data["run"] = _user_run(
+            project, environ, options, canary_label, findings, lines, sleep
+        )
     failing = {"error", "warning"} if options.strict else {"error"}
     report.exit_code = EXIT_FINDINGS if any(f.severity in failing for f in findings) else EXIT_OK
-    lines.append(
-        "result: "
-        + ("no problem found" if report.exit_code == EXIT_OK else "see the findings below")
-    )
+    if report.exit_code != EXIT_OK:
+        result = "see the findings below"
+    elif any(f.id == "FC-163" for f in findings):
+        # G2: the path works, and the run is never presented as verified.
+        result = "the path works; the run's records are reported, not verified (FC-163)"
+    else:
+        result = "no problem found"
+    lines.append(f"result: {result}")
     return report, lines

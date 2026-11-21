@@ -9,13 +9,21 @@ network; only the Node can reach it. It uses the standard library only. Span req
 to ``<data>/spans/traces-<id>.otlp`` (what ``python -m fabric.reconstruct --spans`` reads),
 log requests (the host sensor in local mode) to ``<data>/host-logs/logs-<id>.otlp``. A 200
 means the request is written and fsynced. It is a local trial destination, not a
-production backend."""
+production backend.
+
+The production profile runs the same file as two TLS receivers on the project's network
+(spec 058 §9.2, §9.3): the trial destination's OTLP receiver (``SINK_AUTH_TOKEN_FILE``:
+the Node presents that token) and the canary tap (``SINK_MAX_BYTES``: the oldest span
+files are removed once the directory holds more, so the tap stays bounded). Both take
+spans only (``SINK_SPANS_ONLY``)."""
 
 from __future__ import annotations
 
 import gzip
+import hmac
 import json
 import os
+import ssl
 import uuid
 import zlib
 from http import HTTPStatus
@@ -51,7 +59,30 @@ def store(data_dir: Path, path: str, body: bytes) -> str:
     return record_id
 
 
-def make_handler(data_dir: Path) -> type[BaseHTTPRequestHandler]:
+def prune(directory: Path, max_bytes: int) -> None:
+    """Keep at most ``max_bytes`` of span files in ``directory``, removing the oldest."""
+    try:
+        entries = [(entry.stat().st_mtime_ns, entry.name, entry) for entry in directory.iterdir()
+                   if entry.suffix == ".otlp" and entry.is_file()]  # fmt: skip
+    except OSError:
+        return
+    entries.sort()
+    total = sum(entry.stat().st_size for _, _, entry in entries)
+    for _, _, entry in entries[:-1]:  # never the request just written
+        if total <= max_bytes:
+            break
+        try:
+            size = entry.stat().st_size
+            entry.unlink()
+        except OSError:
+            continue
+        total -= size
+
+
+def make_handler(data_dir: Path, *, token: bytes | None = None, spans_only: bool = False,
+                 max_bytes: int | None = None) -> type[BaseHTTPRequestHandler]:  # fmt: skip
+    routes = {"/v1/traces": ROUTES["/v1/traces"]} if spans_only else ROUTES
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "FabricLocalDirSink/1"
 
@@ -70,7 +101,13 @@ def make_handler(data_dir: Path) -> type[BaseHTTPRequestHandler]:
                 self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
         def do_POST(self) -> None:
-            if self.path not in ROUTES:
+            if token is not None:
+                given = self.headers.get("Authorization", "").encode("utf-8", "replace")
+                if not hmac.compare_digest(given, b"Bearer " + token):
+                    self.close_connection = True
+                    self._json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
+                    return
+            if self.path not in routes:
                 self._json(HTTPStatus.NOT_FOUND, {"error": "not an OTLP/HTTP traces or logs path"})
                 return
             try:
@@ -92,6 +129,8 @@ def make_handler(data_dir: Path) -> type[BaseHTTPRequestHandler]:
                     return
             try:
                 record_id = store(data_dir, self.path, body)
+                if max_bytes is not None:
+                    prune(data_dir / ROUTES[self.path], max_bytes)
             except OSError:
                 # A 5xx is retried by the Node's durable queue: nothing is lost.
                 self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "cannot write the request"})
@@ -109,14 +148,29 @@ def make_handler(data_dir: Path) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
-def serve(data_dir: Path, host: str, port: int) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), make_handler(data_dir))
+def serve(data_dir: Path, host: str, port: int, *, token: bytes | None = None,
+          spans_only: bool = False, max_bytes: int | None = None
+          ) -> ThreadingHTTPServer:  # fmt: skip
+    handler = make_handler(data_dir, token=token, spans_only=spans_only, max_bytes=max_bytes)
+    return ThreadingHTTPServer((host, port), handler)
 
 
 def main() -> None:
     data_dir = Path(os.environ.get("SINK_DATA_DIR", "/data"))
     port = int(os.environ.get("SINK_PORT", "8080"))
-    server = serve(data_dir, os.environ.get("SINK_HOST", "0.0.0.0"), port)  # noqa: S104
+    token_file = os.environ.get("SINK_AUTH_TOKEN_FILE", "")
+    token = Path(token_file).read_bytes().strip() if token_file else None
+    cap = os.environ.get("SINK_MAX_BYTES", "")
+    server = serve(data_dir, os.environ.get("SINK_HOST", "0.0.0.0"), port,  # noqa: S104
+                   token=token, spans_only=os.environ.get("SINK_SPANS_ONLY") == "1",
+                   max_bytes=int(cap) if cap else None)  # fmt: skip
+    cert = os.environ.get("SINK_TLS_CERT_FILE", "")
+    key = os.environ.get("SINK_TLS_KEY_FILE", "")
+    if cert and key:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(cert, key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
     server.serve_forever()
 
 

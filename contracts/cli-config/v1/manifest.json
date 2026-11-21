@@ -1,10 +1,10 @@
 {
   "contract": "singleaxis.fabric.cli-config",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "digest_scope": "exact_file_bytes",
   "schema": {
     "path": "schema/fabric-config-v1.schema.json",
-    "sha256": "1facf4c38805826744dbf375e367576ba6f19c963b6caf25d696e32e26a1e5b9"
+    "sha256": "2de44faaa5ee01da81d717ba4434f8f09ed4f2402ad45b7c468570ed41fe6716"
   },
   "files": [
     {
@@ -40,6 +40,10 @@
       "sha256": "86910bda9a410d89af59efd635cb5c23eef8bd54bcd3a1108a955a98a0ce204a"
     },
     {
+      "path": "fixtures/invalid/queue-size-bad-unit.yaml",
+      "sha256": "93925fe6b717eb4cd1341de538af04f347297bb2c90d15e72fc8eeee4de3e11b"
+    },
+    {
       "path": "fixtures/invalid/queue-size-zero.yaml",
       "sha256": "ee11a62eb7d993c27ec7ee4787fb2fabcfe149a79498597c0bd76205a19e4c82"
     },
@@ -50,6 +54,10 @@
     {
       "path": "fixtures/invalid/secret-shaped-path.yaml",
       "sha256": "fdf67c4ea7056856590cd1bb7a35f80b592e2f8de8cb6481c581769a4c83ee46"
+    },
+    {
+      "path": "fixtures/invalid/trial-with-otlp-endpoint.yaml",
+      "sha256": "76f1f07f21b9b14caa83c48da600f9f678cff15c6431160d12f007ef6cb1eeb3"
     },
     {
       "path": "fixtures/invalid/unknown-key.yaml",
@@ -76,8 +84,16 @@
       "sha256": "f1d7546c94336e305cad05fdd4280643d996b3656da61fd8ac4d28de6002a3a9"
     },
     {
+      "path": "fixtures/valid/production-s3-compatible.yaml",
+      "sha256": "b54cdc90f8abd802f41464b54394f1508784818b16a7f04f6d7938a772a2d54d"
+    },
+    {
       "path": "fixtures/valid/production-s3.yaml",
       "sha256": "299b8ba1afbd384909c56fb25835a5b3066d925e9b4097021a420f363908a897"
+    },
+    {
+      "path": "fixtures/valid/production-trial.yaml",
+      "sha256": "1f3f58e5dd1e2f5d4cdb936a7ebe41fc0fcf1f24d6430957ac4a3f0a8bdc7607"
     },
     {
       "path": "schema/cli-report-v1.schema.json",

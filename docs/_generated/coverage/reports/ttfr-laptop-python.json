@@ -1,0 +1,149 @@
+{
+  "schema": "fabric.ttfr/v1",
+  "path": "laptop-python",
+  "agent": "httpx",
+  "mode": "container",
+  "package_source": "local wheel (the build under test), dependencies from PyPI",
+  "cold_cache_evicted": [
+    "ghcr.io/singleaxis/fabric-otelcol@sha256:4c84162b9e1eb4c282b53bd95cd62f422cfb25740fe2c60648b4f0dba940ffdf",
+    "ghcr.io/singleaxis/fabric-host-emitter@sha256:2fcf304b4ae3cc59b9a2459319c23a088a8d33dd767e2d5d732d29f941600073",
+    "python@sha256:b64631e04e4920160c50fbe8d8df828f7f35f06f425cb44aa09bca53e708a35a"
+  ],
+  "budget_s": 300.0,
+  "ttfr_s": 55.122,
+  "install_commands": 1,
+  "commands": 3,
+  "flags": 0,
+  "page_lines": 72,
+  "hand_made_items": 0,
+  "steps": [
+    {
+      "step": 1,
+      "kind": "install",
+      "commands": [
+        "pip install \"singleaxis-fabric[cli]\""
+      ],
+      "seconds": 21.425,
+      "exit_code": 0,
+      "ok": true
+    },
+    {
+      "step": 2,
+      "kind": "command",
+      "commands": [
+        "fabric up"
+      ],
+      "seconds": 31.93,
+      "exit_code": 0,
+      "ok": true
+    },
+    {
+      "step": 3,
+      "kind": "command",
+      "commands": [
+        "fabric run -- python agent.py"
+      ],
+      "seconds": 0.624,
+      "exit_code": 0,
+      "ok": true
+    },
+    {
+      "step": 4,
+      "kind": "command",
+      "commands": [
+        "fabric verify"
+      ],
+      "seconds": 1.143,
+      "exit_code": 0,
+      "ok": true
+    }
+  ],
+  "ok": true,
+  "failures": [],
+  "coverage": [
+    {
+      "id": "model_calls",
+      "note": "2 exchange(s)",
+      "row": "model calls (requests and responses)",
+      "state": "recorded"
+    },
+    {
+      "id": "tool_calls",
+      "note": "parsed from the model bodies",
+      "row": "tool calls and results",
+      "state": "recorded"
+    },
+    {
+      "id": "commands",
+      "note": "fabric init --exec",
+      "row": "commands the agent runs",
+      "state": "fix"
+    },
+    {
+      "id": "remote_sandbox",
+      "note": "FABRIC_WIRE_REMOTE_SANDBOX=e2b fabric run -- CMD",
+      "row": "commands in a remote sandbox",
+      "state": "fix"
+    },
+    {
+      "id": "files",
+      "note": "not_instrumented: no file capture point is built in this release; instead: commands that change files show in the commands row (fabric init --exec)",
+      "row": "files the agent touched",
+      "state": "invisible"
+    },
+    {
+      "id": "network",
+      "note": "fabric init --http-host HOST",
+      "row": "network contacts (non-model HTTP)",
+      "state": "fix"
+    },
+    {
+      "id": "mcp",
+      "note": "fabric init --mcp",
+      "row": "MCP traffic",
+      "state": "fix"
+    },
+    {
+      "id": "host",
+      "note": "the sensor runs in the Docker VM and sees containers only (FC-042)",
+      "row": "host evidence (kernel sensor)",
+      "state": "invisible"
+    },
+    {
+      "id": "permissions",
+      "note": "controls chain",
+      "row": "permissions and control decisions",
+      "state": "not observed"
+    },
+    {
+      "id": "run_identity",
+      "note": "with fabric.wire.run(session_id=..., user_id=...)",
+      "row": "end user and session",
+      "state": "needs code"
+    },
+    {
+      "id": "tenant_per_request",
+      "note": "not_configured: the tenant is set per process (FABRIC_TENANT_ID); one process serving many tenants records them all under one; instead: run one agent process per tenant",
+      "row": "tenant per request (one process, many tenants)",
+      "state": "invisible"
+    },
+    {
+      "id": "subagents",
+      "note": "with fabric.wire.run(...) in each sub-agent (a Python process the agent starts is already its own run)",
+      "row": "sub-agents and delegation",
+      "state": "needs code"
+    },
+    {
+      "id": "browser",
+      "note": "not_instrumented: page content and UI actions are not recorded (no UI automation capture point is built); instead: the browser's launch is a command (fabric init --exec) and its connections are host evidence",
+      "row": "browser and UI automation",
+      "state": "invisible"
+    },
+    {
+      "id": "realtime",
+      "note": "not_instrumented: WebSocket and realtime sessions are not recorded (no capture point is built)",
+      "row": "realtime and voice",
+      "state": "invisible"
+    }
+  ]
+}

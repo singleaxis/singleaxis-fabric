@@ -1,0 +1,6 @@
+# expect: FC-004 destination.otlp_endpoint
+schema: fabric.config/v1
+profile: production
+destination:
+  preset: trial
+  otlp_endpoint: https://otel.internal.example:4318

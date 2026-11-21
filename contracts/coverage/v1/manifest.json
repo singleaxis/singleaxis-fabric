@@ -1,11 +1,12 @@
 {
   "contract": "singleaxis.fabric.coverage",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "digest_scope": "exact_file_bytes",
   "artifacts": [
     {"path": "registry/capture-points-v1.json", "sha256": "f875649ee28f2f02cc398d2c79ceea53a910dbc295ad2df629860799b6869431", "expectation": "registry", "expected_error": null},
     {"path": "registry/content-roles-v1.json", "sha256": "0018cb7cb6cfd582e5b64b77cce1b5f115f0cab12abfaed56f95e4612733410d", "expectation": "registry", "expected_error": null},
     {"path": "registry/field-registry-v1.json", "sha256": "7eafd5ef8e55be9dbc70a09b9de202722ff5432847250a6b43532572591ca5ac", "expectation": "registry", "expected_error": null},
+    {"path": "registry/integration-rows-v1.json", "sha256": "fe95cfa773fdae1df9fd780d987fcc691734db0b62003134ef19d7cd36e1e7a6", "expectation": "registry", "expected_error": null},
     {"path": "registry/telemetry-keys-v1.json", "sha256": "47ba11e7af577e49bc972f9e1e526c33a73b34d1aa8df5fa08e11302c335836d", "expectation": "registry", "expected_error": null},
     {"path": "registry/vocabularies-v1.json", "sha256": "80a0daaa632d3b785bd23d4b3592c6229df01bc977be1b6d84cca829a2f52e21", "expectation": "registry", "expected_error": null},
     {"path": "schema/capture-manifest-v1.schema.json", "sha256": "46d1f6bf4f2454a25739bd97e6420520a9a270841324a3d98cd14853828cd0a1", "expectation": "schema", "expected_error": null},

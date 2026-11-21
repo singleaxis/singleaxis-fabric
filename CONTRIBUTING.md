@@ -44,7 +44,7 @@ invariant and the small-feature workflow.
 - [`docs/README.md`](docs/README.md#map) is a one-page map of the
   repository: what is built in the release, what is built only on a
   branch, what is only specified, and where each part's code lives.
-- [`docs/glossary.md`](docs/glossary.md) defines the terms, rule labels and
+- [`docs/reference/glossary.md`](docs/reference/glossary.md) defines the terms, rule labels and
   decision codes the specs use.
 - [`specs/README.md`](specs/README.md) lists every spec with its status and
   the code it describes.

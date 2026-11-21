@@ -18,21 +18,24 @@ from collections.abc import Sequence
 
 from fabric.reconstruct._inputs import (
     ReconstructInputError,
+    SpanRecord,
     list_span_inputs,
     observe,
     read_span_file,
 )
+from fabric.reconstruct._reported import DECISIONS_CHAIN, reported_runs_from
 
 # A Fabric span name (``fabric.decision``, ``fabric.tool_call``): safe to print.
 _FABRIC_NAME_RE = re.compile(r"^fabric\.[a-z][a-z0-9_.]{0,47}$")
 _MAX_NAMES = 8
-SCOPE_DOC = "docs/reconstruct.md#scope-of-the-verifier"
+SCOPE_DOC = "docs/reference/reconstruct.md#scope-of-the-verifier"
 
 
 def explain_no_runs(spans: Sequence[str], *, run_filter: bool) -> list[str]:
     """Lines that say why no run was reconstructed from ``spans``; ``[]`` if unreadable."""
     total = capture = 0
     fabric_names: Counter[str] = Counter()
+    explicit: list[SpanRecord] = []
     for path in list_span_inputs(spans):
         try:
             _fmt, records = read_span_file(path)
@@ -46,8 +49,10 @@ def explain_no_runs(spans: Sequence[str], *, run_filter: bool) -> list[str]:
                 observed = None
             if observed is not None:
                 capture += 1
-            elif _FABRIC_NAME_RE.fullmatch(record.name or ""):
-                fabric_names[record.name] += 1
+            else:
+                explicit.append(record)
+                if _FABRIC_NAME_RE.fullmatch(record.name or ""):
+                    fabric_names[record.name] += 1
     if total == 0:
         return ["the --spans inputs hold no spans (an empty export, or log records only)."]
     if capture and run_filter:
@@ -72,9 +77,25 @@ def explain_no_runs(spans: Sequence[str], *, run_filter: bool) -> list[str]:
             "capture and the records input write.",
             "the verifier reconstructs runs only from those; explicit-API records, such as "
             f"the TypeScript SDK's, are outside its scope ({SCOPE_DOC}).",
+            *_reported_lines(explicit),
         ]
     return [
         f"the inputs hold {total} spans and none is a Fabric capture record: capture was not "
         "installed in the process that sent them (run python -m fabric.wire status with its "
         "environment), or these are another service's spans."
     ]
+
+
+def _reported_lines(records: Sequence[SpanRecord]) -> list[str]:
+    """The reported runs (spec 058 §13.3): what the agent's code said it did, labelled
+    reported, with the decisions chain stated, never judged. Runs are numbered, never
+    named by an input value."""
+    runs = reported_runs_from(records)
+    if not runs:
+        return []
+    lines = [f"reported (not verified): {len(runs)} run(s) the agent's code reported through "
+             f"the explicit API; decisions: {DECISIONS_CHAIN}."]  # fmt: skip
+    lines += [run.summary(f"#{i}") for i, run in enumerate(runs[:_MAX_NAMES], start=1)]
+    if len(runs) > _MAX_NAMES:
+        lines.append(f"... and {len(runs) - _MAX_NAMES} more reported run(s)")
+    return lines

@@ -15,6 +15,211 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **`fabric up` for production on a single host.** After `fabric init
+  --production`, `fabric up` starts the production Node with Docker: one
+  ingress group per source (your agent, the host sensor, and the canary
+  `fabric verify` sends), each with its own listener, token and source
+  binding; the trial destination (a TLS receiver writing span files and an
+  encrypted S3-compatible test store) when that is the preset; and, on Linux
+  with eBPF, the host sensor in production mode bound to its own group. Your
+  destination's Authorization header reaches the Node from the headers file
+  you named, never a rendered file. A project the Node would refuse, or that
+  would send records to your collector without credentials (`FC-176`), is not
+  started; the finding names the fix.
+- **`fabric verify --production`.** Checks the production hardening, each
+  check with an id and a fix: https to the destination and its credentials,
+  one private token and one source id per ingress group, never shared, TLS
+  on every listener, the content key and an encrypted content store, the
+  spool key, certificate expiry (a warning 14 days before, a failure after),
+  the Node's image, the sensor in production mode and the host clock, plus
+  the capture policy and queue checks of `fabric init`. `make -C
+  deploy/compose preflight-prod` prints the same ids for a Node you set up
+  by hand. For a destination Fabric cannot read spans back from, the canary
+  is read through a small, bounded tap on the Node that only the canary's own
+  ingress group writes to; model bodies are read back from your S3 store.
+- **Go to production, checked.** `docs/production/linux-host.md`: install,
+  `fabric init --production --destination trial`, `fabric up`, `fabric run`,
+  `fabric verify --production`, executed as written in CI on a Linux host
+  with eBPF.
+- **`fabric init --production`.** One command makes a production project on
+  a single host: it writes a capture policy into your project
+  (`fabric-capture-policy.json`: model exchanges kept, no command argument,
+  command output or other HTTP body kept in clear; yours to review and edit,
+  never rewritten), and generates the spool and content keys, one ingest
+  token and client certificate for each source (the agent, the host sensor,
+  and the canary `fabric verify` sends under its own binding), and derives
+  the source ids the Node binds from your id key. The agent's settings and
+  the Node's (`.fabric/node.env`) are compiled from `fabric.yaml`, every
+  secret by file path; nothing secret is ever printed. `--image-digest`
+  names your agent image in the policy. `fabric init --rotate tokens` and
+  `--rotate client-certs` rotate them (`all` includes both and never the id
+  key).
+- **Destination presets.** `fabric init --production --destination trial`
+  (try the production Node before you have a destination; not durable
+  storage), `s3 --bucket NAME --region REGION --otlp-endpoint URL`,
+  `s3-compatible --endpoint URL --bucket NAME --otlp-endpoint URL` (with
+  `--ca-file` for a private CA and `--credentials-file` by path) and `otlp
+  --otlp-endpoint URL`. Only identifiers you already own are asked for, as
+  flags, or on a terminal by a prompt; never a credential. A file a preset
+  names must exist, and a credentials or headers file must be private.
+- **`node.queue_size` and sizing advice.** One setting for the Node's
+  durable queue, as a disk budget (`20GiB`, `500MB`, or `auto`: half of the
+  free disk). `fabric init` turns it into the Node's queue lengths and warns,
+  with a size that fits, when it is more than the disk has free or when the
+  disk is too full for a useful queue. The local Node's queue follows it too
+  (unchanged on a disk with room).
+- **Node.js agents without Python.** `npx fabric up`, `init`, `plan`,
+  `verify`, `show` and `down` now run the full CLI from the release's
+  `fabric-cli` container image with Docker (as your own user, with your
+  project and Fabric's state directory mounted at the same paths), so a
+  Node.js machine needs no Python. Without Docker they say where the CLI is,
+  as before. A new [Get started page for Node.js](docs/get-started/node.md)
+  is run as written in CI in a `node:24` container with no Python.
+- **TypeScript SDK: `FABRIC_OTLP_*` and `fabricExporterOptions()`.** The
+  TypeScript SDK reads `FABRIC_OTLP_ENDPOINT`, `FABRIC_OTLP_CERTIFICATE`, the
+  client certificate pair and `FABRIC_OTLP_HEADERS_FILE` before the
+  `OTEL_EXPORTER_OTLP_*` variables, with the same delivery rule as Python
+  (https with a verified CA, or plain http to loopback only).
+  `new OTLPTraceExporter(fabricExporterOptions())` sends Fabric's records to
+  the Fabric Node they name and leaves your own OpenTelemetry export alone.
+  It also reads the id key from `FABRIC_WIRE_ID_KEY_FILE`. `fabric run` gives
+  a Node.js agent these settings.
+- **Reported records from the TypeScript SDK in `verify`, `show` and the
+  reader.** A Node.js agent's explicit-API records are shown labelled
+  *reported*, model and tool call by call; `fabric verify` states the
+  decisions chain `unsupported(unsupported_runtime)` (`FC-163`) and never
+  calls the run verified; a Node.js run with nothing delivered fails
+  `verify` and says how to wire the exporter (`FC-164`). `python -m fabric.reconstruct` lists reported
+  runs when it reconstructs none.
+- **Documentation in four parts.** Get started (Python, Node.js, other
+  languages, Kubernetes), Choose your deployment shape (laptop, Linux host,
+  containers, Kubernetes, serverless and sandboxes, macOS and Windows),
+  Go to production, and Reference. The CLI, `fabric.yaml` and environment
+  variable references are generated from the code; the coverage tables on the
+  shape pages are generated from what CI measured. Every command on a Get
+  started or shape page is run in CI exactly as written. Old page paths keep
+  a page that links to the new one.
+
+- **`fabric plan` tells you which layers you need.** Run
+  `fabric plan -- python agent.py` (or with no command, in your project
+  directory) to see what Fabric would record for that agent on this machine,
+  what stays invisible and why, and the one command that closes each gap. It
+  reads your Python packages, `package.json`, model base-URL variables, the
+  OS and kernel, containers, sandboxes and serverless platforms, and an MCP
+  client configuration (`--mcp-config`). It is read-only, makes no network
+  connection and takes well under a second.
+- **`fabric verify` explains every reason in plain words.** Each reason a
+  run, a command, a host event or a control decision is not complete is
+  printed with what it means and how to fix it, and the coverage report shows
+  the same rows as `fabric plan`, as observed. Commands that ran before the
+  agent's first model call are listed as such, not as a problem. The words for
+  every reason are in the [diagnostics catalogue](docs/reference/diagnostics.md).
+- **Kubernetes install with one value.** The Helm chart takes
+  `--set preset=local`, `production` or `production-host-sensor` instead of
+  a profile file, so the published chart installs without pulling it first.
+  Your own values still win; the profile files keep working with `-f`.
+- **No hand-made Secrets on Kubernetes.** List your agent namespaces in
+  `agentNamespaces` and a hook Job creates every Secret the Node and the
+  agents need (CA, Node certificate, id keys, spool keys and, on a
+  production Node, per-namespace ingest tokens, source ids and client
+  certificates). Existing Secrets are never overwritten, and no value is
+  ever part of the Helm release. Each agent namespace on a production Node
+  gets its own ingress group. Clusters without hook Jobs run the same
+  generator with `fabric init --kubernetes`, or write manifests for GitOps
+  with `--render DIR`.
+- **Opt-in pod injection.** With `injector.enabled=true`, a pod in a
+  labelled namespace with the annotation `fabric.singleaxis.ai/inject:
+  "python"` gets Fabric's settings, the namespace's Secret, a spool volume
+  and a standard-library autoload file, and nothing else: no existing
+  variable, mount or container changes, and the SDK stays the one in your
+  image. If the injector is down, pods start after at most 2 seconds,
+  uncaptured.
+- **A worked production example** with host sensors and content delivery to
+  an S3-compatible store behind a private CA:
+  `charts/fabric/examples/production-host-sensor-content.yaml`.
+- **Host sensors from the chart.** `preset=production-host-sensor` installs
+  the eBPF host sensor as a DaemonSet on every node that can run it: the
+  release's image and tenant, one ingress group per node, and every per-node
+  token, key and source id generated in the cluster. Nothing is copied onto
+  a node, and the hand-edited DaemonSet template is no longer needed.
+- **The host sensor says what it cannot see.** Its health line counts the
+  agent pods it selected, scoped and could not scope, with the reason:
+  `cgroup_not_found`, `unsupported_runtime` (the pod runs under a gVisor or
+  Kata RuntimeClass, whose system calls never reach the node's kernel),
+  `node_not_supported` (the kernel cannot load the sensor) or `pod_limit`. A
+  WARN line names each reason with its fix instead of staying silent. A pod
+  whose RuntimeClass the sensor cannot read (no `get` on `runtimeclasses`)
+  is counted in `pods_runtime_unknown` with a WARN naming the permission.
+- **`fabric` on Kubernetes.** `fabric up --kubernetes` installs the release
+  with one `helm upgrade --install` and a preset (`--render DIR` writes the
+  values and Secret manifests for your own pipeline instead); `fabric down
+  --kubernetes` removes it and keeps the generated Secrets unless you add
+  `--purge`. `fabric verify --kubernetes` checks the release, its Secrets,
+  the Node, the injector and the pods it served, what the host sensor sees
+  on each node, RuntimeClasses and NetworkPolicies, then reads your agent's
+  run back from your destination's export with `--spans`. `fabric doctor
+  --kubernetes` runs the same checks and says why a pod runs without capture
+  (an injector outage among them). `fabric plan --kubernetes` reads the
+  cluster without changing it and says which nodes can run the host sensor.
+  All of them read the cluster; none restarts or changes your workloads.
+- **Get started on Kubernetes.** `docs/get-started/kubernetes.md`: install
+  the CLI, one `fabric up --kubernetes`, one namespace label, one pod
+  annotation, then `fabric verify --kubernetes`. CI runs the page as written
+  on a fresh kind cluster and fails it over 10 minutes.
+- **Your capture policy for injected agents.** `injector.capturePolicy`
+  takes your `fabric.deployment-policy/v1` document. The chart puts it in
+  each agent namespace with that namespace's tenant, and the injector mounts
+  it read-only for the agents. In production an agent keeps model bodies
+  only under a policy; without one, `fabric verify --kubernetes` says why it
+  cannot check the agent's decisions, and so does `fabric doctor
+  --kubernetes`.
+- **With the host sensor, injected agents record the commands they run.**
+  The chart sets `FABRIC_WIRE_EXEC=1` for injected pods when
+  `hostSensor.enabled`. An agent's commands are what ties the sensor's
+  kernel events to the agent's process. Set `injector.env.FABRIC_WIRE_EXEC:
+  "0"` to turn it off; a variable the pod sets itself always wins.
+- `fabric verify --kubernetes` no longer misses a corroborated run of an
+  agent that runs in a loop. The newest run is always younger than the
+  sensor's last heartbeat, so a run judged on an earlier look stays a
+  candidate until its evidence arrives.
+- New diagnostics `FC-120` to `FC-156` for the Kubernetes commands, each
+  with its fix.
+- New diagnostics `FC-100` to `FC-112` say what went wrong with Kubernetes
+  Secrets (no kubectl, missing namespace, no permission, API unreachable, an
+  incomplete, orphaned or unusable Secret, a certificate that expires soon
+  or has expired) and how to fix it. Generated certificates show their last
+  day; "Certificate renewal" in `docs/deployment.md` says how to renew each.
+- An injected pod's spool stops at a quarter of its `emptyDir` limit
+  (`injector.spool.sizeLimit`, `512Mi` or more), so a spool that fills while
+  the Node is away never gets the pod evicted.
+- **Get started with your own Python agent.**
+  [docs/get-started/python.md](docs/get-started/python.md) is one install
+  and three commands: `pip install "singleaxis-fabric[cli]"`, `fabric up`,
+  `fabric run -- python agent.py`, `fabric verify`. You write no file, set no
+  variable and make no key. If your model host is in neither the built-in
+  table nor a base-URL variable, `fabric up --provider URL` names it in the
+  same command, so the path stays at three commands with one flag.
+- **The page is tested as written, and timed.** CI runs its commands
+  verbatim in a fresh Python 3.12 container with an empty image cache,
+  against a model on a host Fabric has never heard of, with two agents that
+  know nothing of Fabric (an OpenAI SDK loop and a plain `httpx` loop), and
+  fails when the first verified record takes more than 300 seconds. The
+  same runner refuses a page that asks you to write a file, set a variable
+  or make a key, or that adds a command.
+- **`npx fabric` for machines without Python.** `@singleaxis/fabric` now
+  installs a `fabric` command with `run` and `doctor`. `npx fabric run --
+  node agent.js` gives the agent the project's tenant, agent id and run
+  label for the explicit API, records the run, and starts the agent with its
+  arguments, input, output and exit code untouched; if anything is wrong the
+  agent still runs, unrecorded. `npx fabric doctor` checks the project and
+  names each problem with its fix. Both read `.fabric/compiled.env`, and are
+  tested against the Python CLI on shared cases. The other commands say
+  where to find them.
+- **The `fabric-cli` container image** (`ghcr.io/singleaxis/fabric-cli`,
+  from the next release): the full CLI with Docker Compose and Helm, for
+  Node.js-only and compiled agents and for CI. It runs as a non-root user,
+  and every release image is checked for exactly the CLI's commands and no
+  module outside the recorder.
 - **MCP servers as security context (spec 057 P1, second part).** For an MCP
   server reached over Streamable HTTP, the request and response bodies the
   non-model HTTP hook already records are now read as MCP by
@@ -460,6 +665,22 @@ it never makes, applies, waits for or returns one.
 
 ### Changed
 
+- **The `[cli]` extra brings boto3**, so `fabric verify` and `fabric show` can
+  read model bodies back from a production destination's S3 store. Agents
+  never need it; their installs are unchanged.
+- **`deploy/compose/preflight-prod.sh`** ends each check `fabric verify
+  --production` also makes with its catalogue id in brackets, and now says
+  when every ingress group has its own token and its own source.
+- **In the production profile the canary of `fabric verify`** sends through
+  its own ingress group (its own listeners and spool), never the agent's.
+- **`.fabric/compiled.env` carries three settings as comments**
+  (`# fabric-setting: project=...`, `providers.from_environment=...`,
+  `node.mode=...`), so a launcher that reads the file needs no YAML parser.
+  The variables are unchanged.
+- **Two new diagnostics:** `FC-098` (a command the npm launcher does not
+  have, with the pipx line and the image) and `FC-099` (`fabric doctor` found
+  no Python interpreter, so it skipped the Python SDK check).
+
 - **MCP message roles are off by default.** `mcp.request`, `mcp.response`,
   `mcp.notification` and `mcp.server` now default to `off`, as spec 057
   §7.1 states (role table revision 6): name them in the capture policy to
@@ -529,6 +750,9 @@ it never makes, applies, waits for or returns one.
 
 ### Fixed
 
+- **`fabric verify` and `fabric show` now see runs started by `npx fabric
+  run`.** The npm launcher rounded the run's start time, so the Python CLI
+  discarded every run record it wrote.
 - **eBPF host emitter: file access and failed execs were missing on Linux
   6.19+ kernels such as Ubuntu's 7.0.** On those kernels, an eBPF program
   attached to the `openat` or `execve` syscall tracepoint was never run, so
@@ -1399,14 +1623,14 @@ verifier, and keeps Fabric's own warnings off the agent's stderr.
   given with `--known-peer`). Joining them needs a peer-address rule that
   today's records cannot support (host records carry keyed peer addresses,
   the HTTP record a host name). See
-  [action reconstruction](docs/action-reconstruction.md#what-is-not-covered-yet).
+  [action reconstruction](docs/reference/action-reconstruction.md#what-is-not-covered-yet).
 - **Spool disk latency.** No spool `fsync` runs on the monitored call's
   thread (now pinned by a test), but the capture worker's `fsync`s compete
   for the disk: on a slow-`fsync` mount shared with the agent's own files,
   the acceptance run measured 20–270 ms added per subprocess and 9–22 ms on
   an unobserved file write (2–10 ms per subprocess on a local disk). Put
   the spool on a local disk or named volume
-  ([deployment](docs/deployment.md#what-the-agent-needs), "Spool disk").
+  ([deployment](docs/reference/manual-setup/deployment.md#what-the-agent-needs), "Spool disk").
 - **Spools on filesystems without `flock`.** Several processes sharing a
   spool on a filesystem that does not enforce locks (a Docker Desktop bind
   mount) can still declare each other's live epochs orphaned; use a named
@@ -1841,7 +2065,7 @@ delivery and verification behave as in 0.9.0.
   - The policy, tool-authorization and escalation verdict elements are not
     deprecated by this change; their status is an open owner decision.
   - Neither SDK emits any of these, so no runtime warning is added. See
-    [API stability](docs/api-stability.md#deprecated-contract-elements).
+    [API stability](docs/reference/api-stability.md#deprecated-contract-elements).
 
 ## [0.9.0] - 2026-11-03
 

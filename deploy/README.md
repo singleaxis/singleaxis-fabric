@@ -25,7 +25,7 @@ CAPTURE -> PROTECT -> DELIVER
   and authenticated HTTPS egress to a customer-selected OTLP backend. It is
   not a production approval: your storage controls, retention and declared
   capture scope still need your own qualification. See
-  [`../docs/deployment.md`](../docs/deployment.md),
+  [`../docs/deployment.md`](../docs/reference/manual-setup/deployment.md),
   `compose/README.md` ("Client VM deployment") and
   [`../docs/operations/dr.md`](../docs/operations/dr.md) for queue sizing,
   backup, and alerting.
@@ -33,7 +33,7 @@ CAPTURE -> PROTECT -> DELIVER
   and sink manifests for the production-profile E2E workflow.
 - **Host sensors** (`auditd/`, `kubernetes/host-emitter-daemonset.yaml`):
   development and qualification material for the auditd receiver and the
-  eBPF host emitter; see [`../docs/host-sensors.md`](../docs/host-sensors.md).
+  eBPF host emitter; see [`../docs/host-sensors.md`](../docs/reference/host-sensors.md).
 
 ## Kubernetes
 

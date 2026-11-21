@@ -94,6 +94,7 @@ func runProduction(cfg *Config) error {
 	defer exp.close()
 	rt, err := loadBPF(cfg)
 	if err != nil {
+		reportNodeNotSupported(err)
 		return err
 	}
 	defer rt.close()
@@ -160,6 +161,11 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 	defer heartbeatTick.Stop()
 	statusTick := time.NewTicker(30 * time.Second)
 	defer statusTick.Stop()
+	// Pod scope changes are logged as they happen (at most one line per
+	// scopeTick), so a reader of the log need not wait for the health line.
+	scopeTick := time.NewTicker(2 * time.Second)
+	defer scopeTick.Stop()
+	lastScope := ""
 
 	var pending []hostrecords.Event
 	var rateLimited int64
@@ -306,16 +312,39 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 			if err := prod.heartbeat(); err != nil {
 				return err
 			}
+		case <-scopeTick.C:
+			if pods == nil {
+				continue
+			}
+			counts := pods.counts()
+			if fields := counts.fields(); fields != lastScope {
+				lastScope = fields
+				log.Printf("fabric-host-emitter: pod scope %s", fields)
+				if msg := podsUnscopedWarning(counts, pods.kubepodsDirs()); msg != "" && counts.unscoped[unscopedUnsupportedRuntime] > 0 {
+					// An unsupported runtime never resolves by waiting: say so at once.
+					log.Print(msg)
+				}
+				if msg := runtimeUnknownWarning(counts); msg != "" {
+					log.Print(msg)
+				}
+			}
 		case <-statusTick.C:
 			partialBatches, partialRejected := prod.status()
 			line := fmt.Sprintf("fabric-host-emitter: health partial_quarantined_batches=%d partial_rejected_records=%d clock_steps=%d clock_small_steps=%d clock_rejected_samples=%d clock_uncertainty_ns=%d",
 				partialBatches, partialRejected, sensorClock.stepCount(), sensorClock.smallStepCount(), sensorClock.rejectedSampleCount(), prod.clockUncertainty())
 			if pods != nil {
 				matched, found := pods.scopeReport()
-				line += fmt.Sprintf(" pod_roots=%d pod_roots_installed=%d pod_roots_removed=%d pod_roots_late=%d pod_api_errors=%d pod_selector_matched=%d pod_cgroups_found=%d",
-					pods.installedCount(), pods.rootsInstalled.Load(), pods.rootsRemoved.Load(), pods.rootsLate.Load(), pods.apiErrors.Load(), matched, found)
+				counts := pods.counts()
+				// pod_selector_matched and pod_cgroups_found keep their meaning
+				// (v0.12.2); pods_selected, pods_scoped and pods_unscoped_<reason>
+				// are spec 058 §10.5 (names agreed with spec 057 P2, README).
+				line += fmt.Sprintf(" pod_roots=%d pod_roots_installed=%d pod_roots_removed=%d pod_roots_late=%d pod_api_errors=%d pod_selector_matched=%d pod_cgroups_found=%d %s",
+					pods.installedCount(), pods.rootsInstalled.Load(), pods.rootsRemoved.Load(), pods.rootsLate.Load(), pods.apiErrors.Load(), matched, found, counts.fields())
 				log.Print(line)
-				if msg := podScopeMismatch(matched, found, pods.kubepodsDirs()); msg != "" {
+				if msg := podsUnscopedWarning(counts, pods.kubepodsDirs()); msg != "" {
+					log.Print(msg)
+				}
+				if msg := runtimeUnknownWarning(counts); msg != "" {
 					log.Print(msg)
 				}
 			} else {

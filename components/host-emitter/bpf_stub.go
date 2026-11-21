@@ -12,7 +12,7 @@ import "fmt"
 type bpfRuntime struct{}
 
 func loadBPF(cfg *Config) (*bpfRuntime, error) {
-	return nil, fmt.Errorf("fabric-host-emitter requires Linux (eBPF tracepoints, kernel >= 5.8 with BTF)")
+	return nil, fmt.Errorf("fabric-host-emitter requires Linux (eBPF tracepoints, kernel >= 5.8 with BTF): %w", errNodeNotSupported)
 }
 
 func (rt *bpfRuntime) next() (*event, error)        { return nil, fmt.Errorf("unsupported") }

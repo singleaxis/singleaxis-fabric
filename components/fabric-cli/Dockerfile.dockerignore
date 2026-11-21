@@ -1,0 +1,10 @@
+# BuildKit reads this file for Dockerfile (context: the repository root): only the
+# Python distribution's sources enter the build.
+*
+!sdk/python/pyproject.toml
+!sdk/python/uv.lock
+!sdk/python/README.md
+!sdk/python/LICENSE
+!sdk/python/src
+**/__pycache__
+**/*.pyc

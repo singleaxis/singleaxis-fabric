@@ -2,6 +2,9 @@
 {{- $contentS3Creds := and .Values.content.enabled (eq .Values.content.backend "s3") .Values.content.s3.credentialsSecret.name -}}
 {{- $contentS3CA := and .Values.content.enabled (eq .Values.content.backend "s3") .Values.content.s3.caSecret.name -}}
 {{- $groups := include "otel-collector.groupMode" . -}}
+{{- /* The umbrella chart applies `preset` before any template of this chart
+     runs; this mark lets it refuse a render where that order did not hold. */ -}}
+{{- $_ := set .Values "fabricCollectorRendered" true -}}
 apiVersion: apps/v1
 kind: {{ ternary "StatefulSet" "Deployment" .Values.exporter.sendingQueue.persistence.enabled }}
 metadata:
@@ -148,8 +151,23 @@ spec:
               mountPath: /etc/fabric/content-s3-ca
               readOnly: true
             {{- end }}
-          {{- if or .Values.exporter.auth.secret.name $contentS3Creds $contentS3CA }}
+          {{- $sourceIdGroups := list }}
+          {{- range $g := (.Values.receiver.sourceBindings | default list) }}
+          {{- if hasKey $g "sourceIdSecret" }}
+          {{- $sourceIdGroups = append $sourceIdGroups $g }}
+          {{- end }}
+          {{- end }}
+          {{- if or .Values.exporter.auth.secret.name $contentS3Creds $contentS3CA $sourceIdGroups }}
           env:
+            {{- range $g := $sourceIdGroups }}
+            # Group {{ $g.name }}'s source id (sourceIdSecret): not a secret
+            # value, but derived from a key that exists only in the cluster.
+            - name: {{ include "otel-collector.groupSourceIdEnv" $g }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $g.sourceIdSecret.name | quote }}
+                  key: {{ $g.sourceIdSecret.key | quote }}
+            {{- end }}
             {{- if .Values.exporter.auth.secret.name }}
             - name: FABRIC_EXPORT_AUTH
               valueFrom:
