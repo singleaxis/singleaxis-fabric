@@ -493,20 +493,24 @@ function recorder() {
 }
 
 /**
- * The qualification table as the source tree has it, or (only where it does not list this
- * build, as on a developer's machine) with this build added: tests activate capture
- * through the table in the source tree (spec 055 §9.5). In CI the job's build is listed.
+ * The qualification table as the source tree has it, always passed to install() (the
+ * bundled recorder has no packaged table beside it, and without one every point is
+ * declared unsupported), or (only where it does not list this build, as on a developer's
+ * machine) with this build added: tests activate capture through the table in the source
+ * tree (spec 055 §9.5). In CI the job's build is listed.
  */
 function qualificationForThisBuild() {
     const table = JSON.parse(readFileSync(bundle.qualification, "utf8"));
     const listed = table.tuples.some(
         (t) =>
+            t.point === "wire.ts.undici" &&
             t.claim === "active" &&
+            typeof t.report_sha256 === "string" &&
             t.node === process.versions.node &&
             t.undici === process.versions.undici &&
             t.platform === bundle.target,
     );
-    if (listed) return undefined;
+    if (listed) return table;
     log("this Node build is not an active tuple of the table: the recorder steps add it for this run");
     return {
         ...table,

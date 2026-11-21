@@ -209,21 +209,25 @@ def sink(tmp_path: Path) -> Iterator[Sink]:
     destination.stop()
 
 
-def qualification(built: dict[str, Any]) -> dict[str, Any] | None:
-    """The source tree's table, or (only where it does not list this machine's build, as on
-    a developer's macOS) the same table with this build added as an active tuple: tests
-    activate capture through the table in the source tree (§9.5)."""
-    table = json.loads(Path(built["qualification"]).read_text())
+def qualification(built: dict[str, Any]) -> dict[str, Any]:
+    """The source tree's table, passed to ``install()`` explicitly (the source build's
+    bundled core has no packaged table beside it, and without one every point would be
+    declared ``unsupported``): tests activate capture through the table in the source
+    tree (§9.5). Only where it does not list this machine's build as an active tuple with
+    a report, as on a developer's macOS, is this build added."""
+    table: dict[str, Any] = json.loads(Path(built["qualification"]).read_text())
     info = json.loads(subprocess.run(  # noqa: S603
         [str(NODE), "-p", "JSON.stringify({node: process.versions.node, undici: process.versions.undici})"],
         capture_output=True, text=True, check=True,
     ).stdout)  # fmt: skip
     listed = any(
-        t.get("claim") == "active" and t["node"] == info["node"] and t["platform"] == built["target"]
-        and t.get("undici") == info["undici"] for t in table["tuples"]
+        t.get("point") == "wire.ts.undici" and t.get("claim") == "active"
+        and isinstance(t.get("report_sha256"), str) and t["node"] == info["node"]
+        and t["platform"] == built["target"] and t.get("undici") == info["undici"]
+        for t in table["tuples"]
     )  # fmt: skip
     if listed:
-        return None
+        return table
     tuple_ = {"point": "wire.ts.undici", "node": info["node"], "undici": info["undici"],
               "undici_origin": "bundled", "platform": built["target"], "claim": "active",
               "report_sha256": "sha256:" + "0" * 64}  # fmt: skip
@@ -269,8 +273,6 @@ def run_agent(
 ) -> dict[str, Any]:
     args = {**built, "base": provider.base, "runId": RUN_ID, "requests": REQUESTS,
             "qualification": qualification(built), **extra}  # fmt: skip
-    if args["qualification"] is None:
-        del args["qualification"]
     done = subprocess.run(  # noqa: S603
         [str(NODE), str(PARITY / "agent.cjs"), json.dumps(args)],
         env=env, capture_output=True, text=True, timeout=120, check=False,
