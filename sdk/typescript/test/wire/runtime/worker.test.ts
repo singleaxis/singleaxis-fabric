@@ -37,7 +37,7 @@ afterAll(() => bundles?.cleanup());
 
 function start(options: Partial<ConstructorParameters<typeof FabricWorker>[1]> = {}) {
   const { runtime, table } = isolate();
-  const report = new Int32Array(new SharedArrayBuffer(64));
+  const report = new Int32Array(new SharedArrayBuffer(128));
   const fabric = new FabricWorker(runtime, {
     entry: bundles.file("fabric-entry"),
     snapshot: { report: report.buffer },
@@ -110,6 +110,17 @@ describe("starting the Fabric worker", () => {
       if (previous === undefined) delete process.env.F055_T4_CANARY;
       else process.env.F055_T4_CANARY = previous;
     }
+  });
+
+  it("an orderly stop handles the losses recorded just before it, then calls stop once", async () => {
+    const { fabric, report, runtime } = start();
+    fabric.start();
+    await until(() => Atomics.load(report, 14) >= 1);
+    // The shutdown sweep's losses land in the ring right before the stop request.
+    runtime.lose("shutdown", 40n, 1n, 2n);
+    runtime.lose("shutdown", 41n, 1n, 2n);
+    expect(await fabric.stop(5000)).toBe(true);
+    expect([report[10], report[16], report[17]]).toEqual([2, 2, 1]);
   });
 
   it("the worker reads each loss record once; a loss it cannot handle stays a gap without a reason", async () => {

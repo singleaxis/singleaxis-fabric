@@ -61,4 +61,10 @@ void runFabricWorker({
     // A tick while jobs wait: the job stream did not starve the clock.
     if (runtime.stats().queuedJobs > 0) Atomics.add(report, 15, 1);
   },
+  stop({ runtime, snapshot }) {
+    // 055-t10: the orderly stop, after every loss recorded before the request was handled.
+    const report = new Int32Array((snapshot as { report: SharedArrayBuffer }).report);
+    Atomics.store(report, 16, Atomics.load(report, 10));
+    Atomics.store(report, 17, runtime.peekLoss() === undefined ? 1 : 2);
+  },
 });
