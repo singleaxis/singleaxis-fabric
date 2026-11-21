@@ -285,7 +285,8 @@ jobs:
     # it with the TypeScript sender to the recording sink; python -m fabric.reconstruct
     # must report the run complete and terminated (exit 0) and replay the exact request
     # and response bytes; the same protocol fixture through Python's capture must write
-    # identical spool frames after the spec 055 §7.3 substitution; a content record the
+    # identical spool frames after the spec 055 §7.3 substitution, and both runs, each
+    # delivered to a sink, reconstruct to the same projection; a content record the
     # Node refuses for good is retired and read as not_captured(store_failed). Also the
     # sender's own tests and the fixture replayer. Runs on the minimum qualified Node 24.
     name: Wire parity (Node 24.4.0)

@@ -54,7 +54,13 @@ import { spoolKeyId } from "./spool-codec.js";
 import { secureDir } from "./spool.js";
 import type { WireSettings } from "./types.js";
 import { type UndiciHook, installUndiciHook } from "./undici.js";
-import { FabricWorker, firstManifest, isFabricWorkerThread, pipelineConfig } from "./worker.js";
+import {
+  FabricWorker,
+  type Uninstalled,
+  firstManifest,
+  isFabricWorkerThread,
+  pipelineConfig,
+} from "./worker.js";
 
 /** `install()` options: the configuration options, plus what a source build must name. */
 export interface InstallOptions extends WireOptions {
@@ -337,15 +343,23 @@ function installWith(
   const close = (timeoutMs: number, exiting: boolean): Promise<boolean> => {
     closing ??= (async () => {
       process.off("beforeExit", onExit);
+      let off: Uninstalled | undefined;
       try {
-        hook?.uninstall();
+        // The hook goes first; the cut is the position after which nothing it captured
+        // can be allocated (050 §3.8: a chained `disabled(shutdown)` manifest).
+        const removed = hook;
+        const cut = removed === undefined ? undefined : runtime.cut(() => removed.uninstall());
+        if (cut !== undefined) off = { points: [UNDICI_POINT], cut };
         runtime.setState(STATE_CLOSING);
         table.shutdown();
         runs.onFinal();
       } catch {
         // capture is stopping either way; the record says what was lost
       }
-      const clean = await worker.stop(timeoutMs, { exiting });
+      const clean = await worker.stop(timeoutMs, {
+        exiting,
+        ...(off === undefined ? {} : { uninstalled: off }),
+      });
       stopResult = worker.stopResult as StopResult | undefined;
       const closed = clean && stopResult?.closed === true;
       try {

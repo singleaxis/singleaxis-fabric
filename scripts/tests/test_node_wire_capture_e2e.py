@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -333,6 +334,24 @@ def test_a_node_fetch_run_is_verified_complete_and_replays_its_bytes(
     assert not list(spool.glob("*.rec")), sorted(p.name for p in spool.iterdir())
 
     rows = sink.rows()
+    # close() removed the hook: a chained manifest declares the point disabled(shutdown)
+    # before final (050 §3.8, as Python's uninstall).
+    manifests = sorted(
+        (r["attributes"] for r in rows if r.get("kind") == "span"
+         and r["name"] == "fabric.capture_manifest"),
+        key=lambda a: a["fabric.manifest.manifest_seq"],
+    )  # fmt: skip
+    points = [
+        next(
+            p
+            for p in m["fabric.manifest.capture_points"]
+            if p.startswith("wire.ts.undici@")
+        )
+        for m in manifests
+    ]
+    # "<point>@<version>:<kind>:<state>:<a>:<b>:<reason>"
+    states = [(p.split(":")[2], p.split(":")[5]) for p in points]
+    assert states == [("active", "-"), ("disabled", "shutdown")]
     code, report, stderr = reconstruct(rows, tmp_path)
     # The reader verifies the run: complete (a scoped run's complete verdict) and
     # terminated, exit code 0, every check passed, no gap at all.
@@ -585,3 +604,131 @@ def test_python_and_node_write_the_same_frames_for_the_same_fixture(
         assert ts_doc == py_doc
         # The whole frame, as Python's writer frames the substituted header and bodies.
         assert reframed(ts_doc, ts["blob"]) == reframed(py_doc, py["blob"])
+
+
+PY_RUN = """
+import json, sys
+import httpx
+from fabric import wire
+args = json.loads(sys.argv[1])
+handle = wire.install_from_env()
+assert handle is not None
+with httpx.Client() as client, wire.run(args["runId"]):
+    for body in args["requests"]:
+        client.post(args["base"] + "/v1/chat/completions", content=body.encode(),
+                    headers={"content-type": "application/json",
+                             "authorization": "Bearer sk-test-e2e"}).read()
+    token = wire.resume_token()
+ended = wire.end_run(None, "completed", resume=[token], stop_reason="goal_reached")
+assert ended == "ended", ended
+assert handle.flush(20.0)
+assert handle.close(20.0)
+"""
+
+
+def test_python_and_node_runs_project_the_same(
+    tmp_path: Path, built: dict[str, Any], provider: Provider
+) -> None:
+    """Spec 055 §9.2 ``ts-wire-parity``: the same tool loop captured by Node and by
+    Python, each delivered to its own recording sink, reconstructs to the same projection
+    after the §7.3 substitution (minted ids, the source epoch, timings and the capture
+    point label); privacy modes, statuses, counts, locators and digests are compared as
+    they are."""
+    projections = []
+    for side in ("node", "python"):
+        root = tmp_path / side
+        root.mkdir()
+        tls = root / "tls"
+        write_tls(tls)
+        sink = Sink(root / "sink", tls, EGRESS_AUTH)
+        sink.directory.mkdir()
+        sink.start()
+        try:
+            env = agent_env(root, provider, sink, root / "spool")
+            env["FABRIC_SOURCE_ID"] = "parity-agent"
+            if side == "node":
+                result = run_agent(built, env, provider)
+                assert result["closed"] is True, result
+            else:
+                done = subprocess.run(  # noqa: S603
+                    [sys.executable, "-c", PY_RUN, json.dumps(
+                        {"base": provider.base, "runId": RUN_ID, "requests": REQUESTS})],
+                    env=env, capture_output=True, text=True, timeout=120, check=False,
+                )  # fmt: skip
+                assert done.returncode == 0, done.stderr
+            rows = sink.rows()
+        finally:
+            sink.stop()
+        out = root / "projection.json"
+        code, report, stderr = reconstruct(rows, root, "--projection", str(out))
+        assert code == 0, (side, stderr, report.get("runs"))
+        projections.append(json.loads(out.read_text()))
+    node, python = (projected(p) for p in projections)
+    assert node == python
+
+
+_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+_PROJECTION_MINTED = re.compile(
+    rf"(?P<uuid>{_UUID})|(?P<seg>seg-[0-9a-f]{{32}})|(?P<span>(?<=/)[0-9a-f]{{16}}$)"
+    r"|(?P<point>wire\.(?:ts|py)\.[a-z_]+@[0-9][0-9A-Za-z.+-]*)"
+)
+# Values a projection mints or derives from the capture's own manifests: the minted ids
+# (inside any string), times, the source epoch, the capture point label, and the
+# manifests and digests over them (each SDK declares its own capture points, so its
+# manifest documents differ by design). Content digests, statuses, reasons, counts,
+# locators and privacy modes are compared as they are (spec 055 §7.3).
+_PROJECTION_TIMES = {"started_at_ns", "ended_at_ns", "generated_at", "evaluated_at"}
+_PROJECTION_DERIVED = {
+    "manifests",
+    "manifest_digest",
+    "seal_digest",
+    "reconstruction_sha256",
+}
+_PROJECTION_VALUES = {
+    "started_at",
+    "ended_at",
+    "source_epoch",
+    "stream.first_chunk_offset_ns",
+}
+
+
+def projected(document: dict[str, Any]) -> Any:
+    seen: dict[str, str] = {}
+
+    def minted(match: re.Match[str]) -> str:
+        kind = match.lastgroup or ""
+        if kind == "point":
+            return "wire.substituted@0.0.0"
+        key = match.group(0)
+        if key not in seen:
+            seen[key] = (
+                f"<{kind}-{sum(1 for v in seen.values() if v.startswith(f'<{kind}-'))}>"
+            )
+        return seen[key]
+
+    def walk(value: Any, key: str | None = None, parent: str | None = None) -> Any:
+        if key in _PROJECTION_TIMES or key in _PROJECTION_DERIVED:
+            return f"<{key}>"
+        if (key == "value" and parent in _PROJECTION_VALUES) or (
+            key == "source_epoch" and isinstance(value, int)
+        ):
+            return f"<{parent if key == 'value' else key}>"
+        if key == "predecessors":
+            return ["none" if p == "none" else "<predecessor>" for p in value]
+        if isinstance(value, dict):
+            return {k: walk(v, k, key) for k, v in value.items()}
+        if isinstance(value, list):
+            items = [walk(v, key, parent) for v in value]
+            # A run's segments are listed by their (random) ids: order them by role.
+            return sorted(items, key=json.dumps) if key == "segments" else items
+        if isinstance(value, str):
+            return _PROJECTION_MINTED.sub(minted, value)
+        return value
+
+    # Segments first, in role order, so minted ids are numbered alike on both sides.
+    for run in document.get("runs", ()):
+        run["segments"] = sorted(
+            run.get("segments", ()),
+            key=lambda g: (g.get("terminal"), g.get("predecessors")),
+        )
+    return walk(document)

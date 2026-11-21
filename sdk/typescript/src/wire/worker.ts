@@ -118,6 +118,17 @@ export interface WorkerRequest {
   readonly budgetMs: number;
   /** `stop` at process exit: a process that does not drain only leaves its records durable. */
   readonly exiting?: boolean;
+  /** `stop`: the capture points whose hooks `close()` removed, and the cut it happened at. */
+  readonly uninstalled?: Uninstalled;
+}
+
+/**
+ * Hooks removed by `close()` (050 §3.8; Python `_p1_uninstalled`): each point that was
+ * `active` becomes `disabled(shutdown)` in a chained manifest after `cut`, before `final`.
+ */
+export interface Uninstalled {
+  readonly points: readonly string[];
+  readonly cut: bigint;
 }
 
 interface FabricWorkerData {
@@ -280,7 +291,10 @@ export class FabricWorker {
    * draining or had to be terminated. `exiting`: the process is exiting (the stop
    * handler then only makes records durable unless this process drains the spool).
    */
-  async stop(timeoutMs: number, options: { exiting?: boolean } = {}): Promise<boolean> {
+  async stop(
+    timeoutMs: number,
+    options: { exiting?: boolean; uninstalled?: Uninstalled } = {},
+  ): Promise<boolean> {
     const worker = this.thread;
     if (worker === undefined) return true;
     try {
@@ -326,7 +340,11 @@ export interface FabricWorkerContext {
    * The orderly stop's deadline (`performance.now()` ms of this worker) and whether the
    * process is exiting, once the installing thread sent them (`FabricWorker.stop`).
    */
-  stop?: { readonly deadline: number; readonly exiting: boolean };
+  stop?: {
+    readonly deadline: number;
+    readonly exiting: boolean;
+    readonly uninstalled?: Uninstalled | undefined;
+  };
 }
 
 export interface FabricWorkerHandlers {
@@ -396,7 +414,15 @@ function listen(context: FabricWorkerContext, handlers: FabricWorkerHandlers): v
     if (request === undefined || typeof request.id !== "number") return;
     const deadline = performance.now() + Math.max(0, Number(request.budgetMs) || 0);
     if (request.kind === "stop") {
-      context.stop = { deadline, exiting: request.exiting === true };
+      const off = request.uninstalled;
+      context.stop = {
+        deadline,
+        exiting: request.exiting === true,
+        uninstalled:
+          off !== undefined && Array.isArray(off.points) && typeof off.cut === "bigint"
+            ? off
+            : undefined,
+      };
       return;
     }
     if (request.kind !== "flush") return;

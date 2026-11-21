@@ -166,6 +166,7 @@ export function runFabricMain(): Promise<void> | undefined {
     },
     stop: async (context) => {
       runtime = context.runtime;
+      uninstalled(pipeline, context);
       await base.stop!(context);
       const result = await stopDelivery(sender, spool, snapshot, context, pipeline.closed === true);
       try {
@@ -210,6 +211,24 @@ async function stopDelivery(
     // the note is best effort; the count still reaches the installing thread
   }
   return { closed, delivered: delivered && backlog === 0, backlog };
+}
+
+/**
+ * The hooks `close()` removed (050 §3.8; Python `_p1_uninstalled`): every point that was
+ * `active` becomes `disabled(shutdown)` in a chained manifest at the cut where its hook
+ * went, before the stop handler seals the segments and spools `final`.
+ */
+function uninstalled(pipeline: CapturePipeline, context: FabricWorkerContext): void {
+  const off = context.stop?.uninstalled;
+  if (off === undefined) return;
+  for (const point of off.points) {
+    try {
+      if (pipeline.manifests?.states[point]?.[0] !== "active") continue;
+      pipeline.pointChanged(context.runtime.epoch, point, "disabled", "shutdown", off.cut);
+    } catch {
+      // the manifest keeps the point active; the stop goes on
+    }
+  }
 }
 
 /** A quarantined file's parsed headers: each position is an `internal_error` loss. */
