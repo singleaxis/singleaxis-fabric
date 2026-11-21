@@ -546,7 +546,9 @@ def test_python_and_node_write_the_same_frames_for_the_same_fixture(
     write_tls(Nowhere.tls)
     env = agent_env(tmp_path, provider, Nowhere, tmp_path / "node-spool")  # type: ignore[arg-type]
     env["FABRIC_SOURCE_ID"] = "parity-agent"
-    node = run_agent(built, env, provider, flush=False, closeTimeoutMs=500)
+    # The close budget only bounds the wait for a Node that never answers; the worker
+    # spools both exchanges first. Generous, so a loaded machine still spools them.
+    node = run_agent(built, env, provider, flush=False, closeTimeoutMs=3000)
     assert node["closed"] is False  # nothing could be delivered
     py_env = {**env, "FABRIC_WIRE_SPOOL_DIR": str(tmp_path / "py-spool")}
     done = subprocess.run(  # noqa: S603
@@ -559,7 +561,7 @@ def test_python_and_node_write_the_same_frames_for_the_same_fixture(
 
     node_frames = frames_of(tmp_path / "node-spool")
     py_frames = frames_of(tmp_path / "py-spool")
-    assert len(node_frames) == len(py_frames) == len(REQUESTS)
+    assert len(node_frames) == len(py_frames) == len(REQUESTS), (node, len(py_frames))
     for ts, py in zip(node_frames, py_frames, strict=True):
         assert ts["blob"] == py["blob"]  # the protected bodies, byte for byte
         ts_doc, py_doc = substituted(ts["doc"]), substituted(py["doc"])

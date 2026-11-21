@@ -313,7 +313,7 @@ jobs:
           echo "FABRIC_TEST_PYTHON=$(command -v python)" >> "${GITHUB_ENV}"
       - name: Sender and fixture replayer tests
         working-directory: sdk/typescript
-        run: npx vitest run test/wire/sender
+        run: npm test -- test/wire/sender
       - name: The first verified Node record, and Python/TypeScript frame parity
         env:
           FABRIC_REQUIRE_NODE_E2E: "1"
