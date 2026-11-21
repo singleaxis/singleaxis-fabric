@@ -45,7 +45,7 @@ import {
   initialStates,
 } from "./manifest.js";
 import { loadNative, nativeTarget } from "./native.js";
-import { ROLE_REQUEST, ROLE_RESPONSE, decideGate, modeOf, type ContentGate } from "./protect.js";
+import { decideGate, maskingWithheld, type ContentGate } from "./protect.js";
 import type { WireSettings } from "./types.js";
 import type { UnmatchedHost } from "./undici.js";
 
@@ -200,13 +200,7 @@ export function maskedWithheld(
   if (policy === undefined) return false;
   // As the pipeline decides it (worker.ts): a masking role needs both the service and
   // the customer's transformation; the preload and envStatus() have no transformation.
-  return [ROLE_REQUEST, ROLE_RESPONSE].some((role) => {
-    const mode = modeOf(policy, role);
-    return (
-      (mode === "redact" || mode === "masked_only") &&
-      (settings.redactionEndpoint === undefined || !Object.hasOwn(transformations, role))
-    );
-  });
+  return maskingWithheld(policy, settings.redactionEndpoint !== undefined, transformations);
 }
 
 /** The content gate a configuration decides, read without installing (never throws). */

@@ -49,14 +49,7 @@ import {
   MarkerQueue,
   type PointState,
 } from "./manifest.js";
-import {
-  type ContentGate,
-  Protector,
-  ROLE_REQUEST,
-  ROLE_RESPONSE,
-  decideGate,
-  modeOf,
-} from "./protect.js";
+import { type ContentGate, Protector, decideGate, maskingWithheld } from "./protect.js";
 import { LossTable } from "./loss.js";
 import { compactInt, parseInt64 } from "./codec.js";
 import { formatEntry } from "./p1.js";
@@ -676,6 +669,10 @@ export interface PipelineConfig {
   /** The redaction service (endpoint and token file; the token is read in the worker). */
   readonly redaction: RedactionServiceOptions | undefined;
   readonly maxBodyBytes: number;
+  /** The largest side the protector splits (`max_retain_bytes`; default 64 MiB). */
+  readonly maxRetainBytes?: number;
+  /** The smallest inline part extracted (`part_min_bytes`; default 64 KiB). */
+  readonly partMinBytes?: number;
   readonly idKey: Uint8Array | undefined;
   readonly spoolKey: Uint8Array | undefined;
   readonly tokenizationKey: Uint8Array | undefined;
@@ -785,6 +782,8 @@ export function pipelineConfig(
         ? undefined
         : { endpoint: settings.redactionEndpoint, tokenFile: settings.redactionTokenFile },
     maxBodyBytes: settings.maxBodyBytes,
+    maxRetainBytes: settings.maxRetainBytes,
+    partMinBytes: settings.partMinBytes,
     idKey: key,
     spoolKey: settings.secrets.spoolKey,
     tokenizationKey: settings.secrets.tokenizationKey,
@@ -956,21 +955,20 @@ export class CapturePipeline {
         ? undefined
         : new Protector(capture, {
             maxBodyBytes: config.maxBodyBytes,
+            maxRetainBytes: config.maxRetainBytes,
+            partMinBytes: config.partMinBytes,
             transformations: config.transformations,
             redaction: config.redaction,
             tokenizationKey: config.tokenizationKey,
           });
     if (capture !== undefined) {
-      const masked = [ROLE_REQUEST, ROLE_RESPONSE].filter((role) => {
-        const mode = modeOf(capture, role);
-        return (
-          (mode === "redact" || mode === "masked_only") &&
-          (config.redaction === undefined || !Object.hasOwn(config.transformations, role))
-        );
-      });
       // A masking role with no service or transformation is withheld: say so at install,
       // and again at the first exchange of each epoch (§5).
-      this.#maskedWithheld = masked.length > 0;
+      this.#maskedWithheld = maskingWithheld(
+        capture,
+        config.redaction !== undefined,
+        config.transformations,
+      );
       if (this.#maskedWithheld) sink.notice?.("FW-032", "protection_failed");
     }
   }

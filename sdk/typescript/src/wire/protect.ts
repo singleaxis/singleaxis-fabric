@@ -6,15 +6,16 @@
  * reaches the spool, a store or the network before it ran, and a failure withholds the
  * content: there is never a fallback to raw bytes.
  *
- * This unit (`055-t8`) builds the whole-object modes: `omit`, `metadata_only`,
- * `retain_original`, `redact`, `masked_only` and `tokenize`. A digest of the original
- * body exists only under `retain_original`. `redact` and `masked_only` are made by the
- * customer-run redaction service through the existing {@link RedactionClient}, built in
- * the Fabric worker; `tokenize` is the existing whole-object HMAC ({@link tokenBytes}).
- * Split parts and `original_plus_masked` are unit `055-t15`: until then a side over
- * `max_body_bytes` is cut (`body_cap`), and an `original_plus_masked` role is withheld,
- * both objects `not_captured(protection_failed)`, as Python withholds a pair whose review
- * copy failed.
+ * Order: captured bytes -> typed extraction (split, `parts.ts`) -> protect each object ->
+ * digest per mode -> link. The modes are `omit`, `metadata_only`, `retain_original`,
+ * `redact`, `masked_only`, `tokenize` (units `055-t8`) and `original_plus_masked` (unit
+ * `055-t15`). A digest of the original body, and the parts' `byte_range`, exist only
+ * under `retain_original` and `original_plus_masked`. `redact`, `masked_only` and the
+ * review copies of `original_plus_masked` are made by the customer-run redaction service
+ * through the existing {@link RedactionClient}, built in the Fabric worker; `tokenize` is
+ * the existing whole-object HMAC ({@link tokenBytes}). An `original_plus_masked` object
+ * and its review copy are both produced before either is admitted: a failed copy
+ * withholds both.
  *
  * Transformations run over the plaintext: a side whose `Content-Encoding` is not
  * `identity` is decoded first, bounded by `max_body_bytes`; a body that cannot be decoded
@@ -32,14 +33,25 @@ import {
   type Transformation,
 } from "../redaction.js";
 import { encodeJson } from "./codec.js";
+import {
+  DEFAULT_PART_MIN_BYTES,
+  PART_ROLE,
+  type Part,
+  findParts,
+  partBytes,
+  partObjectId,
+  skeletonOf,
+} from "./parts.js";
+import { ROLES, admits, capBytes } from "./roles.js";
 import { ROLE_ROWS, ROLE_TABLE_VERSION } from "./roles.generated.js";
-import type { RoleRow } from "./types.js";
 
 export const ROLE_REQUEST = "model.exchange.request";
 export const ROLE_RESPONSE = "model.exchange.response";
-export const PART_ROLE = "model.exchange.part";
+export { PART_ROLE } from "./parts.js";
 export const LOCAL_DEFAULT_ID = "fabric.local-default";
 const MIN_TOKEN_KEY_BYTES = 32;
+/** Python `DEFAULT_MAX_RETAIN_BYTES`: the largest side the Fabric worker splits. */
+export const DEFAULT_MAX_RETAIN_BYTES = 64 * 1024 * 1024;
 
 // ------------------------------------------------------------------ content coding
 
@@ -116,49 +128,7 @@ export function decodeContent(
 
 // ---------------------------------------------------------------------- role table
 
-const CAPS: Readonly<Record<string, number>> = {
-  "64 KiB": 64 << 10,
-  "256 KiB": 256 << 10,
-  "1 MiB": 1 << 20,
-  "4 MiB": 4 << 20,
-};
-const MEDIA_RE = /^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/;
-
-/** The content role table (spec 049 §4.3), generated from the registry. */
-export const ROLES: ReadonlyMap<string, RoleRow> = new Map(ROLE_ROWS.map((row) => [row.role, row]));
-
-/** A role's object cap for a deployment whose `max_body_bytes` is `maxBodyBytes`. */
-export function capBytes(row: RoleRow, maxBodyBytes: number): number {
-  return row.cap === "max_body_bytes" ? maxBodyBytes : CAPS[row.cap]!;
-}
-
-/** Exact `type/subtype`, `type/*` or `*`, for a value passing the 047 §7 media rule. */
-export function admitsMedia(row: RoleRow, mediaType: string): boolean {
-  if (!MEDIA_RE.test(mediaType)) return false;
-  const major = mediaType.split("/", 1)[0] + "/*";
-  return row.media_types.some((m) => m === "*" || m === mediaType || m === major);
-}
-
-/** Whether the Node's role rules (049 §4.3 rules 1-4) admit an object with these values. */
-export function admits(
-  role: string,
-  fields: {
-    boundary: string;
-    provenance: string;
-    mediaType: string;
-    storedByteLength: number;
-    maxBodyBytes: number;
-  },
-): boolean {
-  const row = ROLES.get(role);
-  return (
-    row !== undefined &&
-    row.boundary.includes(fields.boundary) &&
-    row.provenance.includes(fields.provenance) &&
-    admitsMedia(row, fields.mediaType) &&
-    fields.storedByteLength <= capBytes(row, fields.maxBodyBytes)
-  );
-}
+export { ROLES, admits, admitsMedia, capBytes } from "./roles.js";
 
 // ------------------------------------------------------------------ capture policy
 
@@ -231,6 +201,35 @@ export function modeOf(policy: CapturePolicy, role: string): string {
   if (Object.hasOwn(policy.modes, role)) return policy.modes[role]!;
   const row = ROLES.get(role);
   return policy.implicit && row?.default_policy === "content" ? "retain_original" : "omit";
+}
+
+const MASKING_MODES: ReadonlySet<string> = new Set([
+  "redact",
+  "masked_only",
+  "original_plus_masked",
+]);
+
+/**
+ * Whether the policy gives a model-exchange role a mode that needs the customer's
+ * transformation (`redact`, `masked_only`, `original_plus_masked`; for the part role
+ * `original_plus_masked`, since a binary part under `redact` is withheld by policy anyway)
+ * while the service or that role's transformation is missing, so its content is withheld
+ * (`FW-032`).
+ */
+export function maskingWithheld(
+  policy: CapturePolicy,
+  service: boolean,
+  transformations: Readonly<Record<string, unknown>>,
+): boolean {
+  const roles: [string, ReadonlySet<string>][] = [
+    [ROLE_REQUEST, MASKING_MODES],
+    [ROLE_RESPONSE, MASKING_MODES],
+    [PART_ROLE, new Set(["original_plus_masked"])],
+  ];
+  return roles.some(
+    ([role, modes]) =>
+      modes.has(modeOf(policy, role)) && (!service || !Object.hasOwn(transformations, role)),
+  );
 }
 
 // ------------------------------------------------------------- the production gate
@@ -323,6 +322,10 @@ export interface SideInput {
 
 export interface ProtectorOptions {
   readonly maxBodyBytes: number;
+  /** The largest side that may be split (`max_retain_bytes`; default 64 MiB). */
+  readonly maxRetainBytes?: number;
+  /** The smallest inline part extracted (`part_min_bytes`; default 64 KiB). */
+  readonly partMinBytes?: number;
   /** The customer transformation of each `redact` / `masked_only` role. */
   readonly transformations?: Readonly<Record<string, Transformation>>;
   /** The redaction service; a client is built here, in the Fabric worker. */
@@ -353,10 +356,20 @@ export function wholePiecePrefix(pieces: readonly Uint8Array[], limit: number): 
   return Buffer.concat(kept, size);
 }
 
+type Base = Readonly<Record<string, unknown>>;
+
+/** The descriptor sizes a withheld object may carry, where its mode allows them. */
+interface Sizes {
+  readonly source_byte_length?: number;
+  readonly source_sha256?: string;
+}
+
 /** Applies the capture policy to one exchange side (049 §7.5; Python `Protector`). */
 export class Protector {
   readonly policy: CapturePolicy;
   readonly maxBodyBytes: number;
+  readonly maxRetainBytes: number;
+  readonly partMinBytes: number;
   readonly #transforms: Readonly<Record<string, Transformation>>;
   readonly #client: RedactionClient | undefined;
   readonly #tokenKey: Uint8Array | undefined;
@@ -365,6 +378,8 @@ export class Protector {
   constructor(policy: CapturePolicy, options: ProtectorOptions) {
     this.policy = policy;
     this.maxBodyBytes = options.maxBodyBytes;
+    this.maxRetainBytes = options.maxRetainBytes ?? DEFAULT_MAX_RETAIN_BYTES;
+    this.partMinBytes = options.partMinBytes ?? DEFAULT_PART_MIN_BYTES;
     const transforms: Record<string, Transformation> = {};
     for (const [role, value] of Object.entries(options.transformations ?? {})) {
       if (!ROLES.has(role)) {
@@ -405,9 +420,15 @@ export class Protector {
    * Protects one side. `base` holds the descriptor's identity fields (tenant, source,
    * run, operation, boundary, provenance, captured_at, media type, content encoding);
    * `pieces` are the retained bytes in order. Never throws for content reasons.
+   *
+   * A complete, plain JSON side over `max_body_bytes` (and at most `max_retain_bytes`)
+   * whose inline parts take it under `max_body_bytes` is split: a skeleton (the original
+   * bytes without the parts' ranges) plus one `model.exchange.part` object per part, each
+   * under the part role's own mode. Any other side over `max_body_bytes` is cut to its
+   * longest whole-piece prefix (`body_cap`).
    */
   async side(
-    base: Readonly<Record<string, unknown>>,
+    base: Base,
     role: string,
     pieces: readonly Uint8Array[],
     input: SideInput,
@@ -433,24 +454,39 @@ export class Protector {
       };
     }
     const total = pieces.reduce((sum, piece) => sum + piece.byteLength, 0);
-    // Split parts are unit 055-t15: a side over the object bound is cut, as before 049.
-    if (cut === undefined && total > this.maxBodyBytes) cut = "body_cap";
+    let whole: Buffer | undefined;
+    let parts: Part[] | undefined;
+    if (cut === undefined && total > this.maxBodyBytes) {
+      const splittable =
+        total <= this.maxRetainBytes &&
+        base.content_encoding === "identity" &&
+        base.media_type === "application/json" &&
+        !input.partial;
+      if (splittable) {
+        whole = Buffer.concat(pieces, total);
+        const found = findParts(whole, this.partMinBytes);
+        if (found !== null && found.length > 0 && total - partBytes(found) <= this.maxBodyBytes) {
+          parts = found;
+        }
+      }
+      if (parts === undefined) cut = "body_cap"; // not split: stored truncated, as before 049
+    }
     const data =
       cut !== undefined && total > this.maxBodyBytes
         ? wholePiecePrefix(pieces, this.maxBodyBytes)
-        : Buffer.concat(pieces, total);
+        : (whole ?? Buffer.concat(pieces, total));
     const result: SideResult = {
       objects: [],
       primary: undefined,
       reason: undefined,
       truncated: cut !== undefined,
     };
-    if (mode === "retain_original") {
-      this.#original(result, base, role, mode, data, input, cut);
-    } else if (mode === "original_plus_masked") {
-      this.#withholdPair(result, base, role, mode);
+    if (mode === "original_plus_masked") {
+      await this.#withReviewCopy(result, base, role, data, parts, input, cut);
+    } else if (mode === "retain_original") {
+      await this.#original(result, base, role, mode, data, parts, input, cut);
     } else {
-      await this.#transformed(result, base, role, mode, data, cut);
+      await this.#transformed(result, base, role, mode, data, parts, cut);
     }
     if (result.reason === undefined && cut !== undefined) result.reason = cut;
     return result;
@@ -458,20 +494,21 @@ export class Protector {
 
   // ---------------------------------------------------------------------- modes
 
-  #original(
+  async #original(
     result: SideResult,
-    base: Readonly<Record<string, unknown>>,
+    base: Base,
     role: string,
     mode: string,
     data: Buffer,
+    parts: readonly Part[] | undefined,
     input: SideInput,
     cut: string | undefined,
-  ): void {
+  ): Promise<void> {
     if (cut !== undefined && data.byteLength === 0) {
       result.reason = cut; // no whole piece fit: nothing useful to store
       return;
     }
-    let object: ContentObject;
+    let primary: ContentObject;
     if (cut !== undefined) {
       // The bytes forwarded past the cut are not counted by the hook: the source length
       // is given only when it is known (Python: max(observed, stored + 1)).
@@ -479,7 +516,7 @@ export class Protector {
         input.observed === undefined
           ? {}
           : { source_byte_length: Math.max(input.observed, data.byteLength + 1) };
-      object = this.#stored(
+      primary = this.#stored(
         base,
         role,
         mode,
@@ -491,29 +528,51 @@ export class Protector {
         source,
       );
     } else {
+      // The original's digest: of the whole body, also when the side is split, so the
+      // skeleton and the parts reassemble to `source_sha256`.
       const source = { source_byte_length: data.byteLength, source_sha256: sha(data) };
-      const representation = input.partial ? "partial" : "exact";
-      object = this.#stored(
-        base,
-        role,
-        mode,
-        data,
-        representation,
-        [],
-        "stored",
-        "retained",
-        source,
-      );
+      if (parts === undefined) {
+        const representation = input.partial ? "partial" : "exact";
+        primary = this.#stored(
+          base,
+          role,
+          mode,
+          data,
+          representation,
+          [],
+          "stored",
+          "retained",
+          source,
+        );
+      } else {
+        const skeleton = skeletonOf(data, parts);
+        primary = this.#stored(
+          base,
+          role,
+          mode,
+          skeleton,
+          "split",
+          ["extract_parts"],
+          "stored",
+          "retained",
+          source,
+        );
+      }
     }
-    this.#admit(result, object, true);
+    this.#admit(result, primary, true);
+    const skeletonId = String(primary.descriptor.object_id);
+    for (const [index, part] of (parts ?? []).entries()) {
+      await this.#part(result, base, data, part, skeletonId, index, true);
+    }
   }
 
   async #transformed(
     result: SideResult,
-    base: Readonly<Record<string, unknown>>,
+    base: Base,
     role: string,
     mode: string,
     data: Buffer,
+    parts: readonly Part[] | undefined,
     cut: string | undefined,
   ): Promise<void> {
     if (cut !== undefined) {
@@ -521,29 +580,181 @@ export class Protector {
       this.#admit(result, this.#withheld(base, role, mode, cut), true, cut);
       return;
     }
-    const plain = this.#plaintext(base, data);
-    if (plain.data === undefined) {
-      this.#admit(result, this.#withheld(base, role, mode, plain.failed), true, plain.failed);
-      return;
+    let object: ContentObject;
+    if (parts === undefined) {
+      const plain = this.#plaintext(base, data);
+      if (plain.data === undefined) {
+        this.#admit(result, this.#withheld(base, role, mode, plain.failed), true, plain.failed);
+        return;
+      }
+      object = await this.#protect(plain.base, role, mode, plain.data, false);
+    } else {
+      // Parts exist only for an identity body: the skeleton is the plaintext.
+      object = await this.#protect(base, role, mode, skeletonOf(data, parts), true);
     }
-    const object =
-      mode === "tokenize"
-        ? this.#tokenized(plain.base, role, mode, plain.data)
-        : await this.#redacted(plain.base, role, mode, plain.data);
     this.#admit(result, object, true);
+    const skeletonId = String(object.descriptor.object_id);
+    for (const [index, part] of (parts ?? []).entries()) {
+      await this.#part(result, base, data, part, skeletonId, index, false);
+    }
   }
 
   /**
-   * `original_plus_masked` before unit 055-t15 builds the review copy: both objects are
-   * descriptor-only `not_captured(protection_failed)`, with no digest or length of the
-   * original, as Python withholds a pair whose masked copy failed.
+   * One extracted part, under the part role's own mode (049 §7.5; a policy that does not
+   * name the part role omits it). Its object id is derived from the skeleton's and its
+   * position ({@link partObjectId}); its `byte_range` exists only when both the part and
+   * the skeleton are retained originals.
    */
-  #withholdPair(
+  async #part(
     result: SideResult,
-    base: Readonly<Record<string, unknown>>,
+    base: Base,
+    data: Buffer,
+    part: Part,
+    skeletonId: string,
+    index: number,
+    retainSkeleton: boolean,
+  ): Promise<void> {
+    const mode = modeOf(this.policy, PART_ROLE);
+    if (mode === "omit") return;
+    const partBase = { ...base, media_type: part.mediaType, content_encoding: "base64" };
+    const length = part.end - part.start;
+    const bytes = data.subarray(part.start, part.end);
+    const link: Record<string, unknown> = { relation: "part_of", object_id: skeletonId };
+    const retained = mode === "retain_original" || mode === "original_plus_masked";
+    if (retained && retainSkeleton) link.byte_range = [part.start, part.end];
+    if (mode === "original_plus_masked" && length <= this.maxBodyBytes) {
+      await this.#partWithReviewCopy(result, partBase, bytes, skeletonId, index, link);
+      return;
+    }
+    let object: ContentObject;
+    if (mode === "metadata_only") {
+      object = this.#withheld(partBase, PART_ROLE, mode, "privacy_policy", {
+        source_byte_length: length,
+      });
+    } else if (length > this.maxBodyBytes) {
+      // Beyond the object cap: descriptor-only; a retaining mode keeps its digest.
+      const sizes: Sizes = retained
+        ? { source_byte_length: length, source_sha256: sha(bytes) }
+        : { source_byte_length: length };
+      object = this.#withheld(partBase, PART_ROLE, mode, "part_cap", sizes);
+    } else if (retained) {
+      const source = { source_byte_length: length, source_sha256: sha(bytes) };
+      object = this.#stored(
+        partBase,
+        PART_ROLE,
+        mode,
+        bytes,
+        "exact",
+        [],
+        "stored",
+        "retained",
+        source,
+      );
+    } else if (
+      (mode === "redact" || mode === "masked_only") &&
+      !Object.hasOwn(this.#transforms, PART_ROLE)
+    ) {
+      // Binary a text transformation cannot handle: withheld (049 §7.5).
+      object = this.#withheld(partBase, PART_ROLE, mode, "privacy_policy");
+    } else {
+      object = await this.#protect(partBase, PART_ROLE, mode, bytes, false);
+    }
+    object.descriptor.links = [link];
+    object.descriptor.object_id = partObjectId(skeletonId, index);
+    this.#admit(result, object, false);
+  }
+
+  /**
+   * An `original_plus_masked` part: the whole-side rule per part. The original part and
+   * its masked review copy (`part_of` the skeleton, `derived_from` the part) are both
+   * produced before either is admitted; a failed copy withholds both,
+   * `not_captured(protection_failed)` with no digest, length or range of the original.
+   */
+  async #partWithReviewCopy(
+    result: SideResult,
+    partBase: Base,
+    bytes: Buffer,
+    skeletonId: string,
+    index: number,
+    link: Record<string, unknown>,
+  ): Promise<void> {
+    const mode = "original_plus_masked";
+    let review = await this.#redacted(partBase, PART_ROLE, mode, bytes, false);
+    let original: ContentObject;
+    if (isStored(review) && this.#admissible(review)) {
+      const source = { source_byte_length: bytes.byteLength, source_sha256: sha(bytes) };
+      original = this.#stored(
+        partBase,
+        PART_ROLE,
+        mode,
+        bytes,
+        "exact",
+        [],
+        "stored",
+        "retained",
+        source,
+      );
+    } else {
+      delete link.byte_range;
+      original = this.#withheld(partBase, PART_ROLE, mode, "protection_failed");
+      review = this.#withheld(partBase, PART_ROLE, mode, "protection_failed");
+    }
+    original.descriptor.links = [link];
+    original.descriptor.object_id = partObjectId(skeletonId, index);
+    review.descriptor.links = [
+      { relation: "part_of", object_id: skeletonId },
+      { relation: "derived_from", object_id: original.descriptor.object_id },
+    ];
+    this.#admit(result, original, false);
+    this.#admit(result, review, false);
+  }
+
+  /**
+   * `original_plus_masked`: the masked review copy of the whole side is produced before
+   * anything is admitted, so a failed copy withholds the original too (049 §7.7 rule 4:
+   * never raw bytes on failure). The copy masks the plaintext; the original stays the wire
+   * bytes, split or not. A cut side's copy is withheld with the cut's reason.
+   */
+  async #withReviewCopy(
+    result: SideResult,
+    base: Base,
     role: string,
-    mode: string,
-  ): void {
+    data: Buffer,
+    parts: readonly Part[] | undefined,
+    input: SideInput,
+    cut: string | undefined,
+  ): Promise<void> {
+    const mode = "original_plus_masked";
+    let review: ContentObject;
+    if (cut !== undefined) {
+      review = this.#withheld(base, role, mode, cut);
+    } else {
+      const plain = this.#plaintext(base, data);
+      review =
+        plain.data === undefined
+          ? this.#withheld(base, role, mode, "protection_failed")
+          : await this.#redacted(plain.base, role, mode, plain.data, false);
+      if (!(isStored(review) && this.#admissible(review))) {
+        this.#withholdPair(result, base, role, mode);
+        return;
+      }
+    }
+    await this.#original(result, base, role, mode, data, parts, input, cut);
+    // One review copy per side, linked `derived_from` the original; it never satisfies a
+    // requirement for the original.
+    if (result.primary === undefined) return;
+    review.descriptor.links = [
+      { relation: "derived_from", object_id: result.primary.descriptor.object_id },
+    ];
+    this.#admit(result, review, false);
+  }
+
+  /**
+   * `original_plus_masked` whose masked copy could not be produced: both objects are
+   * descriptor-only `not_captured(protection_failed)`, with no digest or length of the
+   * original.
+   */
+  #withholdPair(result: SideResult, base: Base, role: string, mode: string): void {
     const original = this.#withheld(base, role, mode, "protection_failed");
     const review = this.#withheld(base, role, mode, "protection_failed");
     review.descriptor.links = [
@@ -558,10 +769,7 @@ export class Protector {
    * `identity`, else every coding undone (bounded by `max_body_bytes`) and
    * `content_encoding: identity`. A failure names `body_cap` or `protection_failed`.
    */
-  #plaintext(
-    base: Readonly<Record<string, unknown>>,
-    data: Buffer,
-  ): { base: Readonly<Record<string, unknown>>; data?: Buffer; failed: string } {
+  #plaintext(base: Base, data: Buffer): { base: Base; data?: Buffer; failed: string } {
     const encoding = base.content_encoding;
     if (isIdentity(typeof encoding === "string" ? encoding : undefined)) {
       return { base, data, failed: "" };
@@ -580,12 +788,20 @@ export class Protector {
     }
   }
 
-  #tokenized(
-    base: Readonly<Record<string, unknown>>,
+  // ------------------------------------------------------------ transformations
+
+  #protect(
+    base: Base,
     role: string,
     mode: string,
     data: Buffer,
-  ): ContentObject {
+    split: boolean,
+  ): Promise<ContentObject> {
+    if (mode === "tokenize") return Promise.resolve(this.#tokenized(base, role, mode, data, split));
+    return this.#redacted(base, role, mode, data, split);
+  }
+
+  #tokenized(base: Base, role: string, mode: string, data: Buffer, split: boolean): ContentObject {
     const key = this.#tokenKey;
     if (key === undefined || key.byteLength < MIN_TOKEN_KEY_BYTES) {
       return this.#withheld(base, role, mode, "protection_failed");
@@ -606,25 +822,19 @@ export class Protector {
     } catch {
       return this.#withheld(base, role, mode, "protection_failed");
     }
-    return this.#stored(
-      base,
-      role,
-      mode,
-      token,
-      "tokenized",
-      ["tokenize"],
-      "redacted",
-      "tokenized",
-      {},
-      [TOKEN_TRANSFORMATION, "1"],
-    );
+    const steps = split ? ["extract_parts", "tokenize"] : ["tokenize"];
+    return this.#stored(base, role, mode, token, "tokenized", steps, "redacted", "tokenized", {}, [
+      TOKEN_TRANSFORMATION,
+      "1",
+    ]);
   }
 
   async #redacted(
-    base: Readonly<Record<string, unknown>>,
+    base: Base,
     role: string,
     mode: string,
     data: Buffer,
+    split: boolean,
   ): Promise<ContentObject> {
     const transform = Object.hasOwn(this.#transforms, role) ? this.#transforms[role] : undefined;
     const client = this.#client;
@@ -645,7 +855,8 @@ export class Protector {
     if (out === null || out.byteLength > cap) {
       return this.#withheld(base, role, mode, "protection_failed");
     }
-    return this.#stored(base, role, mode, out, "redacted", ["redact"], "redacted", "redacted", {}, [
+    const steps = split ? ["extract_parts", "redact"] : ["redact"];
+    return this.#stored(base, role, mode, out, "redacted", steps, "redacted", "redacted", {}, [
       transform.id,
       transform.version,
     ]);
@@ -654,7 +865,7 @@ export class Protector {
   // ---------------------------------------------------------------- descriptors
 
   #core(
-    base: Readonly<Record<string, unknown>>,
+    base: Base,
     role: string,
     mode: string,
     status: string,
@@ -677,7 +888,7 @@ export class Protector {
   }
 
   #stored(
-    base: Readonly<Record<string, unknown>>,
+    base: Base,
     role: string,
     mode: string,
     data: Uint8Array,
@@ -705,14 +916,15 @@ export class Protector {
 
   /**
    * A descriptor-only object (`not_captured`): no bytes, no stored digest; a length only
-   * where the mode allows one (never under redact, masked_only, tokenize or omit).
+   * where the mode allows one (never under redact, masked_only, tokenize or omit) and the
+   * original's digest only under a retaining mode.
    */
   #withheld(
-    base: Readonly<Record<string, unknown>>,
+    base: Base,
     role: string,
     mode: string,
     reason: string,
-    sizes: { source_byte_length?: number } = {},
+    sizes: Sizes = {},
   ): ContentObject {
     const descriptor = this.#core(base, role, mode, "not_captured", "withheld");
     Object.assign(descriptor, {
@@ -720,31 +932,35 @@ export class Protector {
       transformations: [],
       status_reason: reason,
     });
-    if (
-      ["retain_original", "original_plus_masked", "metadata_only"].includes(mode) &&
-      sizes.source_byte_length !== undefined
-    ) {
+    const retaining = mode === "retain_original" || mode === "original_plus_masked";
+    if ((retaining || mode === "metadata_only") && sizes.source_byte_length !== undefined) {
       descriptor.source_byte_length = sizes.source_byte_length;
     }
+    if (retaining && sizes.source_sha256 !== undefined)
+      descriptor.source_sha256 = sizes.source_sha256;
     return { descriptor, data: new Uint8Array(0) };
   }
 
-  /** Keeps `object` when the role table admits it; a refused object is never sent. */
-  #admit(result: SideResult, object: ContentObject, primary: boolean, reason?: string): void {
+  /** Whether the role table admits `object` (049 §4.3 rules 1-4). */
+  #admissible(object: ContentObject): boolean {
     const d = object.descriptor;
-    const admitted = admits(String(d.role), {
+    return admits(String(d.role), {
       boundary: String(d.boundary),
       provenance: String(d.provenance),
       mediaType: String(d.media_type),
       storedByteLength: object.data.byteLength,
       maxBodyBytes: this.maxBodyBytes,
     });
-    if (!admitted) {
+  }
+
+  /** Keeps `object` when the role table admits it; a refused object is never sent. */
+  #admit(result: SideResult, object: ContentObject, primary: boolean, reason?: string): void {
+    if (!this.#admissible(object)) {
       result.reason ??= "store_failed";
       return;
     }
     result.objects.push(object);
     if (primary && isStored(object)) result.primary = object;
-    if (!isStored(object)) result.reason ??= reason ?? String(d.status_reason);
+    if (!isStored(object)) result.reason ??= reason ?? String(object.descriptor.status_reason);
   }
 }
