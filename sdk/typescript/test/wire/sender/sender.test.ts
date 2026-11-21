@@ -417,9 +417,19 @@ describe("another writer's records", { timeout: 60_000 }, () => {
       const logs = Buffer.concat(
         node.bodies.filter((b) => b.path === "/v1/logs").map((b) => b.body),
       );
-      for (const { blob } of spooled) {
-        expect(logs.includes(blob.subarray(0, 64))).toBe(true);
+      let bodies = 0;
+      for (const { doc, blob } of spooled) {
+        for (const body of doc.bodies as { offset: number; length: number }[]) {
+          const bytes = blob.subarray(
+            Number(body.offset),
+            Number(body.offset) + Number(body.length),
+          );
+          expect(bytes.byteLength).toBeGreaterThan(0);
+          expect(logs.includes(bytes)).toBe(true);
+          bodies += 1;
+        }
       }
+      expect(bodies).toBe(6);
       for (const { doc } of spooled) {
         const id = (doc.span as any).attributes["fabric.wire.exchange_id"] as string;
         expect(delivered.at(-1)!.includes(Buffer.from(id))).toBe(true);
