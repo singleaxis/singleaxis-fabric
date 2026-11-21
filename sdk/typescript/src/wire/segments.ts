@@ -24,10 +24,13 @@
  * seal to be durable: `flush()` is the durability call.
  *
  * What differs from Python, and why:
- * - A segment is opened eagerly: after `resumeToken()` seals the open segment, the run's
- *   continuation segment is opened at once (Python opens it at the run's next
- *   allocation), because the allocation hook must not build markers. A run that makes no
- *   call after its last token therefore seals one more, empty, segment at exit.
+ * - A continuation segment is opened eagerly, but held: after `resumeToken()` seals the
+ *   open segment, the run's slot moves to a new segment at once (Python opens it at the
+ *   run's next allocation), because the allocation hook must not build markers. Its
+ *   `run_start` is held by the Fabric worker and spooled only when the segment is used
+ *   (a position, a nested block, a seal); when the run's outermost block here ends with
+ *   nothing in it, it is discarded, so no empty segment outside the terminal's closure
+ *   is left for the verifier to report (G5 `branch_not_joined`).
  * - The Fabric worker rolls a segment that reached the forced bound itself, under the
  *   same lock (`worker.ts`), and writes the continuation `run_start`: the open segment of
  *   a run is always read from its slot, never cached here.
@@ -288,6 +291,23 @@ export interface MarkerMessage {
   readonly source: string;
   readonly epoch: string;
   readonly fields: Record<string, unknown>;
+  /**
+   * A continuation `run_start` the worker holds instead of spooling: it is spooled when
+   * a record, loss or seal of its segment arrives, or on a `commit`, and dropped on a
+   * `discard` (see {@link SegmentMessage}).
+   */
+  readonly hold?: boolean;
+}
+
+/**
+ * What became of a held continuation segment: `commit` spools its `run_start`;
+ * `discard` drops it, because the segment ended with no position in it (Python never
+ * opens such a segment: it opens one at the run's next allocation).
+ */
+export interface SegmentMessage {
+  readonly t: "segment";
+  readonly op: "commit" | "discard";
+  readonly segment: string;
 }
 
 /** A seal request for the worker's accumulator (bigints as decimal text). */
@@ -305,7 +325,7 @@ export interface SealMessage {
   readonly branchIds: readonly string[];
 }
 
-export type RunMessage = MarkerMessage | SealMessage;
+export type RunMessage = MarkerMessage | SealMessage | SegmentMessage;
 
 /** Ring record kind of one part of a run message. */
 export const RUN_MESSAGE_PART = 1;
@@ -373,7 +393,9 @@ export class RunMessages {
         payload = Buffer.concat(held as Buffer[]);
       }
       const message = JSON.parse(payload.toString("utf8")) as RunMessage;
-      if (message.t !== "marker" && message.t !== "seal") throw new Error("unknown message");
+      if (message.t !== "marker" && message.t !== "seal" && message.t !== "segment") {
+        throw new Error("unknown message");
+      }
       return message;
     } catch {
       this.dropped++;
@@ -403,7 +425,20 @@ interface Run {
   pendingBranchIds: readonly string[];
   /** The predecessor entry of the last segment sealed here. */
   lastEntry: string | undefined;
+  /**
+   * The open continuation segment whose `run_start` the worker still holds (opened by
+   * `resumeToken()`); it becomes real at its first position or when a block needs it,
+   * and is discarded if the run's outermost block ends with nothing in it.
+   */
+  heldSegment: string | undefined;
 }
+
+/**
+ * What a run-table transition does with a held continuation segment ({@link Run}):
+ * `commit` makes it real even when empty, `drop` discards it when empty, `name` makes it
+ * real only when it holds a position (an empty one stays held and is not named).
+ */
+type HeldMode = "commit" | "drop" | "name";
 
 interface SealOrder {
   readonly segmentId: string;
@@ -630,13 +665,18 @@ export class SegmentTable {
 
   // ------------------------------------------------------------ markers and seals
 
-  #queue(fields: Record<string, unknown>): void {
+  #queue(fields: Record<string, unknown>, hold = false): void {
     const message: MarkerMessage = {
       t: "marker",
       source: this.sourceId,
       epoch: this.#runtime.epoch.toString(),
       fields: { ...fields, event_id: randomUUID() },
+      ...(hold ? { hold: true } : {}),
     };
+    this.#post(message);
+  }
+
+  #post(message: RunMessage): void {
     let sent: boolean;
     try {
       sent = this.#send(message);
@@ -644,6 +684,33 @@ export class SegmentTable {
       sent = false;
     }
     if (!sent) this.#stats.messages_dropped++;
+  }
+
+  /**
+   * The run's open segment after settling a held continuation (lock held; see
+   * {@link HeldMode}). `undefined` when none is open, or when an empty held one was
+   * dropped or is not to be named.
+   */
+  #settle(run: Run, mode: HeldMode): string | undefined {
+    const segmentId = this.#segmentOf(run);
+    if (segmentId === undefined || segmentId !== run.heldSegment) {
+      run.heldSegment = undefined; // the worker rolled it at the forced bound: it is real
+      return segmentId;
+    }
+    const empty = run.ref.slot < 0 || this.#runtime.runPositions(run.ref.slot) === 0n;
+    if (mode === "commit" || !empty) {
+      run.heldSegment = undefined;
+      this.#post({ t: "segment", op: "commit", segment: segmentId });
+      return segmentId;
+    }
+    if (mode === "name") return undefined;
+    this.#post({ t: "segment", op: "discard", segment: segmentId });
+    this.#setSegment(run, undefined);
+    run.heldSegment = undefined;
+    // As if it never opened: the run's next segment here continues the last sealed one.
+    run.pendingPredecessors = run.lastEntry !== undefined ? [run.lastEntry] : [];
+    this.#stats.segments_opened--;
+    return undefined;
   }
 
   #runStart(
@@ -697,6 +764,8 @@ export class SegmentTable {
       branchIds?: readonly string[];
       basis?: IdBasis;
       root?: RunPlan;
+      /** A continuation the worker holds until it is used ({@link HeldMode}). */
+      hold?: boolean;
     } = {},
   ): string {
     const segmentId = SEGMENT_PREFIX + randomBytes(16).toString("hex");
@@ -720,10 +789,11 @@ export class SegmentTable {
       root: options.root,
     });
     this.#setSegment(run, segmentId);
+    run.heldSegment = options.hold === true ? segmentId : undefined;
     run.pendingPredecessors = [];
     run.pendingBranchIds = [];
     this.#stats.segments_opened++;
-    this.#queue(fields);
+    this.#queue(fields, options.hold === true);
     return segmentId;
   }
 
@@ -738,7 +808,7 @@ export class SegmentTable {
     exact: boolean,
     branchIds: readonly string[] = [],
   ): SealOrder | undefined {
-    const segmentId = this.#segmentOf(run);
+    const segmentId = this.#settle(run, "commit");
     if (segmentId === undefined) return undefined;
     const positions = run.ref.slot >= 0 ? this.#runtime.runPositions(run.ref.slot) : 0n;
     const last = this.#last();
@@ -915,7 +985,9 @@ export class SegmentTable {
       run.depth++;
       run.resumable = run.resumable || plan.resumable || resumed;
       run.finalBlock = run.finalBlock || plan.final;
-      const open = this.#segmentOf(run);
+      // A held continuation: a join replaces it when empty (as Python, where none is
+      // open); a nested block makes it real.
+      const open = this.#settle(run, resumed ? "drop" : "commit");
       if (resumed && open !== undefined) {
         // A join into an open segment: seal it, and open one naming it and the tokens.
         this.#request(this.#seal(run, false, exact));
@@ -964,8 +1036,11 @@ export class SegmentTable {
       run.depth--;
       const outermost = run.depth === 0;
       const terminal = outermost && (!run.resumable || run.finalBlock);
-      if (outermost && terminal && this.#segmentOf(run) === undefined) {
-        this.#open(run, scope.scopeId, last); // the seal needs a segment: a zero-width one
+      // A held continuation with nothing in it: dropped at the outermost non-terminal
+      // exit (no empty segment that nothing joins), kept unnamed by an inner exit.
+      let segmentId = this.#settle(run, !outermost ? "name" : terminal ? "commit" : "drop");
+      if (outermost && terminal && segmentId === undefined) {
+        segmentId = this.#open(run, scope.scopeId, last); // the seal needs a segment
       }
       const fields: Record<string, unknown> = {
         kind: "run_end",
@@ -974,7 +1049,6 @@ export class SegmentTable {
         scope_id: scope.scopeId,
         scope_status: status,
       };
-      const segmentId = this.#segmentOf(run);
       if (segmentId !== undefined) fields.segment_id = segmentId;
       if (outermost && run.outcome !== undefined) fields.outcome = run.outcome;
       if (outermost && run.stopReason !== undefined) fields.stop_reason = run.stopReason;
@@ -999,7 +1073,7 @@ export class SegmentTable {
       if (this.#closed) return;
       this.#closed = true;
       for (const run of this.#runs.values()) {
-        if (this.#segmentOf(run) === undefined) continue;
+        if (this.#settle(run, "drop") === undefined) continue;
         const terminal = run.depth === 0 && !run.resumable;
         this.#request(this.#seal(run, terminal, exact));
       }
@@ -1025,13 +1099,15 @@ export class SegmentTable {
         throw new RunApiMisuse("the run id cannot be carried in a token");
       }
       const last = this.#last();
-      if (this.#segmentOf(run) === undefined) this.#open(run, scope.scopeId, last);
+      if (this.#settle(run, "commit") === undefined) this.#open(run, scope.scopeId, last);
       ids = Array.from({ length: branches }, () => BRANCH_PREFIX + randomBytes(16).toString("hex"));
       run.resumable = true;
       order = this.#seal(run, false, exact, ids);
       this.#request(order);
       correlation = run.correlationId;
-      this.#open(run, scope.scopeId, last); // the local continuation
+      // The local continuation, held by the worker until a call or block uses it: if the
+      // run ends here with nothing in it, it is dropped (Python opens none).
+      this.#open(run, scope.scopeId, last, { hold: true });
     });
     const sealed = order as SealOrder | undefined;
     if (sealed === undefined) return [];
@@ -1145,6 +1221,7 @@ function newRun(runId: string, basis: IdBasis, ref: RunRef): Run {
     pendingPredecessors: [],
     pendingBranchIds: [],
     lastEntry: undefined,
+    heldSegment: undefined,
   };
 }
 

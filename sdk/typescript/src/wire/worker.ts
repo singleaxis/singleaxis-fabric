@@ -66,6 +66,7 @@ import {
   SEGMENT_PREFIX,
   type MarkerMessage,
   type SealMessage,
+  type SegmentMessage,
 } from "./segments.js";
 import {
   MAX_RUNS,
@@ -632,6 +633,11 @@ interface SegmentRun {
 
 /** Open segments the worker remembers (as many as the seal accumulator keeps open). */
 const MAX_SEGMENT_RUNS = 65_536;
+/**
+ * Held continuation `run_start`s (one per live run at most, `segments.ts`); past this
+ * bound the oldest is spooled, never dropped.
+ */
+const MAX_HELD = 1024;
 const RUN_MARKER_KINDS: ReadonlySet<unknown> = new Set(["run_start", "run_end"]);
 
 /** How long one tick may spend building handed-off seals. */
@@ -682,8 +688,17 @@ export class CapturePipeline {
   readonly #segmentRuns = new Map<string, SegmentRun>();
   /** Segments at the forced bound, to roll on the next tick ({@link rollForced}). */
   readonly #forced: string[] = [];
+  /** Held continuation `run_start` markers by segment, with their epoch (insertion order). */
+  readonly #held = new Map<string, { readonly doc: Record<string, unknown>; epoch: bigint }>();
   #published: string | undefined;
-  readonly #runStats = { markers: 0, seals: 0, rejected: 0, forced_rolls: 0, forced_missed: 0 };
+  readonly #runStats = {
+    markers: 0,
+    seals: 0,
+    rejected: 0,
+    forced_rolls: 0,
+    forced_missed: 0,
+    held_discarded: 0,
+  };
 
   constructor(config: PipelineConfig, spool: Spool, sink: PipelineSink) {
     this.#config = config;
@@ -794,6 +809,7 @@ export class CapturePipeline {
    */
   lost(loss: RuntimeLoss, epoch: bigint): void {
     try {
+      this.#release(segmentIdOf(loss.segmentHi, loss.segmentLo));
       this.#ensureManifest(epoch);
       this.losses.record(
         this.#config.sourceId,
@@ -824,7 +840,8 @@ export class CapturePipeline {
       const message = this.#runMessages.take(body);
       if (message === undefined) return;
       if (message.t === "marker") this.#runMarker(message);
-      else this.#sealRequest(message);
+      else if (message.t === "seal") this.#sealRequest(message);
+      else this.#segmentOp(message);
     } catch {
       this.#runStats.rejected++;
     }
@@ -845,22 +862,52 @@ export class CapturePipeline {
       return;
     }
     fields.last_sequence = compactInt(last);
-    this.#ensureManifest(epoch);
-    const queued = this.markers.queue({
-      doc: {
-        record_kind: "marker",
-        source: { source_id: message.source, source_epoch: compactInt(epoch) },
-        marker: fields,
-      },
-      bodies: [],
-    });
-    if (queued) this.#runStats.markers++;
-    if (fields.kind === "run_start" && typeof fields.segment_id === "string") {
-      this.#remember(fields.segment_id, {
+    const doc = {
+      record_kind: "marker",
+      source: { source_id: message.source, source_epoch: compactInt(epoch) },
+      marker: fields,
+    };
+    const segmentId = typeof fields.segment_id === "string" ? fields.segment_id : undefined;
+    if (fields.kind === "run_start" && segmentId !== undefined) {
+      this.#remember(segmentId, {
         runId: String(fields.run_id),
         scopeId: String(fields.scope_id),
         idBasis: typeof fields.id_basis === "string" ? fields.id_basis : undefined,
       });
+      if (message.hold === true) {
+        this.#held.set(segmentId, { doc, epoch });
+        while (this.#held.size > MAX_HELD) this.#release(this.#held.keys().next().value!);
+        return;
+      }
+    }
+    this.#spoolMarker(doc, epoch);
+  }
+
+  #spoolMarker(doc: Record<string, unknown>, epoch: bigint): void {
+    this.#ensureManifest(epoch);
+    if (this.markers.queue({ doc, bodies: [] })) this.#runStats.markers++;
+  }
+
+  /** Spools a held continuation `run_start` once its segment is used. Never throws. */
+  #release(segmentId: string | undefined): void {
+    if (segmentId === undefined || this.#held.size === 0) return;
+    const held = this.#held.get(segmentId);
+    if (held === undefined) return;
+    this.#held.delete(segmentId);
+    try {
+      this.#spoolMarker(held.doc, held.epoch);
+    } catch {
+      this.#runStats.rejected++;
+    }
+  }
+
+  /** `commit` spools a held continuation; `discard` drops one that stayed empty. */
+  #segmentOp(message: SegmentMessage): void {
+    if (message.op === "commit") {
+      this.#release(message.segment);
+    } else if (message.op === "discard" && this.#held.delete(message.segment)) {
+      this.#segmentRuns.delete(message.segment);
+      this.#runStats.held_discarded++;
     }
   }
 
@@ -879,6 +926,7 @@ export class CapturePipeline {
       this.#runStats.rejected++;
       return;
     }
+    this.#release(message.segment);
     this.#ensureManifest(epoch);
     this.seals.requestSeal(message.segment, {
       lastSequence: last,
@@ -938,6 +986,7 @@ export class CapturePipeline {
   }
 
   async #roll(runtime: WireRuntime, segmentId: string): Promise<void> {
+    this.#release(segmentId);
     const run = this.#segmentRuns.get(segmentId);
     // Find the run's slot before taking the lock: the application isolates spin for it
     // for at most 20 µs, so it is held only to check that slot again and move it.
@@ -1186,6 +1235,8 @@ export class CapturePipeline {
         this.#unreadable += 1;
       } else {
         this.#noticeDisabled(epoch);
+        // A held continuation run_start is spooled with its segment's first record.
+        this.#release(captured.segmentId);
         // The epoch's manifests go to the spool ahead of its exchanges.
         this.#ensureManifest(epoch);
         this.#pump();

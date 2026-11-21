@@ -69,6 +69,64 @@ describe("seal triggers (spec 050 §3.6, one test per row)", () => {
     });
   });
 
+  it("resumeToken() with no call after it: the held continuation is dropped, never sealed", () => {
+    const h = harness();
+    const token = run({ runId: "handoff" }, () => {
+      h.alloc();
+      return resumeToken()!;
+    });
+    // One seal (the token's); the continuation's run_start was sent held and then
+    // discarded: as Python, which opens no segment until the run's next allocation.
+    expect(h.seals()).toHaveLength(1);
+    const held = h.messages.filter((m) => m.t === "marker" && m.hold === true);
+    expect(held).toHaveLength(1);
+    const continuation = (held[0] as { fields: Record<string, unknown> }).fields.segment_id;
+    expect(h.messages.filter((m) => m.t === "segment")).toEqual([
+      { t: "segment", op: "discard", segment: continuation },
+    ]);
+    const [end] = h.markers("run_end");
+    expect(end!.segment_id).toBeUndefined();
+    expect(h.table.stats().segments_opened).toBe(1);
+    // The run's next block here continues the sealed segment (the token's entry).
+    run({ runId: "handoff" }, () => h.alloc());
+    expect(h.markers("run_start").at(-1)!.predecessors).toEqual([entryOf(token)]);
+  });
+
+  it("a held continuation becomes real at its first position, a nested block or another token", () => {
+    const h = harness();
+    run({ runId: "busy", resumable: true }, () => {
+      // A token taken in an inner block: that block's exit names no segment (nothing is
+      // in the continuation yet) and keeps it held.
+      run({ runId: "busy" }, () => resumeToken());
+      expect(h.markers("run_end").at(-1)!.segment_id).toBeUndefined();
+      expect(h.messages.filter((m) => m.t === "segment")).toHaveLength(0);
+      const call = h.alloc(); // its first position: the outer exit commits and seals it
+      expect(call.segment).toBe(h.markers("run_start").at(-1)!.segment_id);
+    });
+    expect(h.messages.filter((m) => m.t === "segment").map((m) => (m as { op: string }).op)).toEqual(
+      ["commit"],
+    );
+    expect(h.seals().map((s) => s.positions)).toEqual(["0", "1"]);
+    expect(h.markers("run_end").at(-1)!.segment_id).toBe(h.seals()[1]!.segment);
+    // A nested block makes it real at once (as Python opens a segment at block entry).
+    const n = harness();
+    run({ runId: "nested", resumable: true }, () => {
+      resumeToken();
+      run({ runId: "nested" }, () => undefined);
+      expect(n.messages.filter((m) => m.t === "segment")).toEqual([
+        { t: "segment", op: "commit", segment: n.markers("run_start").at(-1)!.segment_id },
+      ]);
+    });
+    expect(n.seals()).toHaveLength(2);
+    // Two tokens in a row: the second seals the first's (empty) continuation, committed.
+    const g = harness();
+    run({}, () => [resumeToken(), resumeToken()]);
+    expect(g.seals()).toHaveLength(2);
+    expect(g.messages.filter((m) => m.t === "segment").map((m) => (m as { op: string }).op)).toEqual(
+      ["commit", "discard"],
+    );
+  });
+
   it("resumeTokens(n): one seal listing n branch ids, one token per branch", () => {
     const h = harness();
     const tokens = run({}, () => resumeTokens(3));
@@ -260,10 +318,12 @@ describe("fail-open bounds of the run table", () => {
       } finally {
         Atomics.store(held, 65, 0);
       }
+      h.alloc(); // a call in the continuation, so the exit seals it
     });
     const stats = h.table.stats();
     expect(stats.lock_timeouts).toBeGreaterThan(0);
     expect(stats.seals_unrequested).toBe(1);
-    expect(h.seals()).toHaveLength(1); // only the exit's seal, taken with the lock
+    // Only the exit's seal, taken with the lock, with its exact count.
+    expect(h.seals()).toEqual([expect.objectContaining({ positions: "1" })]);
   });
 });

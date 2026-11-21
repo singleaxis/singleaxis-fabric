@@ -85,6 +85,50 @@ async function workerPass(pipeline: CapturePipeline, runtime: WireRuntime, table
   await handlers.tick!(context);
 }
 
+/**
+ * Python's segment graph (`fabric.reconstruct._graph`) over the run markers and seals in
+ * the spool: one entry per run with its state, deciding rule and gap reasons.
+ */
+const PY_GRAPH = `
+import datetime, json, sys
+from fabric.wire._spool import Spool, unframe_all
+from fabric.reconstruct._graph import SegmentNode, build_run_graphs
+spool = Spool(sys.argv[1], 1 << 20, key=bytes.fromhex(sys.argv[2]))
+starts, seals = {}, {}
+try:
+    for name in spool.names():
+        for doc, _ in unframe_all(spool.read(name)):
+            marker = doc.get("marker") or {}
+            if marker.get("kind") == "run_start":
+                starts[marker["segment_id"]] = (doc["source"], marker)
+            elif marker.get("kind") == "segment_seal":
+                seals[marker["segment_id"]] = marker
+finally:
+    spool.release()
+nodes = []
+for i, (segment, (source, m)) in enumerate(sorted(starts.items())):
+    seal = seals.get(segment)
+    nodes.append(SegmentNode(
+        segment_id=segment, run_id=m["run_id"], source_id=source["source_id"],
+        epoch=source["source_epoch"], predecessors=tuple(m.get("predecessors", ())),
+        id_basis=m.get("id_basis"), branch_ids=tuple(m.get("branch_ids", ())),
+        start_ns=1 + i, start_resumable=m.get("resumable"),
+        last_sequence=None if seal is None else seal["seal"]["last_sequence"],
+        terminal=None if seal is None else seal["terminal"],
+        resumable=None if seal is None else seal.get("resumable", False),
+        issued_branch_ids=() if seal is None else tuple(seal["seal"].get("branch_ids", ())),
+        manifest_digest=None if seal is None else seal["seal"]["manifest_digest"],
+        sealed_ns=None if seal is None else 100 + i,
+    ))
+graphs = build_run_graphs(nodes, evaluated_at=datetime.datetime(2026, 1, 1))
+print(json.dumps([{"run_id": g.run_id, "state": g.run_state, "rule": g.rule,
+                   "gaps": [gap.reason for gap in g.gaps]} for g in graphs]))
+`;
+
+function pythonRunGraphs(dir: string): any[] {
+  return runPython(PY_GRAPH, [dir, KEY.toString("hex")]) as any[];
+}
+
 describe("run markers and seals through the Fabric worker", { timeout: 60_000 }, () => {
   it("are spooled as Python writes them, and Python's drainer reads every record", async () => {
     const { runtime, table } = isolate();
@@ -99,18 +143,20 @@ describe("run markers and seals through the Fabric worker", { timeout: 60_000 },
     expect(pipeline.closeEpoch(runtime.epoch, runtime.nextSequence - 1n)).toBe(true);
     const docs = spooledDocs(spool);
     const kinds = docs.map((d) => d.marker?.kind ?? d.record_kind);
+    // The continuation resumeToken() opened stayed empty, so the block's exit dropped it:
+    // no run_start, no seal (as Python, which opens none), and its run_end names none.
     expect(kinds).toEqual([
       "manifest",
       "run_start",
-      "run_start",
       "run_end",
       "run_start",
       "run_end",
-      "segment_seal",
       "segment_seal",
       "segment_seal",
       "final",
     ]);
+    expect(docs[2]!.marker.segment_id).toBeUndefined();
+    expect(pipeline.stats().runs.held_discarded).toBe(1);
     // The run table named the manifest the worker published (no NO_MANIFEST digest).
     const manifestId = docs[0]!.marker.manifest["fabric.capture.manifest_id"];
     expect(docs[1]!.marker.manifest_id).toBe(manifestId);
@@ -130,9 +176,13 @@ describe("run markers and seals through the Fabric worker", { timeout: 60_000 },
       "fabric.session_id": expect.stringMatching(/^sess-[0-9a-f]{32}$/),
     });
     const seals = read.filter((r) => r.marker === "segment_seal").map((r) => r.span[1]);
-    expect(seals.map((s) => s["fabric.run.terminal"])).toEqual([false, false, true]);
+    expect(seals.map((s) => s["fabric.run.terminal"])).toEqual([false, true]);
     // An empty segment seals [] (zero-width).
-    expect(seals[2]["fabric.segment.seal_digest"]).toBe(sealDigest([]));
+    expect(seals[1]["fabric.segment.seal_digest"]).toBe(sealDigest([]));
+    // Python's segment graph (049 §2.10 G1-G10) reads the run as terminated by G5.
+    expect(pythonRunGraphs(dir)).toEqual([
+      { run_id: docs[1]!.marker.run_id, state: "terminated", rule: "G5", gaps: [] },
+    ]);
   });
 
   it("a run_start naming 64 predecessors crosses the ring in parts", async () => {
@@ -224,6 +274,41 @@ describe("run markers and seals through the Fabric worker", { timeout: 60_000 },
     expect(seals[0]!.marker.seal.seal_digest).toBe(
       sealDigest([0n, 1n, 2n, 3n].map((s) => [s, "loss:internal_error"] as const)),
     );
+  });
+
+  it("a held continuation's run_start is spooled with the first record of its segment", async () => {
+    const { runtime, table } = isolate();
+    const h = harness({ runtime, manifest: undefined });
+    const { dir, spool, pipeline } = newPipeline(runtime);
+    await workerPass(pipeline, runtime, table);
+    const startsSpooled = (): Record<string, any>[] =>
+      spooledDocs(spool).filter((d) => d.marker?.kind === "run_start");
+    await run({ runId: "relay" }, async () => {
+      resumeToken();
+      await workerPass(pipeline, runtime, table);
+      expect(startsSpooled()).toHaveLength(1); // the continuation's is held
+      const call = h.alloc();
+      runtime.lose("internal_error", call.sequence, ...segmentHalves(call.segment!));
+      await workerPass(pipeline, runtime, table); // the loss names it: spooled now
+      expect(startsSpooled().map((d) => d.marker.segment_id)).toEqual([
+        expect.any(String),
+        call.segment,
+      ]);
+    });
+    await workerPass(pipeline, runtime, table);
+    const starts = startsSpooled();
+    expect(starts).toHaveLength(2);
+    const seals = spooledDocs(spool).filter((d) => d.marker?.kind === "segment_seal");
+    expect(seals.map((d) => [d.marker.segment_id, d.marker.terminal])).toEqual([
+      [starts[0]!.marker.segment_id, false],
+      [starts[1]!.marker.segment_id, false],
+    ]);
+    expect(pipeline.stats().runs.held_discarded).toBe(0);
+    // A linear chain: no conflict or missing segment for Python's graph (the run is
+    // resumable and has no terminal, so it is open or unterminated, by the deadline).
+    const [graph] = pythonRunGraphs(dir);
+    expect(graph.rule).toBe("G10");
+    expect(graph.gaps).toEqual(["deadline_passed"]); // G10 only: start times are 1970
   });
 
   it("Python continues a run from a TypeScript token: same run id, the sealed segment as predecessor", () => {
