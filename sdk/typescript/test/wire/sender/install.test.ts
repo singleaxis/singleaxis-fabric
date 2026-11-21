@@ -93,6 +93,29 @@ describe("install()", { timeout: 60_000 }, () => {
     },
   );
 
+  it("a first install that captures nothing is replaced by one with other settings", () => {
+    const first = install({ env: { FABRIC_OTLP_ENDPOINT: "http://127.0.0.1:9" } });
+    expect(first.reason).toBe("no_spool");
+    // Same settings: the same handle.
+    expect(install({ env: { FABRIC_OTLP_ENDPOINT: "http://127.0.0.1:9" } })).toBe(first);
+    expect(install()).toBe(first);
+    // Other settings: nothing was set up, so nothing is duplicated; no throw.
+    const second = install({
+      env: { FABRIC_OTLP_ENDPOINT: "http://127.0.0.1:9", FABRIC_WIRE_UNDICI: "0" },
+    });
+    expect(second).not.toBe(first);
+    expect(install()).toBe(second);
+  });
+
+  it("after close() the next install() starts afresh, never the closed handle", async () => {
+    const first = install({ env: { FABRIC_OTLP_ENDPOINT: "http://127.0.0.1:9" } });
+    expect(install()).toBe(first);
+    await first.close();
+    const next = install({ env: { FABRIC_OTLP_ENDPOINT: "http://127.0.0.1:9" } });
+    expect(next).not.toBe(first);
+    expect(install()).toBe(next);
+  });
+
   it("malformed configuration still throws its fixed text", () => {
     const dir = spoolDir();
     expect(() => install({ env: { ...env(dir), FABRIC_WIRE_SPOOL_MAX_BYTES: "lots" } })).toThrow(

@@ -124,7 +124,21 @@ export interface WireHandle {
   status(): StatusDocument;
 }
 
-let installed: { handle: WireHandle; fingerprint: string } | undefined;
+let installed: { handle: WireHandle; fingerprint: string; objects: readonly unknown[] } | undefined;
+
+/** Forgets `handle` as the process's installed one once it is closed. */
+function release(handle: WireHandle): void {
+  if (installed?.handle === handle) installed = undefined;
+}
+
+/**
+ * The caller-supplied objects that change what is captured or how, compared by identity:
+ * a transformation, a qualification table, a native location or a worker entry given to a
+ * second install() must be the very ones the first install used.
+ */
+function objectsOf(options: InstallOptions): readonly unknown[] {
+  return [options.transformations, options.qualification, options.native, options.workerEntry];
+}
 
 function moduleFile(): string | undefined {
   // The wire core is one CommonJS file in the package (and in the source-build bundles):
@@ -163,16 +177,20 @@ function inert(
 ): WireHandle {
   const document = installDocument({ ...facts, capture: "disabled", reason });
   if (statusFile !== undefined) writeStatusFile(statusFile, document, stderrWarn(facts.settings));
-  return {
+  const handle: WireHandle = {
     capturing: false,
     reason,
     sourceId: undefined,
     epoch: undefined,
     flush: () => Promise.resolve(false),
-    close: () => Promise.resolve(false),
+    close: () => {
+      release(handle);
+      return Promise.resolve(false);
+    },
     stopResult: undefined,
     status: () => printable({ ...document }),
   };
+  return handle;
 }
 
 /** The runtime facts every document carries, before anything is loaded. */
@@ -194,6 +212,13 @@ function fingerprint(settings: WireSettings): string {
     settings.store?.kind,
     settings.contentEndpoint,
     settings.otlp.endpoint,
+    settings.otlpLogs?.endpoint,
+    settings.store?.kind === "file" ? settings.store.root : undefined,
+    settings.redactionEndpoint,
+    settings.redactionTokenFile,
+    settings.modelAllowlist,
+    settings.providerRequestId,
+    settings.builtinEndpoints,
     settings.capturePolicyPath,
     settings.labels,
     settings.identityMode,
@@ -249,18 +274,24 @@ export function install(options: InstallOptions = {}): WireHandle {
     return inert(Reason.workerThread, runtimeFacts(table));
   }
   const env = options.env ?? process.env;
-  if (installed !== undefined) {
-    if (onlyDefaults(options)) return installed.handle;
-    const again = fingerprint(resolveConfig(options, env));
-    if (again === installed.fingerprint) return installed.handle;
-    throw new WireConfigError(
-      "wire capture is already installed in this process with a different configuration: " +
-        "close() the installed handle before installing again",
-    );
-  }
+  if (installed !== undefined && onlyDefaults(options)) return installed.handle;
   const settings = resolveConfig(options, env);
+  const print = fingerprint(settings);
+  if (installed !== undefined) {
+    const first = installed.objects;
+    const same =
+      print === installed.fingerprint && objectsOf(options).every((o, i) => o === first[i]);
+    if (same) return installed.handle;
+    // A first install that captures nothing set nothing up: this one replaces it.
+    if (installed.handle.capturing) {
+      throw new WireConfigError(
+        "wire capture is already installed in this process with a different configuration: " +
+          "await close() on the installed handle before installing again",
+      );
+    }
+  }
   const handle = installChecked(options, env, settings, table);
-  installed = { handle, fingerprint: fingerprint(settings) };
+  installed = { handle, fingerprint: print, objects: objectsOf(options) };
   return handle;
 }
 
@@ -535,12 +566,18 @@ function installWith(
       }
       bindRunTable(undefined);
       if (stopResult !== undefined && stopResult.backlog > 0 && settings.diagnostics === "stderr") {
-        process.stderr.write(
-          `fabric.wire: ${stopResult.backlog} records left in the spool at exit and no process ` +
-            "is draining it; start the agent again, or set FABRIC_WIRE_DRAIN_ON_EXIT_S for batch " +
-            "or serverless workers [FW-033]\n",
-        );
+        try {
+          process.stderr.write(
+            `fabric.wire: ${stopResult.backlog} records left in the spool at exit and no process ` +
+              "is draining it; start the agent again, or set FABRIC_WIRE_DRAIN_ON_EXIT_S for " +
+              "batch or serverless workers [FW-033]\n",
+          );
+        } catch {
+          // diagnostics never reach the agent as an error
+        }
       }
+      // Everything this runtime set up is torn down: a later install() starts afresh.
+      release(handle);
       return closed && stopResult?.delivered === true;
     })();
     return closing;

@@ -85,8 +85,9 @@ await capture.close({ timeoutMs: 2000 });
 variable and the fix). A missing prerequisite returns a handle that captures
 nothing, with `capture.reason` and `capture.status()` saying why. The preload
 and `install()` share one runtime per process: a second `install()` with the
-same settings returns the first handle, and one with different settings throws
-until you `close()` the first.
+same settings returns the first handle. One with different settings (or its own
+`transformations`) throws while the first is capturing; `await capture.close()`
+first, then install again. A first handle that captures nothing is replaced.
 
 ## Why is nothing recorded? One command
 
