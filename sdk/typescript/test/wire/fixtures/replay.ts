@@ -16,6 +16,7 @@
 import { randomBytes } from "node:crypto";
 
 import { NODE_HTTP_POINT, UNDICI_POINT, manifestTemplate } from "../../../src/wire/manifest.js";
+import { nativeTarget } from "../../../src/wire/native.js";
 import { decideGate } from "../../../src/wire/protect.js";
 import type { ExchangeTable } from "../../../src/wire/exchange.js";
 import type { WireRuntime } from "../../../src/wire/runtime.js";
@@ -51,7 +52,7 @@ export interface ExchangeFixture {
 export interface ReplayOptions {
   /** The privacy mode of both exchange roles (default `retain_original`). */
   readonly mode?: string;
-  /** The run the exchange belongs to (default: none, a trace or source run id). */
+  /** The source id of the capture (default: a random `s-` id). */
   readonly sourceId?: string;
 }
 
@@ -90,7 +91,8 @@ function config(sourceId: string, mode: string): PipelineConfig {
     runtime: {
       node: process.versions.node,
       undici: process.versions.undici,
-      platform: "linux-x64-glibc",
+      // The manifest states the platform this replay ran on.
+      platform: nativeTarget() ?? "linux-x64-glibc",
     },
   });
   const roles = { "model.exchange.request": mode, "model.exchange.response": mode };
