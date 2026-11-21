@@ -15,6 +15,30 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture keeps evidence of loss through a full disk and a crash
+  (spec 055, unit 055-t16).** When the volume holding `FABRIC_WIRE_SPOOL_DIR`
+  fills up (`ENOSPC`, `EDQUOT`), each capture that cannot be written is a
+  `disk_full` loss, told apart from the configured bound (`queue_full`). Losses
+  and run markers that cannot be spooled are kept in the spool's preallocated
+  260 KiB loss ledger, the same `.ledger` file Python writes, so they survive
+  the full disk and the death of the process. Any drainer, Node.js or Python,
+  exports a dead process's ledger entries; a torn or full ledger is counted and
+  the run is never reported complete. Several Node.js and Python processes can
+  share one spool: a drainer marks other processes' delivered records with
+  `.ack` receipts (at most 4,096, kept for an hour), and a missing or expired
+  receipt never turns a flush into success. Loss and marker records are now
+  written in batch files, as Python writes them.
+- **Node.js capture tells you when the spool is not crash-safe.** The spool's
+  directory and its parents are fsync'd up to
+  `FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY` (default: the root of the spool's
+  filesystem). Until that succeeds, records are still written and delivered,
+  but the status reports `spool_undurable`, flush and close do not report
+  success, and one warning names the fix (a local volume whose directories the
+  agent's user can open, or a lower boundary).
+- **`FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT` for Node.js capture.** With a spool
+  key and the local profile, records written before the key was set are sealed
+  in place before they are read. Under the production profile the option is
+  refused (`FW-022`) and plaintext records are quarantined.
 - **Large multimodal requests from Node.js agents keep their text (spec 055,
   unit 055-t15).** A JSON request over `FABRIC_WIRE_MAX_BODY_BYTES` (32 MiB by
   default) that carries inline images, audio or files as base64 is no longer cut
