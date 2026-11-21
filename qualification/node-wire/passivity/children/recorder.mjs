@@ -14,6 +14,10 @@
 //   stall-redaction   the response role is `redact` and the redaction service never answers
 //   stall-admission   this thread holds the spool's admission lock (another writer stuck)
 //   saturated         the capture worker takes 200 ms per exchange (its queue fills)
+//   disk-full         creating a spool file fails with ENOSPC: every record and loss is
+//                     refused, losses go to the preallocated loss ledger (055-t16)
+//   stall-ledger      disk-full, and another process holds the ledger's header lock, so
+//                     every ledger slot claim waits for its deadline (055-t16)
 //   sustained         the recorder for 60 s with a 40 MiB mutable request (the sustained
 //                     event-loop case); `sustained-baseline` is the same with no capture
 //
@@ -22,8 +26,9 @@
 // cancelled stream's error name; any error, rejection or byte the recorder writes to the
 // application's stderr. Prints one JSON line.
 
+import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -107,7 +112,13 @@ if (CAPTURE) {
             },
         }),
     );
-    const faults = { "stall-fsync": { fsyncMs: STALL_MS }, saturated: { jobMs: STALL_MS } }[ARM] ?? {};
+    const faults =
+        {
+            "stall-fsync": { fsyncMs: STALL_MS },
+            saturated: { jobMs: STALL_MS },
+            "disk-full": { diskFull: spool },
+            "stall-ledger": { diskFull: spool },
+        }[ARM] ?? {};
     const entry = join(tmp, "worker-entry.cjs");
     writeFileSync(
         entry,
@@ -145,6 +156,35 @@ if (CAPTURE) {
     if (ARM === "stall-admission") {
         releaseAdmission = recorder.holdAdmission(spool, config.prebuilds, config.digest);
     }
+    if (ARM === "stall-ledger") releaseAdmission = await holdLedgerHeader(join(spool, ".ledger"));
+}
+
+/**
+ * Another process holds the loss ledger's header lock (the byte range every slot claim
+ * locks first, a POSIX record lock: it must be another process to conflict). Python's
+ * `fcntl.lockf` takes the same lock Python's spool takes; the Fabric worker's claims then
+ * wait for their deadline and fail, counted.
+ */
+async function holdLedgerHeader(path) {
+    for (let i = 0; i < 500 && !existsSync(path); i++) await new Promise((r) => setTimeout(r, 10));
+    const holder = spawn(
+        "python3",
+        [
+            "-c",
+            "import fcntl, os, sys, time\n" +
+                "fd = os.open(sys.argv[1], os.O_RDWR)\n" +
+                "fcntl.lockf(fd, fcntl.LOCK_EX, 4096, 0, os.SEEK_SET)\n" +
+                "print('held', flush=True)\n" +
+                "time.sleep(3600)\n",
+            path,
+        ],
+        { stdio: ["ignore", "pipe", "inherit"] },
+    );
+    await new Promise((resolve, reject) => {
+        holder.stdout.once("data", resolve);
+        holder.once("exit", (code) => reject(new Error(`the ledger lock holder exited ${code}`)));
+    });
+    return () => holder.kill("SIGKILL");
 }
 
 const post = (query, body = Buffer.alloc(KIB, 0x61), signal) =>

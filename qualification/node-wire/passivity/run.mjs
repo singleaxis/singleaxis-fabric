@@ -399,7 +399,7 @@ function recorder() {
     const stalled = settings.stalled_recorder;
     const rounds = QUICK ? 1 : stalled.rounds;
     const duration = QUICK ? 2000 : stalled.duration_ms;
-    const arms = ["baseline", "enabled", "stall-fsync", "stall-sender", "stall-redaction", "stall-admission", "saturated"];
+    const arms = ["baseline", "enabled", "stall-fsync", "stall-sender", "stall-redaction", "stall-admission", "saturated", "disk-full", "stall-ledger"];
     const samples = Object.fromEntries(arms.map((arm) => [arm, []]));
     for (let r = 0; r < rounds; r++) {
         for (let i = 0; i < arms.length; i++) {
@@ -470,6 +470,9 @@ function recorder() {
         const faultsActive =
             samples["stall-redaction"].every((x) => x.redaction_requests > 0) &&
             samples["stall-sender"].every((x) => x.closed === false) &&
+            // 055-t16: a full disk never closes in order (its losses and final are not spooled)
+            samples["disk-full"].every((x) => x.closed === false) &&
+            samples["stall-ledger"].every((x) => x.closed === false) &&
             samples.enabled.every((x) => x.closed === true && (x.node_requests["/v1/traces"] ?? 0) > 0);
         const sustainedLoop = loopDeltas(long.sustained, long["sustained-baseline"], scale);
         const delivered = long.sustained.every((x) => (x.node_requests["/v1/traces"] ?? 0) > 0);

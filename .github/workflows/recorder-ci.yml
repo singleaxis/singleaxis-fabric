@@ -191,6 +191,9 @@ jobs:
         # 055-t9: the manifest tests validate TypeScript manifests with the contract
         # validator (scripts/contracts/validate_coverage_contracts.py), which needs the dev
         # group's jsonschema.
+        # 055-t16: the loss ledger tests recover TypeScript writers' slots with Python's
+        # LossLedger and Sender (and the reverse), so Python drains a spool TypeScript
+        # wrote under a full disk.
         run: |
           scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
           python -m pip install --no-deps --no-build-isolation -e ./sdk/python
@@ -247,7 +250,9 @@ jobs:
     # twice; run.mjs already repeats a void run once. linux-arm64-glibc is not claimed
     # yet: on the hosted arm64 runners the event-loop utilization delta (0.033-0.043, once
     # above 0.05) and the per-exchange hook time (80-94% of its scaled budget) have too
-    # little margin to call the gate stable (spec 055 rev 3.6; unit 055-t17).
+    # little margin to call the gate stable (spec 055 rev 3.6; unit 055-t17). 055-t16: the
+    # stalled-recorder step gains a full disk (losses only in the loss ledger) and a
+    # full disk with the ledger's header lock held by another process.
     name: Wire passivity (Node ${{ matrix.node-version }}, ${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -405,7 +410,8 @@ jobs:
     # 055-t14: the artifact step over the packed tarball of ts-wire-package (file list,
     # package.json scripts and dependencies, dist/ and prebuilds/ strings, loaded modules,
     # exported symbols, with its self-test) and the canary scan of the status file and the
-    # exit note a preloaded agent leaves.
+    # exit note a preloaded agent leaves. 055-t16: a full-disk scenario whose losses only
+    # the loss ledger holds; its decoded slots and the spans a drainer exports are scanned.
     name: Wire privacy (Node 24.4.0)
     needs: ts-wire-package
     runs-on: ubuntu-24.04

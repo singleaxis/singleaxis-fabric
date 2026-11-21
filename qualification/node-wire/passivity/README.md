@@ -84,7 +84,12 @@ Steps (child script, then what fails the gate):
   waits 200 ms), `stall-sender` (the Node never answers), `stall-redaction`
   (the response role is `redact`, the redaction service never answers),
   `stall-admission` (the application thread holds the spool's admission lock)
-  and `saturated` (the capture worker takes 200 ms per exchange). The faults
+  `saturated` (the capture worker takes 200 ms per exchange), and (unit
+  055-t16) `disk-full` (creating a spool file fails with `ENOSPC`: every record
+  and loss is refused and only the preallocated loss ledger holds the losses)
+  and `stall-ledger` (the same, with another process holding the ledger's
+  header lock, so every slot claim waits for its deadline). A full disk must
+  never close in order (`closed` false), which proves the fault was live. The faults
   live only in the harness's worker entry (`lib/recorder-worker.ts`), never in
   the SDK. Fails when requests fall below 95% of the baseline's, a response's
   bytes differ, a cancelled stream ends in another error than `AbortError`, an
