@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 
 import { DeploymentPolicy } from "../deployment-policy.js";
 import { labelPseudonym } from "../identity.js";
+import type { Transformation } from "../redaction.js";
 import { resolveConfig, type WireOptions } from "./config.js";
 import { targetOf } from "./delivery.js";
 import { ExchangeTable } from "./exchange.js";
@@ -67,6 +68,11 @@ export interface InstallOptions extends WireOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   /** Install the bounded `beforeExit` drain (default true). */
   readonly drainOnExit?: boolean;
+  /**
+   * The customer transformation of each `redact` or `masked_only` role (049 §7.7),
+   * performed by the redaction service `FABRIC_REDACTION_ENDPOINT` names.
+   */
+  readonly transformations?: Readonly<Record<string, Transformation>>;
 }
 
 export interface WireHandle {
@@ -182,7 +188,12 @@ export function install(options: InstallOptions = {}): WireHandle {
     spoolKey: settings.secrets.spoolKey !== undefined,
   });
   const sourceId = emittedSourceId(settings, gate.profile === "production", env);
-  const config = pipelineConfig(settings, { sourceId, endpoints, env });
+  const config = pipelineConfig(settings, {
+    sourceId,
+    endpoints,
+    env,
+    transformations: options.transformations,
+  });
 
   const runtime = new WireRuntime(
     createRuntimeShared({

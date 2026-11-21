@@ -44,5 +44,19 @@
     "batches": 10,
     "warmup_batches": 2,
     "heap_growth_bytes": 4194304
+  },
+  "recorder": {
+    "comment": "Unit 055-t13. The whole recorder (install(), the capture pipeline and the sender) under a paced fan-out of `clients` clients. stalled_recorder: each arm (a stalled disk fsync, a Node that never answers, a redaction service that never answers, the spool's admission lock held, a saturated capture worker) runs `rounds` rounds of `duration_ms` against the baseline arm; the application's requests may fall at most to throughput_min_ratio of the baseline's, every response's bytes and every cancelled stream's error must equal the baseline's, nothing may reach the application (error, rejection, stderr byte), and the event-loop budgets above apply to the median deltas. sustained: the recorder for sustained_ms with one 40 MiB mutable request, against the same workload with no capture, judged by the event-loop budgets.",
+    "clients": 8,
+    "stalled_recorder": {
+      "duration_ms": 4000,
+      "rounds": 3,
+      "throughput_min_ratio": 0.95,
+      "stall_ms": 200
+    },
+    "sustained": {
+      "duration_ms": 60000,
+      "rounds": 1
+    }
   }
 }

@@ -12,7 +12,8 @@ node qualification/node-wire/passivity/run.mjs --out report.json
 node qualification/node-wire/passivity/run.mjs --quick --out smoke.json   # local smoke, never a qualification report
 ```
 
-`run.mjs` bundles the capture from the SDK source (`lib/build.mjs`; the
+`run.mjs` bundles the capture from the SDK source and compiles the native
+lock module for this machine (`lib/build.mjs`, which needs a C compiler; the
 packed package replaces it from unit 055-t14), runs every measurement in
 fresh child processes and writes one JSON report. It exits 1 when a gate
 fails, when a self-test does not fail on its injected fault, or when the
@@ -41,7 +42,7 @@ Steps (child script, then what fails the gate):
   p99 delay within 2 ms × scale, maximum within 25 ms × scale, utilization
   delta within 0.05 on the application loop, with a timer-drift probe. An
   unpaced stress case (about 100x an agent's call rate) is reported and not
-  gated. The 60 s sustained case is unit 055-t13's.
+  gated. The 60 s sustained case is below (unit 055-t13).
 - **No forbidden work** (`forbidden.mjs`): trip-wires on synchronous `fs`,
   `net`/`tls`/`http` sends and global `fetch`, `crypto` hashing, `JSON.parse`/`stringify`,
   `Atomics.wait`, `console` and stdout/stderr writes, armed only while a hook
@@ -68,6 +69,27 @@ Steps (child script, then what fails the gate):
   higher than the first half's highest (after warm-up) plus 8 MiB, so a
   one-time allocator step is not growth but a steady leak is; heap flat after
   GC; pool peaks within their bounds; no exchange left open.
+
+- **Stalled recorder** (`recorder.mjs`, unit 055-t13; 055-t16 adds ledger
+  and disk-full faults): the whole recorder (explicit `install()` of the wire
+  core, the capture pipeline and the sender delivering to a loopback Node, built
+  by `lib/build.mjs` as `lib/recorder.ts`) under a paced fan-out of 8 clients
+  where every fourth SSE stream is cancelled after 5 events. Arms, each 3
+  rounds against the baseline: `enabled`, `stall-fsync` (every spool file fsync
+  waits 200 ms), `stall-sender` (the Node never answers), `stall-redaction`
+  (the response role is `redact`, the redaction service never answers),
+  `stall-admission` (the application thread holds the spool's admission lock)
+  and `saturated` (the capture worker takes 200 ms per exchange). The faults
+  live only in the harness's worker entry (`lib/recorder-worker.ts`), never in
+  the SDK. Fails when requests fall below 95% of the baseline's, a response's
+  bytes differ, a cancelled stream ends in another error than `AbortError`, an
+  error, rejection or stderr byte reaches the application, or the event-loop
+  budgets above are exceeded.
+- **Sustained event loop** (`recorder.mjs`, arms `sustained` and
+  `sustained-baseline`, unit 055-t13): the same workload for 60 s with the
+  whole recorder delivering, plus one 40 MiB request the application mutates
+  as soon as `fetch` has it; the event-loop budgets apply, and the run must
+  have delivered spans during the run and answered the large request.
 
 `reference.json` holds the calibration reference, the budgets and the memory
 parameters. A change to it, or to the calibration workload, is a reviewed

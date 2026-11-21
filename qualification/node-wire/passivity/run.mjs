@@ -4,7 +4,8 @@
 //
 // The `ts-wire-passivity` gate of spec 055 §9.2 for `wire.ts.undici`, on this exact Node
 // build: calibration, hook cost, the gate self-test, event loop, no forbidden work in
-// hooks, behaviour identity and memory bound. Every measurement runs in fresh child
+// hooks, behaviour identity, memory bound, large shapes and (unit 055-t13) the whole
+// recorder: stalled recorder and the sustained event-loop case. Every measurement runs in fresh child
 // processes; this process only orchestrates, judges and writes the JSON report.
 //
 //   node qualification/node-wire/passivity/run.mjs --out report.json [--quick]
@@ -15,7 +16,7 @@
 // reference are in reference.json; a change to either is a reviewed diff.
 
 import { spawnSync } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
@@ -363,6 +364,166 @@ function memory() {
     };
 }
 
+/**
+ * The whole recorder (unit 055-t13): install(), the capture pipeline and the sender
+ * delivering to a loopback Node, under a paced fan-out with cancels (children/recorder.mjs).
+ * `stalled recorder`: each fault arm against the baseline, on throughput, bytes, cancel
+ * behaviour, escapes and the event-loop budgets. `sustained`: the event-loop budgets
+ * over a long run with one 40 MiB mutable request.
+ */
+function recorder() {
+    const settings = REFERENCE.recorder;
+    const budget = REFERENCE.budgets.event_loop;
+    const table = qualificationForThisBuild();
+    const run = (arm, durationMs) =>
+        child("recorder.mjs", {
+            arm,
+            durationMs,
+            clients: settings.clients,
+            stallMs: settings.stalled_recorder.stall_ms,
+            recorder: bundle.recorder,
+            recorderWorker: bundle.recorderWorker,
+            prebuilds: bundle.prebuilds,
+            target: bundle.target,
+            digest: bundle.digest,
+            ...(table === undefined ? {} : { qualification: table }),
+        }).json;
+    const stalled = settings.stalled_recorder;
+    const rounds = QUICK ? 1 : stalled.rounds;
+    const duration = QUICK ? 2000 : stalled.duration_ms;
+    const arms = ["baseline", "enabled", "stall-fsync", "stall-sender", "stall-redaction", "stall-admission", "saturated"];
+    const samples = Object.fromEntries(arms.map((arm) => [arm, []]));
+    for (let r = 0; r < rounds; r++) {
+        for (let i = 0; i < arms.length; i++) {
+            const arm = arms[(i + r) % arms.length];
+            samples[arm].push(run(arm, duration));
+        }
+        log(`stalled recorder: round ${r + 1}/${rounds}`);
+    }
+    const sustained = settings.sustained;
+    const longMs = QUICK ? 6000 : sustained.duration_ms;
+    const long = { "sustained-baseline": [], sustained: [] };
+    for (let r = 0; r < (QUICK ? 1 : sustained.rounds); r++) {
+        for (const arm of r % 2 === 0 ? ["sustained-baseline", "sustained"] : ["sustained", "sustained-baseline"]) {
+            long[arm].push(run(arm, longMs));
+        }
+        log(`sustained: round ${r + 1}`);
+    }
+    const metric = (rs, name) => median(rs.map((x) => x[name]));
+    const loopDeltas = (rs, base, scale) => {
+        const p99 = metric(rs, "p99_ms") - metric(base, "p99_ms");
+        const max = metric(rs, "max_ms") - metric(base, "max_ms");
+        const utilization = metric(rs, "utilization") - metric(base, "utilization");
+        return {
+            p99_delta_ms: round(p99, 3),
+            max_delta_ms: round(max, 3),
+            utilization_delta: round(utilization, 4),
+            within: p99 <= budget.p99_ms * scale && max <= budget.max_ms * scale && utilization <= budget.utilization_delta,
+        };
+    };
+    const behaviour = (rs, base) => {
+        const requests = metric(rs, "requests");
+        const baseRequests = metric(base, "requests");
+        const cancels = rs.map((x) => x.cancels);
+        return {
+            requests,
+            baseline_requests: baseRequests,
+            throughput_ratio: round(requests / baseRequests, 3),
+            mismatches: rs.reduce((n, x) => n + x.mismatches, 0),
+            cancels,
+            escaped: rs.flatMap((x) => x.escaped),
+            stderr_bytes: rs.reduce((n, x) => n + x.stderr_bytes, 0),
+            ok:
+                requests >= stalled.throughput_min_ratio * baseRequests &&
+                rs.every((x) => x.mismatches === 0 && x.escaped.length === 0 && x.stderr_bytes === 0) &&
+                // Cancel behaviour: every cancelled stream ends in the error it ends in
+                // without capture (the count follows the run's length, not the recorder).
+                cancels.every((c) => Object.keys(c).length === 1 && c.AbortError > 0) &&
+                base.every((x) => isDeepStrictEqual(Object.keys(x.cancels), ["AbortError"])),
+        };
+    };
+    return (scale) => {
+        const verdicts = {};
+        for (const arm of arms.slice(1)) {
+            const loop = loopDeltas(samples[arm], samples.baseline, scale);
+            const kept = behaviour(samples[arm], samples.baseline);
+            verdicts[arm] = {
+                ...kept,
+                ...loop,
+                node_requests: samples[arm].map((x) => x.node_requests),
+                redaction_requests: samples[arm].map((x) => x.redaction_requests),
+                closed: samples[arm].map((x) => x.closed),
+                close_ms: samples[arm].map((x) => round(x.close_ms)),
+                passed: kept.ok && loop.within,
+            };
+        }
+        // The faults were real: nothing reached a stalled Node, the stalled redaction
+        // service was called, and a stalled recorder could not close in order.
+        const faultsActive =
+            samples["stall-redaction"].every((x) => x.redaction_requests > 0) &&
+            samples["stall-sender"].every((x) => x.closed === false) &&
+            samples.enabled.every((x) => x.closed === true && (x.node_requests["/v1/traces"] ?? 0) > 0);
+        const sustainedLoop = loopDeltas(long.sustained, long["sustained-baseline"], scale);
+        const delivered = long.sustained.every((x) => (x.node_requests["/v1/traces"] ?? 0) > 0);
+        const big = long.sustained.every((x) => x.big_response_bytes > 0);
+        return {
+            stalled_recorder: {
+                workload: `paced fan-out: ${settings.clients} clients, JSON after 10 ms, 40 SSE events 5 ms apart, every fourth stream cancelled after 5 events`,
+                rounds,
+                duration_ms: duration,
+                stall_ms: stalled.stall_ms,
+                scale: round(scale, 3),
+                arms: verdicts,
+                faults_active: faultsActive,
+                passed: faultsActive && Object.values(verdicts).every((v) => v.passed),
+            },
+            event_loop_sustained: {
+                workload: "the paced fan-out for the duration, with one 40 MiB request the application mutates once fetch has it",
+                duration_ms: longMs,
+                scale: round(scale, 3),
+                ...sustainedLoop,
+                delivered_during_run: delivered,
+                big_request_answered: big,
+                rss_max_bytes: long.sustained.map((x) => x.rss_max_bytes),
+                samples: long,
+                passed: sustainedLoop.within && delivered && big && behaviour(long.sustained, long["sustained-baseline"]).ok,
+            },
+        };
+    };
+}
+
+/**
+ * The qualification table as the source tree has it, or (only where it does not list this
+ * build, as on a developer's machine) with this build added: tests activate capture
+ * through the table in the source tree (spec 055 §9.5). In CI the job's build is listed.
+ */
+function qualificationForThisBuild() {
+    const table = JSON.parse(readFileSync(bundle.qualification, "utf8"));
+    const listed = table.tuples.some(
+        (t) =>
+            t.claim === "active" &&
+            t.node === process.versions.node &&
+            t.undici === process.versions.undici &&
+            t.platform === bundle.target,
+    );
+    if (listed) return undefined;
+    log("this Node build is not an active tuple of the table: the recorder steps add it for this run");
+    return {
+        ...table,
+        tuples: [
+            ...table.tuples,
+            {
+                point: "wire.ts.undici",
+                node: process.versions.node,
+                undici: process.versions.undici,
+                platform: bundle.target,
+                claim: "active",
+                report_sha256: `sha256:${"0".repeat(64)}`,
+            },
+        ],
+    };
+}
+
 // ---------------------------------------------------------------------------- the run
 
 function attempt() {
@@ -372,6 +533,7 @@ function attempt() {
     const judgeHookCost = hookCost(scaleBefore);
     const judgeEventLoop = eventLoop(scaleBefore);
     const judgeLarge = largeShapes();
+    const judgeRecorder = recorder();
     const others = { ...forbidden(), ...identity(), ...memory() };
     const after = calibrate();
     const ratio = Math.max(before, after) / Math.min(before, after);
@@ -389,6 +551,7 @@ function attempt() {
         ...judgeHookCost(scale),
         ...judgeEventLoop(scale),
         ...judgeLarge(scale),
+        ...judgeRecorder(scale),
         ...others,
     };
 }
@@ -425,6 +588,8 @@ const gates = {
     behaviour_identity: result.behaviour_identity.passed,
     memory_bound: result.memory_bound.passed,
     large_shapes: result.large_shapes.passed,
+    stalled_recorder: result.stalled_recorder.passed,
+    event_loop_sustained: result.event_loop_sustained.passed,
 };
 const passed = Object.values(gates).every(Boolean);
 const report = {
@@ -461,6 +626,12 @@ log(
 );
 log(
     `large shapes: worst single snapshot ${result.large_shapes.worst_single_ms} ms (ceiling ${result.large_shapes.ceiling_ms} ms)`,
+);
+log(
+    `stalled recorder: ${JSON.stringify(Object.fromEntries(Object.entries(result.stalled_recorder.arms).map(([k, v]) => [k, [v.throughput_ratio, v.max_delta_ms, v.passed]])))}`,
+);
+log(
+    `sustained: ${JSON.stringify({ p99_delta_ms: result.event_loop_sustained.p99_delta_ms, max_delta_ms: result.event_loop_sustained.max_delta_ms, utilization_delta: result.event_loop_sustained.utilization_delta })}`,
 );
 log(`gates: ${JSON.stringify(gates)}`);
 log(`result: ${report.result}`);
