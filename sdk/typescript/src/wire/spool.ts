@@ -33,6 +33,7 @@ import {
   chmodSync,
   openSync,
   readSync,
+  ftruncateSync,
   readdirSync,
   renameSync,
   unlinkSync,
@@ -84,7 +85,10 @@ export const RECEIPT_OVERHEAD = 128;
 /** Temp files older than this were left by a writer that exited (Python `RECEIPT_TTL_S`). */
 export const STALE_MS = 3600 * 1000;
 /** Names Python's spool owns beside records (`_own_name`), and the native self-test probe. */
-const OWN_NAMES = new Set([DRAIN_LOCK, ADMIT_LOCK, ".barrier", LEDGER, ".epochs", ".exit-backlog"]);
+/** The content-free note of records left at exit with no drainer (Python `EXIT_NOTE`). */
+export const EXIT_NOTE = ".exit-backlog";
+export const EXIT_NOTE_SCHEMA = "fabric.wire-exit-backlog/v1";
+const OWN_NAMES = new Set([DRAIN_LOCK, ADMIT_LOCK, ".barrier", LEDGER, ".epochs", EXIT_NOTE]);
 const OWN_PREFIXES = [TMP_PREFIX, ".ledger-new-", ".fabric-selftest-"];
 const OWN_SUFFIXES = [".rec", ACK_SUFFIX, QUARANTINE_SUFFIX];
 
@@ -243,6 +247,13 @@ export interface SpoolIo {
   readdir(path: string): string[];
   /** fsync a directory, opened without following a symlink. */
   syncDir(path: string): void;
+  /**
+   * Truncates `path` to zero bytes and fsyncs it (a delivery receipt); nothing when it
+   * does not exist. Opened without following a symlink.
+   */
+  truncate(path: string): void;
+  /** Writes `data` to `path` with mode 0600 (truncating; never through a symlink). */
+  writeFile(path: string, data: Uint8Array): void;
 }
 
 /**
@@ -279,6 +290,30 @@ export function nodeSpoolIo(addon: NativeAddon): SpoolIo {
       };
     },
     readdir: (path) => scrub("readdir", () => readdirSync(path)),
+    truncate: (path) => {
+      let fd: number;
+      try {
+        fd = openSync(path, constants.O_WRONLY | nofollow);
+      } catch (error) {
+        if (errnoOf(error) === "ENOENT") return;
+        throw new SpoolIoError("open", error);
+      }
+      try {
+        scrub("ftruncate", () => ftruncateSync(fd, 0));
+        scrub("fsync", () => fsyncSync(fd));
+      } finally {
+        closeSync(fd);
+      }
+    },
+    writeFile: (path, data) => {
+      const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | nofollow;
+      const fd = scrub("open", () => openSync(path, flags, 0o600));
+      try {
+        scrub("write", () => writeSync(fd, data, 0, data.length, 0));
+      } finally {
+        closeSync(fd);
+      }
+    },
     syncDir: (path) => {
       const handle = addon.openDir(path);
       if (handle < 0) throw new NativeSpoolError("openDir", handle);
@@ -316,9 +351,10 @@ export function accounted(name: string, size: number): number | undefined {
 
 /**
  * Creates `path` (and missing parents) 0700; refuses a symlink, a file or a directory of
- * another user. Python `_secure_dir`.
+ * another user. Python `_secure_dir`. Exported for `install()`, which prepares the spool
+ * directory before the native module's self-test runs in it.
  */
-function secureDir(path: string): void {
+export function secureDir(path: string): void {
   const missing: string[] = [];
   let current = path;
   for (;;) {
@@ -463,6 +499,8 @@ export class Spool {
   readonly #clock: () => bigint;
   readonly #admitTimeoutMs: number;
   readonly #files = new Map<string, number>();
+  /** Own records being retired: a retry after a failure must still unlink, not rename. */
+  readonly #ownRetiring = new Set<string>();
   /** Accounted size by name, as last observed under the admission lock. */
   #disk = new Map<string, number>();
   #order = 0;
@@ -1086,6 +1124,124 @@ export class Spool {
       this.mine.delete(name);
     } finally {
       this.#observe(name);
+    }
+  }
+
+  /**
+   * Retires delivered records in order, with one directory fsync for all of them (Python
+   * `retire_many`): an own record is unlinked; another writer's becomes its delivery
+   * receipt in place (renamed to `<name>.ack`, truncated to zero and fsync'd), which its
+   * writer consumes ({@link settle}). Returns how many (a prefix of `names`) are retired
+   * and the error that stopped the rest (they stay pending and charged; a retry is
+   * idempotent). Receipt expiry and the receipt cap are unit 055-t16's.
+   */
+  retireMany(names: readonly string[]): { retired: number; error: Error | undefined } {
+    const done: { name: string; own: boolean; renamed: boolean }[] = [];
+    let error: Error | undefined;
+    for (const name of names) {
+      if (this.mine.delete(name)) this.#ownRetiring.add(name); // a retry must still unlink
+      const own = this.#ownRetiring.has(name);
+      let renamed = false;
+      try {
+        if (own) {
+          try {
+            this.#io.unlink(this.#path(name));
+          } catch (failure) {
+            if (errnoOf(failure) !== "ENOENT") throw failure;
+          }
+        } else {
+          try {
+            this.#io.rename(this.#path(name), this.#path(name + ACK_SUFFIX));
+          } catch (failure) {
+            if (errnoOf(failure) !== "ENOENT") throw failure; // renamed by an earlier try
+          }
+          renamed = true;
+          this.#io.truncate(this.#path(name + ACK_SUFFIX));
+        }
+      } catch (failure) {
+        error = asError(failure);
+        this.#settleRetired(name, own, renamed);
+        break;
+      }
+      done.push({ name, own, renamed });
+    }
+    let synced = false;
+    try {
+      if (done.length > 0) this.#io.syncDir(this.dir);
+      synced = true;
+    } catch (failure) {
+      error ??= asError(failure);
+    } finally {
+      for (const { name, own, renamed } of done) this.#settleRetired(name, own, renamed);
+    }
+    if (synced) for (const { name } of done) this.#ownRetiring.delete(name);
+    return { retired: synced ? done.length : 0, error };
+  }
+
+  #settleRetired(name: string, own: boolean, renamed: boolean): void {
+    if (own) this.#observe(name);
+    else if (renamed) this.#move(name, name + ACK_SUFFIX);
+  }
+
+  /**
+   * Resolves own records another process drained (Python `settle`): gone with a receipt
+   * is delivered (the receipt is consumed), gone without one is `failed` (quarantined
+   * or removed by anyone else). Returns how many of `names` (default: all own) are still
+   * pending.
+   */
+  settle(names?: Iterable<string>): number {
+    if (this.mine.size > 0) {
+      const present = new Set(this.#io.readdir(this.dir));
+      for (const name of [...this.mine]) {
+        if (present.has(name)) continue;
+        let receipt = true;
+        try {
+          this.#io.unlink(this.#path(name + ACK_SUFFIX));
+        } catch {
+          receipt = false;
+        }
+        this.#account(name + ACK_SUFFIX, undefined);
+        if (this.mine.delete(name) && !receipt) this.failed += 1;
+      }
+    }
+    if (names === undefined) return this.mine.size;
+    let pending = 0;
+    for (const name of names) if (this.mine.has(name)) pending += 1;
+    return pending;
+  }
+
+  /**
+   * Records that this process exits leaving `recordsLeft` records with no drainer
+   * (Python `write_exit_note`: `{schema, records_left, exited_at, drain_on_exit_s}`,
+   * replaced atomically). Counts only: never a path, URL or id.
+   */
+  writeExitNote(recordsLeft: number, drainOnExitS: number): void {
+    const at = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    // Python's json.dumps(sort_keys=True) of these four keys; a float keeps its ".0".
+    const drain = Number.isInteger(drainOnExitS) ? `${drainOnExitS}.0` : String(drainOnExitS);
+    const text =
+      `{"drain_on_exit_s": ${drain}, "exited_at": "${at}", ` +
+      `"records_left": ${Math.max(0, Math.trunc(recordsLeft))}, "schema": "${EXIT_NOTE_SCHEMA}"}`;
+    const tmp = this.#path(`${TMP_PREFIX}exit-${this.#pid}`);
+    try {
+      this.#io.writeFile(tmp, Buffer.from(text, "ascii"));
+      this.#io.rename(tmp, this.#path(EXIT_NOTE));
+    } catch (error) {
+      try {
+        this.#io.unlink(tmp);
+      } catch {
+        // gone or never made
+      }
+      throw error;
+    }
+  }
+
+  /** Drainer: the spool is empty, so a previous exit's backlog was delivered. */
+  clearExitNote(): void {
+    try {
+      this.#io.unlink(this.#path(EXIT_NOTE));
+    } catch (error) {
+      if (errnoOf(error) !== "ENOENT") throw error;
     }
   }
 
