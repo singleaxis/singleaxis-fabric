@@ -15,7 +15,9 @@
 // the clear run id, the agent id, the service name, the resource attributes and the
 // environment. The scanner then reads every byte Fabric produced: every file under the
 // spool directory (records raw and decrypted, temps, quarantine, locks, ledger) and the
-// agent process's own output. A canary may appear only inside a content object whose
+// agent process's own output; then (055-t13) the SDK's sender delivers the spool to a
+// recording sink and every OTLP request it received is scanned too. A canary may appear
+// only inside a content object whose
 // role policy retains the original (`retain_original`), and only a body canary; under
 // every other mode none appears anywhere, encrypted or not, and no digest, range or
 // length of an original appears for a withheld or transformed object. Scenarios whose
@@ -29,13 +31,15 @@
 //
 // Scanner self-test: the retain_original scenario again with a test-only fault in the
 // harness's Fabric worker that leaks one canary into a span attribute and one into a
-// spool header; the scanner must report both, or the gate fails.
+// spool header; the scanner must report both, or the gate fails. Then (055-t13) a
+// span-only leak, whose record the sender delivers: the sink scan must report it.
 //
 // Exits 1 when any check fails. Writes a JSON report with `--out`.
 
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { chmodSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import http from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -202,7 +206,62 @@ function scan({ dir, key, mode, C, output, digests }) {
     return { violations, stats };
 }
 
-function scenario(mode, options = {}) {
+/**
+ * Delivers a scenario's spool with the SDK's sender to a loopback sink that records every
+ * request body, then scans them (055-t13): no canary in any span (`/v1/traces`); in the
+ * content logs (`/v1/logs`) only a body canary, and only where the mode retains the
+ * original; no original digest where the mode withholds or transforms it.
+ */
+async function deliverAndScan({ dir, key, mode, C, digests }) {
+    const received = [];
+    const sink = http.createServer((req, res) => {
+        const parts = [];
+        req.on("data", (part) => parts.push(part));
+        req.on("end", () => {
+            received.push({ path: req.url, body: Buffer.concat(parts) });
+            res.writeHead(200, { "content-type": "application/x-protobuf" }).end();
+        });
+    });
+    await new Promise((resolve) => sink.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${sink.address().port}`;
+    let outcome;
+    try {
+        outcome = await createRequire(import.meta.url)(bundle.deliver).deliverSpool({
+            spoolDir: join(dir, "spool"),
+            key,
+            prebuilds: bundle.prebuilds,
+            digest: bundle.digest,
+            url,
+        });
+    } finally {
+        sink.closeAllConnections();
+        sink.close();
+    }
+    const violations = [];
+    const retain = mode === "retain_original";
+    for (const { path, body } of received) {
+        const text = body.toString("latin1");
+        const where = `sink ${path}`;
+        for (const name of OTHER_CANARIES) if (found(text, C[name])) violations.push({ where, canary: name });
+        for (const name of BODY_CANARIES) {
+            if (found(text, C[name]) && !(retain && path === "/v1/logs")) violations.push({ where, canary: name });
+        }
+        if (!retain) {
+            for (const digest of digests) if (text.includes(digest)) violations.push({ where, original_digest: digest });
+        }
+    }
+    return {
+        violations,
+        delivered: {
+            left: outcome.left,
+            trace_requests: received.filter((r) => r.path === "/v1/traces").length,
+            content_requests: received.filter((r) => r.path === "/v1/logs").length,
+            stats: outcome.stats,
+        },
+    };
+}
+
+async function scenario(mode, options = {}) {
     const dir = mkdtempSync(join(tmpdir(), `f055-t8-privacy-${mode}-`));
     chmodSync(dir, 0o700);
     const C = canaries();
@@ -240,6 +299,9 @@ function scenario(mode, options = {}) {
     }
     // The scenario's own JSON line carries only digests; everything else is the agent's.
     const scanned = scan({ dir, key: spoolKey, mode, C, output, digests: result.digests });
+    // 055-t13: the spool delivered by the SDK's sender; every OTLP byte the sink received.
+    const sent = await deliverAndScan({ dir, key: spoolKey, mode, C, digests: result.digests });
+    scanned.violations.push(...sent.violations);
     rmSync(dir, { recursive: true, force: true });
     // Not vacuous: every call left a record, and where retention is authorized the
     // planted body canaries were found inside the retained objects.
@@ -265,25 +327,37 @@ function scenario(mode, options = {}) {
         losses: result.losses,
         ...scanned.stats,
         mode_did_its_work: worked,
+        delivered: sent.delivered,
         violations: scanned.violations,
-        passed: scanned.violations.length === 0 && enough && result.drained === true && result.matched >= result.calls,
+        passed:
+            scanned.violations.length === 0 &&
+            enough &&
+            sent.delivered.left === 0 &&
+            sent.delivered.trace_requests > 0 &&
+            result.drained === true &&
+            result.matched >= result.calls,
     };
 
 }
 
-const scenarios = NETWORK_ONLY
-    ? []
-    : MODES.map((mode) => {
-          const row = scenario(mode);
-          log(`${mode}: ${row.passed ? "passed" : "FAILED"} (${row.exchanges ?? 0} exchange records, ${row.violations?.length ?? "?"} violations)`);
-          return row;
-      });
+const scenarios = [];
+for (const mode of NETWORK_ONLY ? [] : MODES) {
+    const row = await scenario(mode);
+    log(`${mode}: ${row.passed ? "passed" : "FAILED"} (${row.exchanges ?? 0} exchange records, ${row.violations?.length ?? "?"} violations)`);
+    scenarios.push(row);
+}
 // Scanner self-test: the leaked canaries must be reported, in a span attribute and in a
 // spool header, or the scanner cannot be trusted.
-const fault = NETWORK_ONLY ? undefined : scenario("retain_original", { fault: "leak" });
+const fault = NETWORK_ONLY ? undefined : await scenario("retain_original", { fault: "leak" });
 const reported = new Set((fault?.violations ?? []).map((v) => v.canary));
-const selfTestDetected = reported.has("leak_attribute") && reported.has("leak_header");
-if (!NETWORK_ONLY) log(`scanner self-test: ${selfTestDetected ? "reported both leaks" : "did NOT report both leaks"}`);
+// 055-t13: a span-only leak keeps the record valid, so the sender delivers it; the scan
+// of the OTLP requests the sink received must report the canary there.
+const sinkFault = NETWORK_ONLY ? undefined : await scenario("retain_original", { fault: "leak_span" });
+const reportedAtSink = (sinkFault?.violations ?? []).some(
+    (v) => v.canary === "leak_attribute" && v.where === "sink /v1/traces",
+);
+const selfTestDetected = reported.has("leak_attribute") && reported.has("leak_header") && reportedAtSink;
+if (!NETWORK_ONLY) log(`scanner self-test: ${selfTestDetected ? "reported every leak (spool and sink)" : "did NOT report every leak"}`);
 // Network step (055-t12): hostile proxy environment and startup proxy mode, redirects
 // from the delivery and redaction endpoints, recording sockets on every other address.
 const network = await networkStep(bundle.network);
@@ -316,10 +390,11 @@ const report = {
         "spool files raw (every file under FABRIC_WIRE_SPOOL_DIR: records, temps, quarantine, locks, ledger)",
         "spool records decrypted (headers, descriptors, every body)",
         "the agent process's output (stdout and stderr)",
+        "the OTLP requests a sink received when the SDK's sender delivered the spool (content logs and spans)",
         "network: every byte and connection reaching a hostile proxy, a redirect target, the provider or the configured proxy",
     ],
     not_yet_scanned: {
-        "OTLP requests at the sink, the Node queue and the store": "055-t13",
+        "the Node's persistent queue and the store (e2e with the real Node)": "055-t17",
         "registration files and the loss ledger under faults": "055-t16",
         "the status file and the exit note": "055-t14",
     },
@@ -329,7 +404,7 @@ const report = {
         network_self_test: networkSelfTest,
         ...(REQUIRE_PROXY_MODE ? { startup_proxy_mode: proxyMode } : {}),
     },
-    ...(NETWORK_ONLY ? { network_only: true } : { scenarios, self_test: fault }),
+    ...(NETWORK_ONLY ? { network_only: true } : { scenarios, self_test: fault, self_test_sink: sinkFault }),
     network,
     network_self_test: networkFault,
     ...(globalAgentFault === undefined ? {} : { network_self_test_global_agent: globalAgentFault }),

@@ -41,10 +41,19 @@ the agent process's output. It fails when:
   `retain_original` the planted body canaries were not found inside the
   retained objects (a vacuous scan proves nothing).
 
-Not scanned yet, added by the units that produce those bytes: the OTLP
-requests the sink receives, the Node's queue and the store (055-t13), the
-registration files and the ledger under faults (055-t16), the status file and
-the exit note (055-t14).
+Then (unit 055-t13) the SDK's own sender (`src/wire/sender.ts`, run by
+`lib/deliver.ts`) delivers the scenario's spool to a recording sink, and every
+OTLP request the sink received is scanned: no canary may appear in a span
+(`/v1/traces`); in the content logs (`/v1/logs`) only a body canary, and only
+under `retain_original`; no original digest under any other mode. Every
+record must be delivered. Its self-test is a second scenario whose fault leaks
+the span attribute only (the record stays valid and is delivered): the scan
+must report that canary in the spans the sink received.
+
+Not scanned yet, added by the units that produce those bytes: the Node's
+persistent queue and the store with the real Node (055-t17), the registration
+files and the ledger under faults (055-t16), the status file and the exit note
+(055-t14).
 
 ## Network step
 

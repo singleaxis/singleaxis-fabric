@@ -33,7 +33,7 @@ export function build(outdir = mkdtempSync(join(tmpdir(), "f055-t8-privacy-build
     const require = createRequire(join(SDK, "package.json"));
     const { buildSync } = require("esbuild");
     buildSync({
-        entryPoints: [join(HERE, "agent.ts"), join(HERE, "fabric-worker.ts"), join(HERE, "network-client.ts")],
+        entryPoints: ["agent.ts", "fabric-worker.ts", "network-client.ts", "deliver.ts"].map((f) => join(HERE, f)),
         outdir,
         outExtension: { ".js": ".cjs" },
         bundle: true,
@@ -59,6 +59,7 @@ export function build(outdir = mkdtempSync(join(tmpdir(), "f055-t8-privacy-build
         agent: join(outdir, "agent.cjs"),
         worker: join(outdir, "fabric-worker.cjs"),
         network: join(outdir, "network-client.cjs"),
+        deliver: join(outdir, "deliver.cjs"),
         prebuilds,
         digest: createHash("sha256").update(readFileSync(file)).digest("hex"),
     };

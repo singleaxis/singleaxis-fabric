@@ -7,6 +7,8 @@
  * The scanner self-test (`fault: "leak"`) wraps the spool's write so that each record's
  * span gets an attribute holding one canary and its header an extra field holding
  * another. That fault exists only in this harness file; the scanner must report both.
+ * `leak_span` (055-t13) leaks the span attribute only: the record stays valid, the
+ * sender delivers it, and the scan of the sink must report the canary.
  */
 import { workerData } from "node:worker_threads";
 
@@ -32,7 +34,7 @@ if ((data as Record<string, unknown>)[FABRIC_WORKER_MARKER] === 1 && snapshot !=
     addon: loaded.addon,
     ...(snapshot.config.spoolKey === undefined ? {} : { key: snapshot.config.spoolKey }),
   });
-  if (snapshot.fault === "leak") {
+  if (snapshot.fault === "leak" || snapshot.fault === "leak_span") {
     const write = spool.writeBatch.bind(spool);
     const [attribute, header] = snapshot.leaks;
     spool.writeBatch = (records: readonly SpoolEntry[], reserve?: boolean) =>
@@ -40,7 +42,9 @@ if ((data as Record<string, unknown>)[FABRIC_WORKER_MARKER] === 1 && snapshot !=
         records.map((record) => {
           const doc = record.doc as Record<string, any>;
           const span = { ...doc.span, attributes: { ...doc.span.attributes, "fabric.test.leak": attribute } };
-          return { ...record, doc: { ...doc, span, leak: header } };
+          // leak_span (055-t13): the span attribute only, so the record stays valid and
+          // the sender delivers it: the sink scan must report the canary.
+          return { ...record, doc: snapshot.fault === "leak_span" ? { ...doc, span } : { ...doc, span, leak: header } };
         }),
         reserve,
       );
