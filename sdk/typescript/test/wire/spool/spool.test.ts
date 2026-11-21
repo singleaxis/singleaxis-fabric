@@ -54,8 +54,10 @@ import {
   KEY,
   OTHER_KEY,
   type Native,
+  type Op,
   cleanupDirs,
   entryOf,
+  faulty,
   native,
   sized,
   spoolDir,
@@ -483,7 +485,6 @@ describe("configuration errors name the cause and the fix", () => {
 
 // ---------------------------------------------------------------------- fault injection
 
-type Op = keyof SpoolIo;
 const FAULT_OPS: readonly Op[] = [
   "openExclusive",
   "write",
@@ -494,44 +495,6 @@ const FAULT_OPS: readonly Op[] = [
   "unlink",
 ];
 
-/** A {@link SpoolIo} that records calls and fails the `nth` call of `op` (0-based). */
-function faulty(base: SpoolIo): {
-  io: SpoolIo;
-  calls: Op[];
-  arm(op: Op, nth: number, code?: string): void;
-  disarm(): void;
-} {
-  const calls: Op[] = [];
-  let armed: { op: Op; nth: number; code: string } | undefined;
-  const counts = new Map<Op, number>();
-  const io = Object.fromEntries(
-    (Object.keys(base) as Op[]).map((op) => [
-      op,
-      (...args: unknown[]) => {
-        calls.push(op);
-        const seen = counts.get(op) ?? 0;
-        counts.set(op, seen + 1);
-        if (armed !== undefined && armed.op === op && armed.nth === seen) {
-          const code = armed.code;
-          armed = undefined;
-          throw Object.assign(new Error(`injected ${code} at ${op}`), { code });
-        }
-        return (base[op] as (...a: unknown[]) => unknown)(...args);
-      },
-    ]),
-  ) as unknown as SpoolIo;
-  return {
-    io,
-    calls,
-    arm(op, nth, code = "EIO") {
-      counts.clear();
-      armed = { op, nth, code };
-    },
-    disarm() {
-      armed = undefined;
-    },
-  };
-}
 
 describe("a fault at every write, fsync and rename", () => {
   /** The commit's calls of each fault op, from one clean write. */

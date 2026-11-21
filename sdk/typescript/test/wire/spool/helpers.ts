@@ -15,6 +15,7 @@ import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { buildSync } from "esbuild";
 
 import { parseJson } from "../../../src/wire/codec.js";
+import type { SpoolIo } from "../../../src/wire/spool.js";
 
 import { REPO, contract } from "../helpers.js";
 
@@ -186,4 +187,47 @@ export function pythonEnv(): typeof process.env {
 
 export function read(path: string): Buffer {
   return readFileSync(path);
+}
+
+// ---------------------------------------------------------------------- fault injection
+
+export type Op = keyof SpoolIo;
+
+/** A {@link SpoolIo} that records calls and fails the `nth` call of `op` (0-based). */
+export function faulty(base: SpoolIo): {
+  io: SpoolIo;
+  calls: Op[];
+  arm(op: Op, nth: number, code?: string): void;
+  disarm(): void;
+} {
+  const calls: Op[] = [];
+  let armed: { op: Op; nth: number; code: string } | undefined;
+  const counts = new Map<Op, number>();
+  const io = Object.fromEntries(
+    (Object.keys(base) as Op[]).map((op) => [
+      op,
+      (...args: unknown[]) => {
+        calls.push(op);
+        const seen = counts.get(op) ?? 0;
+        counts.set(op, seen + 1);
+        if (armed !== undefined && armed.op === op && armed.nth === seen) {
+          const code = armed.code;
+          armed = undefined;
+          throw Object.assign(new Error(`injected ${code} at ${op}`), { code });
+        }
+        return (base[op] as (...a: unknown[]) => unknown)(...args);
+      },
+    ]),
+  ) as unknown as SpoolIo;
+  return {
+    io,
+    calls,
+    arm(op, nth, code = "EIO") {
+      counts.clear();
+      armed = { op, nth, code };
+    },
+    disarm() {
+      armed = undefined;
+    },
+  };
 }
