@@ -47,6 +47,7 @@ import {
 import { loadNative, nativeTarget } from "./native.js";
 import { ROLE_REQUEST, ROLE_RESPONSE, decideGate, modeOf, type ContentGate } from "./protect.js";
 import type { WireSettings } from "./types.js";
+import type { UnmatchedHost } from "./undici.js";
 
 export const STATUS_SCHEMA = "fabric.wire-status/v1";
 export const STATUS_FILE_ENV = "FABRIC_WIRE_STATUS_FILE";
@@ -72,6 +73,16 @@ export interface StatusDocument {
   readonly fix?: string;
   readonly delivered?: boolean;
   readonly stats?: Readonly<Record<string, number>>;
+  /** FW-006: each unmatched model host and the exact value that records it (exit only). */
+  readonly unmatched_model_hosts?: readonly UnmatchedModelHostRow[];
+}
+
+/** One `unmatched_model_hosts` row, as Python's `_unmatched.py` writes it. */
+export interface UnmatchedModelHostRow {
+  readonly host: string;
+  readonly port: number;
+  readonly count: number;
+  readonly fix: string;
 }
 
 /** A catalogue message of a document, with its text and fix (local output only). */
@@ -107,6 +118,8 @@ export interface StatusFacts {
   /** A masking role has no redaction service or transformation (FW-032). */
   readonly maskedWithheld?: boolean | undefined;
   readonly counters?: HookCounters | undefined;
+  /** The installing thread's unmatched model hosts (FW-006), when it has a hook. */
+  readonly unmatched?: readonly UnmatchedHost[] | undefined;
   /** The status file could not be written, or cannot be (FW-023). */
   readonly statusFileUnwritable?: boolean | undefined;
   /** `FABRIC_WIRE_AUTOLOAD` is not 1: the preload would do nothing (FW-031). */
@@ -331,7 +344,51 @@ export function describe(facts: StatusFacts): {
     status.unmatched_model_shaped = facts.counters.unmatched_model_shaped;
     if (facts.counters.unmatched_model_shaped > 0) ids.push("FW-006");
   }
+  const rows = unmatchedRows(facts.unmatched);
+  if (rows.length > 0) {
+    status.unmatched_model_hosts = rows;
+    ids.push("FW-006");
+  }
   return { status, ...split(ids) };
+}
+
+const DEFAULT_PORTS: Readonly<Record<string, number>> = { https: 443, http: 80 };
+const HOST = /^[A-Za-z0-9.:[\]-]{1,253}$/;
+
+/**
+ * The `unmatched_model_hosts` rows (FW-006's "the status lists the exact value for each
+ * host"): Python's `UnmatchedModelHosts.status()` byte for byte, `fix` being the one
+ * `FABRIC_WIRE_ENDPOINTS` value that records the host. A host the schema cannot carry
+ * (not a plain DNS name or address) is left out; its requests are still counted.
+ */
+export function unmatchedRows(
+  hosts: readonly UnmatchedHost[] | undefined,
+): UnmatchedModelHostRow[] {
+  const rows: UnmatchedModelHostRow[] = [];
+  for (const row of hosts ?? []) {
+    if (rows.length >= 64) break;
+    if (!HOST.test(row.host) || !/^https?$/.test(row.scheme)) continue;
+    if (!Number.isSafeInteger(row.count) || row.count < 1) continue;
+    const port = row.port ?? DEFAULT_PORTS[row.scheme] ?? 443;
+    if (!Number.isInteger(port) || port < 1 || port > 65535) continue;
+    // Python: json.dumps([entry], separators=(",", ":")), keys in insertion order.
+    const entry = JSON.stringify([
+      {
+        endpoint_id: "my-model",
+        dialect: row.dialect,
+        hosts: [row.host],
+        ports: [port],
+        schemes: [row.scheme],
+      },
+    ]);
+    rows.push({
+      host: row.host,
+      port,
+      count: row.count,
+      fix: `export FABRIC_WIRE_ENDPOINTS='${entry}'`,
+    });
+  }
+  return rows;
 }
 
 /** `settings` names an OTLP traces endpoint (the route is resolved whenever one is set). */
@@ -370,6 +427,7 @@ export function exitDocument(
   install: Pick<StatusDocument, "warning_ids" | "notice_ids">,
   delivered: boolean,
   stats: Readonly<Record<string, number>>,
+  unmatched?: readonly UnmatchedHost[],
 ): StatusDocument {
   const clean: Record<string, number> = {};
   for (const [name, value] of Object.entries(stats)) {
@@ -385,11 +443,14 @@ export function exitDocument(
   );
   if ((clean.backlog ?? 0) > 0) ids.add("FW-033");
   if ((clean.unmatched_model_shaped ?? 0) > 0) ids.add("FW-006");
+  const rows = unmatchedRows(unmatched);
+  if (rows.length > 0) ids.add("FW-006");
   return {
     ...head("exit"),
     capture: "closed",
     delivered,
     stats: clean,
+    ...(rows.length > 0 ? { unmatched_model_hosts: rows } : {}),
     ...split(ids as Set<TypeScriptCatalogueId>),
   };
 }

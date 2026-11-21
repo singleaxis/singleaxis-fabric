@@ -209,7 +209,11 @@ export function runFabricMain(): Promise<void> | undefined {
       const result = await stopDelivery(sender, spool, snapshot, context, pipeline.closed === true);
       const stats = exitStats(pipeline, sender, result, context.stop?.counters);
       if (status !== undefined) {
-        writeStatusFile(status.path, exitDocument(status.install, result.delivered, stats), warn);
+        writeStatusFile(
+          status.path,
+          exitDocument(status.install, result.delivered, stats, context.stop?.unmatched),
+          warn,
+        );
       }
       try {
         post({ [STOP_RESULT]: { ...result, stats } });

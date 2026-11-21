@@ -87,7 +87,13 @@ import {
 } from "./seal.js";
 import type { Spool } from "./spool.js";
 import type { WireSettings } from "./types.js";
-import { UNDICI_POINT, contentEncodingOf, mediaTypeOf, readUndiciMeta } from "./undici.js";
+import {
+  UNDICI_POINT,
+  type UnmatchedHost,
+  contentEncodingOf,
+  mediaTypeOf,
+  readUndiciMeta,
+} from "./undici.js";
 import {
   type AdmitOutcome,
   type CapturedExchange,
@@ -125,6 +131,8 @@ export interface WorkerRequest {
   readonly uninstalled?: Uninstalled;
   /** `stop`: the installing thread's content-free counters, for the exit status document. */
   readonly counters?: Readonly<Record<string, number>>;
+  /** `stop`: the installing thread's unmatched model hosts (FW-006), for the same document. */
+  readonly unmatched?: readonly UnmatchedHost[];
 }
 
 /**
@@ -323,6 +331,7 @@ export class FabricWorker {
       exiting?: boolean;
       uninstalled?: Uninstalled;
       counters?: Readonly<Record<string, number>>;
+      unmatched?: readonly UnmatchedHost[];
     } = {},
   ): Promise<boolean> {
     const worker = this.thread;
@@ -376,6 +385,8 @@ export interface FabricWorkerContext {
     readonly uninstalled?: Uninstalled | undefined;
     /** The installing thread's counters (the exit status document), when it sent them. */
     readonly counters?: Readonly<Record<string, number>> | undefined;
+    /** The installing thread's unmatched model hosts (the exit status document). */
+    readonly unmatched?: readonly UnmatchedHost[] | undefined;
   };
 }
 
@@ -458,6 +469,8 @@ function listen(context: FabricWorkerContext, handlers: FabricWorkerHandlers): v
           request.counters !== null && typeof request.counters === "object"
             ? request.counters
             : undefined,
+        // Rows are re-checked field by field when the document is built (unmatchedRows).
+        unmatched: Array.isArray(request.unmatched) ? request.unmatched : undefined,
       };
       return;
     }

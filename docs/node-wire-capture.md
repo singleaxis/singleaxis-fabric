@@ -105,6 +105,7 @@ unless `FABRIC_WIRE_DIAGNOSTICS=stderr`.
 
 | Id | Meaning | Fix |
 |---|---|---|
+| `FW-006` | a model-looking request went to a host no endpoint covers | `status.unmatched_model_hosts` lists each host with the exact `FABRIC_WIRE_ENDPOINTS` value that records it |
 | `FW-025` | the configuration is invalid; `reason_id` names the setting | the status names the variable and its fix |
 | `FW-026` | this Node.js or undici build is not in the compatibility table | run a listed Node.js 24 build |
 | `FW-027` | no native lock module for this operating system or CPU | Linux or macOS, x64 or arm64 |

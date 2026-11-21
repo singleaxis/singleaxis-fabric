@@ -193,6 +193,11 @@ const native = JSON.parse(process.env.CASE_NATIVE || "{}");
   if (mode === "env") out.push(["envStatus", wire.envStatus(env, { native })]);
   if (mode === "install") {
     const handle = wire.install();
+    if (process.env.CASE_UNMATCHED === "1") {
+      // A model-looking POST to a host no endpoint covers (FW-006); it need not connect.
+      await fetch("http://unmatched-model.invalid:8080/v1/chat/completions",
+        { method: "POST", body: "{}" }).then((r) => r.text(), () => null);
+    }
     out.push(["status", handle.status()]);
     if (handle.capturing) {
       await handle.close({ timeoutMs: 3000 });
@@ -354,7 +359,11 @@ def test_typescript_install_and_exit_documents_and_the_status_file_validate(
     """A capturing install (the table activates this build): status() before and after
     close() and the status file the Fabric worker wrote at exit."""
     status_file = tmp_path / "status.json"
-    env = {**_base(tmp_path), "FABRIC_WIRE_STATUS_FILE": str(status_file)}
+    env = {
+        **_base(tmp_path),
+        "FABRIC_WIRE_STATUS_FILE": str(status_file),
+        "CASE_UNMATCHED": "1",
+    }
     documents = _ts_documents(node_app, tmp_path, "install", env)
     assert [(d["phase"], d["capture"]) for _, d in documents] == [
         ("install", "installed"),
@@ -367,3 +376,14 @@ def test_typescript_install_and_exit_documents_and_the_status_file_validate(
     _check(written)
     assert (written["phase"], written["capture"]) == ("exit", "closed")
     assert oct(status_file.stat().st_mode & 0o777) == oct(0o600)
+    # FW-006: the unmatched host and the exact value that records it, as Python lists it.
+    from fabric.wire._unmatched import UnmatchedModelHosts  # noqa: PLC0415
+
+    python = UnmatchedModelHosts()
+    python.note("POST", "http", "unmatched-model.invalid", 8080, "/v1/chat/completions")
+    rows = python.status()
+    assert documents[0][1]["status"]["unmatched_model_hosts"] == rows, documents[0][1]
+    assert "FW-006" in documents[0][1]["warning_ids"]
+    for document in (documents[1][1], written):
+        assert document["unmatched_model_hosts"] == rows, document
+        assert "FW-006" in document["warning_ids"], document

@@ -505,9 +505,11 @@ function installWith(
         // capture is stopping either way; the record says what was lost
       }
       const final = counters();
+      const unmatched = hook.unmatchedHosts();
       const clean = await worker.stop(timeoutMs, {
         exiting,
         counters: { ...final },
+        unmatched,
         ...(off === undefined ? {} : { uninstalled: off }),
       });
       const reported = worker.stopResult as (StopResult & { stats?: unknown }) | undefined;
@@ -515,12 +517,14 @@ function installWith(
         const { stats, ...result } = reported;
         stopResult = result;
         const known = stats !== null && typeof stats === "object" ? stats : {};
-        exitStatus = exitDocument(installed_, result.delivered, {
-          ...final,
-          ...(known as Record<string, number>),
-        });
+        exitStatus = exitDocument(
+          installed_,
+          result.delivered,
+          { ...final, ...(known as Record<string, number>) },
+          unmatched,
+        );
       } else {
-        exitStatus = exitDocument(installed_, false, { ...final });
+        exitStatus = exitDocument(installed_, false, { ...final }, unmatched);
       }
       const closed = clean && stopResult?.closed === true;
       try {
@@ -566,7 +570,13 @@ function installWith(
     },
     status() {
       if (exitStatus !== undefined) return printable({ ...exitStatus });
-      return printable(installDocument({ ...statusFacts, counters: counters() }));
+      return printable(
+        installDocument({
+          ...statusFacts,
+          counters: counters(),
+          unmatched: hook.unmatchedHosts(),
+        }),
+      );
     },
   };
   return handle;

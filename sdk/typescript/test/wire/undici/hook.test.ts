@@ -18,6 +18,7 @@ import { endpointMatcher } from "../../../src/wire/match.js";
 import {
   ERROR_TYPES,
   UNDICI_CHANNELS,
+  MAX_UNMATCHED_HOSTS,
   bundledUndiciPublishesBodies,
   contentEncodingOf,
   errorType,
@@ -125,6 +126,33 @@ describe("matched-only capture", () => {
     expect(cap.hook.stats.matched).toBe(0);
     // POSTs to a model API path on no configured endpoint are counted (FW-006).
     expect(cap.hook.stats.unmatchedModelShaped).toBe(4);
+    // ... and each host is listed for the status document, with the dialect its path implies.
+    expect(cap.hook.unmatchedHosts()).toEqual([
+      { scheme: "http", host: "127.0.0.1", port: server.port + 1, dialect: "openai", count: 1 },
+      { scheme: "http", host: "localhost", port: server.port, dialect: "openai", count: 1 },
+      { scheme: "https", host: "127.0.0.1", port: server.port, dialect: "openai", count: 1 },
+      { scheme: "http", host: "127.0.0.1", port: server.port, dialect: "anthropic", count: 1 },
+    ]);
+  });
+
+  it("lists at most 16 unmatched hosts and still counts every request (FW-006)", () => {
+    const cap = track(capture(server.port, { publishesBodies: true }));
+    for (let i = 0; i < 20; i++) {
+      const request = { ...fakeRequest(server.port), origin: `http://model-${i}.internal:8080` };
+      publish.create(request);
+      publish.create({ ...request }); // a second request to the same host counts on its row
+    }
+    expect(cap.hook.stats.unmatchedModelShaped).toBe(40);
+    const rows = cap.hook.unmatchedHosts();
+    expect(rows).toHaveLength(MAX_UNMATCHED_HOSTS);
+    expect(rows[0]).toEqual({
+      scheme: "http",
+      host: "model-0.internal",
+      port: 8080,
+      dialect: "openai",
+      count: 2,
+    });
+    expect(cap.runtime.nextSequence).toBe(0n);
   });
 
   it("matches a target named in the path, as sent through an HTTP proxy", () => {

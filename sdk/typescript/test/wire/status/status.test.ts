@@ -26,6 +26,7 @@ import {
   notInstalledDocument,
   printable,
   statusMessages,
+  unmatchedRows,
   writeStatusFile,
 } from "../../../src/wire/status.js";
 
@@ -228,6 +229,51 @@ describe("documents", () => {
     expect(doc.warning_ids).toEqual([]); // FW-006 only from the counters
     expect(doc.notice_ids).toEqual(["FW-005"]);
     expect(doc).toMatchObject({ phase: "exit", capture: "closed", delivered: true });
+  });
+
+  it("lists each unmatched model host with Python's exact FABRIC_WIRE_ENDPOINTS fix (FW-006)", () => {
+    const hosts = [
+      { scheme: "http", host: "llm.internal", port: 8080, dialect: "anthropic" as const, count: 1 },
+      {
+        scheme: "https",
+        host: "gw.example",
+        port: undefined,
+        dialect: "openai" as const,
+        count: 2,
+      },
+      // Not a plain host name: left out of the list, still counted by the hook.
+      { scheme: "https", host: "bad host", port: 443, dialect: "openai" as const, count: 1 },
+    ];
+    // Python: UnmatchedModelHosts().status() for the same requests (wire/_unmatched.py).
+    const python = [
+      {
+        host: "llm.internal",
+        port: 8080,
+        count: 1,
+        fix: `export FABRIC_WIRE_ENDPOINTS='[{"endpoint_id":"my-model","dialect":"anthropic","hosts":["llm.internal"],"ports":[8080],"schemes":["http"]}]'`,
+      },
+      {
+        host: "gw.example",
+        port: 443,
+        count: 2,
+        fix: `export FABRIC_WIRE_ENDPOINTS='[{"endpoint_id":"my-model","dialect":"openai","hosts":["gw.example"],"ports":[443],"schemes":["https"]}]'`,
+      },
+    ];
+    expect(unmatchedRows(hosts)).toEqual(python);
+    const install = installDocument({
+      capture: "installed",
+      runtime: currentRuntime(null),
+      listed: true,
+      counters: { matched: 0, not_captured: 0, unmatched_model_shaped: 4 },
+      unmatched: hosts,
+    });
+    expect(install.status?.unmatched_model_hosts).toEqual(python);
+    expect(install.warning_ids).toContain("FW-006");
+    const exit = exitDocument(install, true, { unmatched_model_shaped: 4 }, hosts);
+    expect(exit.unmatched_model_hosts).toEqual(python);
+    expect(exit.warning_ids).toContain("FW-006");
+    // No unmatched host: no list.
+    expect("unmatched_model_hosts" in exitDocument(install, true, {}, [])).toBe(false);
   });
 
   it("node -p shows each id's text and fix; JSON carries the document only", () => {

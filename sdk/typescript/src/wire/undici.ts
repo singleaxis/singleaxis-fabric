@@ -177,10 +177,29 @@ export interface UndiciHookStats {
   faults: number;
 }
 
+/**
+ * One host model-looking requests went to that no endpoint covers (FW-006): the status
+ * document lists it with the exact `FABRIC_WIRE_ENDPOINTS` value that records it. Local
+ * output only (spec 055 §4.7); never on telemetry or in the spool.
+ */
+export interface UnmatchedHost {
+  readonly scheme: string;
+  readonly host: string;
+  readonly port: number | undefined;
+  /** The dialect the request path implies: `anthropic` for `/v1/messages`, else `openai`. */
+  readonly dialect: "openai" | "anthropic";
+  readonly count: number;
+}
+
+/** Hosts tracked by name, as Python's `_unmatched.py`; further hosts are still counted. */
+export const MAX_UNMATCHED_HOSTS = 16;
+
 export interface UndiciHook {
   /** False when nothing was subscribed (an undici without body publications, or a failure). */
   readonly installed: boolean;
   readonly stats: Readonly<UndiciHookStats>;
+  /** The unmatched model hosts seen so far, in first-seen order (a copy). */
+  unmatchedHosts(): readonly UnmatchedHost[];
   /** Open exchanges this isolate is following. */
   readonly open: number;
   /** Unsubscribes and finishes every open exchange as `abandoned`. Never throws. */
@@ -317,6 +336,7 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
   const keepRequestId = options.providerRequestId === true;
   const followed = new WeakMap<object, Entry>();
   const open = new Set<Entry>();
+  const unmatched = new Map<string, { -readonly [K in keyof UnmatchedHost]: UnmatchedHost[K] }>();
   const stats: UndiciHookStats = {
     matched: 0,
     notCaptured: 0,
@@ -379,6 +399,19 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
       if (found === undefined) {
         if (MODEL_PATH_SUFFIXES.some((suffix) => bare.endsWith(suffix))) {
           stats.unmatchedModelShaped++;
+          // Plain fields only: the fix text is built when the status is read, not here.
+          const key = `${origin.scheme}\0${origin.host.toLowerCase()}\0${origin.port ?? ""}`;
+          const row = unmatched.get(key);
+          if (row !== undefined) row.count++;
+          else if (unmatched.size < MAX_UNMATCHED_HOSTS) {
+            unmatched.set(key, {
+              scheme: origin.scheme,
+              host: origin.host.toLowerCase(),
+              port: origin.port,
+              dialect: bare.endsWith("/v1/messages") ? "anthropic" : "openai",
+              count: 1,
+            });
+          }
         }
         return;
       }
@@ -653,6 +686,9 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
   return {
     installed: subscribed.length === subscriptions.length,
     stats,
+    unmatchedHosts() {
+      return [...unmatched.values()].map((row) => ({ ...row }));
+    },
     get open() {
       return open.size;
     },
