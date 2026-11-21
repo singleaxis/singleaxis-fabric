@@ -939,7 +939,17 @@ export class CapturePipeline {
 
   async #roll(runtime: WireRuntime, segmentId: string): Promise<void> {
     const run = this.#segmentRuns.get(segmentId);
-    if (run === undefined || !(await runtime.lockAsync(1000))) {
+    // Find the run's slot before taking the lock: the application isolates spin for it
+    // for at most 20 µs, so it is held only to check that slot again and move it.
+    let found = -1;
+    for (let slot = 0; slot < MAX_RUNS && run !== undefined; slot++) {
+      const [hi, lo] = runtime.runSegment(slot);
+      if (segmentIdOf(hi, lo) === segmentId) {
+        found = slot;
+        break;
+      }
+    }
+    if (run === undefined || found < 0 || !(await runtime.lockAsync(1000))) {
       this.#runStats.forced_missed++;
       return;
     }
@@ -948,19 +958,18 @@ export class CapturePipeline {
     let resumable = false;
     let last = -1n;
     try {
-      for (let slot = 0; slot < MAX_RUNS; slot++) {
-        const [hi, lo] = runtime.runSegment(slot);
-        if (segmentIdOf(hi, lo) !== segmentId) continue;
-        positions = runtime.runPositions(slot);
-        resumable = (runtime.runFlags(slot) & RUN_FLAG_RESUMABLE) !== 0n;
+      const [hi, lo] = runtime.runSegment(found);
+      if (segmentIdOf(hi, lo) === segmentId) {
+        // Still the run's open segment (not sealed or moved meanwhile).
+        positions = runtime.runPositions(found);
+        resumable = (runtime.runFlags(found) & RUN_FLAG_RESUMABLE) !== 0n;
         const hex = next.slice(SEGMENT_PREFIX.length);
         runtime.setRunSegment(
-          slot,
+          found,
           BigInt.asIntN(64, BigInt("0x" + hex.slice(0, 16))),
           BigInt.asIntN(64, BigInt("0x" + hex.slice(16))),
         );
         last = runtime.nextSequence - 1n;
-        break;
       }
     } finally {
       runtime.unlock();
