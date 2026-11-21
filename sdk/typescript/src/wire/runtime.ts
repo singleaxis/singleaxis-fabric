@@ -37,6 +37,13 @@ export const MAX_EXCHANGE_SLOTS = 65536;
 export const JOB_RECORD_BYTES = 2048;
 export const LOSS_RECORD_BYTES = 32;
 export const LOSS_RING_ENTRIES = 4096;
+/**
+ * Run-structure messages (run markers and seal requests, `segments.ts`) travel to the
+ * Fabric worker in their own ring of 4 KiB records; a longer message is split into parts
+ * (`segments.ts` `RunMessages`). 512 records: 2 MiB of address space.
+ */
+export const RUN_RECORD_BYTES = 4096;
+export const RUN_RING_ENTRIES = 512;
 /** At most this many mirror stores per allocation (see `WireRuntime.next`). */
 const MIRROR_ROUNDS = 8;
 /** The longest an application isolate spins for the control-block lock. */
@@ -63,10 +70,21 @@ const W_WORKER_GENERATION = 66;
 const W_WORKER_RESTARTS = 67;
 const W_STOP = 68;
 const W_FAILURE = 69;
-// Run table: 4 BigInt64 words per run (segment hi, segment lo, positions, reserved).
+// Run table: 4 BigInt64 words per run (segment hi, segment lo, positions, flags).
 const RUN_BASE = 64;
+/** Run-slot flag: the run is resumable (a forced seal written by the worker says so). */
+export const RUN_FLAG_RESUMABLE = 1n;
 // Isolate table: 4 Int32 words per isolate (state, environment id, role, reserved).
 const ISOLATE_BASE = (512 + MAX_RUNS * 32) / 4;
+// The manifest in force (bytes 25088..25159), written by the Fabric worker only, under a
+// version word (odd while it writes): version (Int32), epoch, manifest_seq (BigInt64),
+// manifest id (16 bytes) and digest (32 bytes).
+const M_BYTE = ISOLATE_BASE * 4 + MAX_ISOLATES * 16;
+const M_VERSION = M_BYTE / 4;
+const M_EPOCH = M_BYTE / 8 + 1;
+const M_SEQ = M_BYTE / 8 + 2;
+const M_ID = M_BYTE + 24;
+const M_DIGEST = M_BYTE + 40;
 
 export const STATE_RUNNING = 1;
 export const STATE_CLOSING = 2;
@@ -102,6 +120,8 @@ export interface RuntimeShared {
   readonly exchanges: PoolShared;
   readonly jobs: RingShared;
   readonly losses: RingShared;
+  /** Run markers and seal requests for the Fabric worker (`segments.ts`). */
+  readonly runs: RingShared;
   /** Per-side retained byte cap (`max_retain_bytes`). */
   readonly maxRetainBytes: number;
 }
@@ -124,6 +144,8 @@ export interface RuntimeOptions {
   readonly maxVectors?: number;
   /** Loss-ring entries. Lowered only by tests. */
   readonly lossRingEntries?: number;
+  /** Run-ring entries. Lowered only by tests. */
+  readonly runRingEntries?: number;
 }
 
 const MIB = 1024 * 1024;
@@ -172,6 +194,7 @@ export function createRuntimeShared(options: RuntimeOptions = {}): RuntimeShared
     }),
     jobs: createRing(JOB_RECORD_BYTES, queue),
     losses: createRing(LOSS_RECORD_BYTES, options.lossRingEntries ?? LOSS_RING_ENTRIES),
+    runs: createRing(RUN_RECORD_BYTES, options.runRingEntries ?? RUN_RING_ENTRIES),
     maxRetainBytes,
   };
   const i64 = new BigInt64Array(shared.control);
@@ -208,6 +231,16 @@ export interface RuntimeLoss {
   readonly segmentLo: bigint;
 }
 
+/** The manifest in force as the Fabric worker published it (spec 050 §3.8). */
+export interface PublishedManifest {
+  readonly epoch: bigint;
+  readonly manifestSeq: number;
+  /** The manifest's uuid4 (`manifest_id`). */
+  readonly manifestId: string;
+  /** `sha256:<hex>`. */
+  readonly digest: string;
+}
+
 /** A position and what was decided with it. */
 export interface Allocation {
   readonly sequence: bigint;
@@ -242,6 +275,8 @@ export class WireRuntime {
   readonly i32: Int32Array;
   readonly jobs: Ring;
   readonly lossRing: Ring;
+  /** Run markers and seal requests (`segments.ts`); a runtime made before it has none. */
+  readonly runRing: Ring | undefined;
   private readonly owner: number;
   private readonly lossScratch = new BigInt64Array(3);
   private readonly lossBytes = new Uint8Array(this.lossScratch.buffer);
@@ -260,6 +295,7 @@ export class WireRuntime {
     this.i32 = new Int32Array(shared.control);
     this.jobs = new Ring(shared.jobs);
     this.lossRing = new Ring(shared.losses);
+    this.runRing = shared.runs === undefined ? undefined : new Ring(shared.runs);
     this.owner = ROLE_SLOT[role] + 1;
     const row = ISOLATE_BASE + ROLE_SLOT[role] * 4;
     Atomics.store(this.i32, row + 2, this.owner);
@@ -477,6 +513,72 @@ export class WireRuntime {
   /** Positions allocated in the run's open segment. */
   runPositions(runSlot: number): bigint {
     return Atomics.load(this.i64, RUN_BASE + runSlot * 4 + 2);
+  }
+
+  /** The run slot's flags ({@link RUN_FLAG_RESUMABLE}). */
+  runFlags(runSlot: number): bigint {
+    return Atomics.load(this.i64, RUN_BASE + runSlot * 4 + 3);
+  }
+  setRunFlags(runSlot: number, flags: bigint): void {
+    Atomics.store(this.i64, RUN_BASE + runSlot * 4 + 3, flags);
+  }
+
+  // ------------------------------------------------------------- run-structure ring
+
+  /**
+   * Hands one run-structure record to the Fabric worker and wakes it (it waits on the
+   * job ring's word). `false`, changing nothing, when the ring is full or absent.
+   */
+  pushRun(kind: number, body: Uint8Array): boolean {
+    const ring = this.runRing;
+    if (ring === undefined || !ring.push(kind, body)) return false;
+    this.jobs.wake();
+    return true;
+  }
+
+  // ------------------------------------------------------------ manifest in force
+
+  /**
+   * Publishes the manifest in force (Fabric worker only, the single writer), so the run
+   * table on an application thread can name it in run markers and tokens without
+   * waiting. A reader that meets a write in progress retries, then goes without.
+   */
+  publishManifest(manifest: PublishedManifest): void {
+    const id = Buffer.from(manifest.manifestId.replace(/-/g, ""), "hex");
+    const digest = Buffer.from(manifest.digest.slice("sha256:".length), "hex");
+    if (id.length !== 16 || digest.length !== 32) return;
+    const i32 = this.i32;
+    const version = Atomics.load(i32, M_VERSION) & ~1;
+    Atomics.store(i32, M_VERSION, version + 1); // odd: a write is in progress
+    Atomics.store(this.i64, M_EPOCH, manifest.epoch);
+    Atomics.store(this.i64, M_SEQ, BigInt(manifest.manifestSeq));
+    const bytes = new Uint8Array(this.shared.control);
+    bytes.set(id, M_ID);
+    bytes.set(digest, M_DIGEST);
+    Atomics.store(i32, M_VERSION, version + 2 === 0 ? 2 : version + 2);
+  }
+
+  /** The manifest the Fabric worker published last, or `undefined` (none yet, or busy). */
+  publishedManifest(): PublishedManifest | undefined {
+    const i32 = this.i32;
+    const bytes = new Uint8Array(this.shared.control);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const before = Atomics.load(i32, M_VERSION);
+      if (before === 0) return undefined;
+      if ((before & 1) === 1) continue;
+      const epoch = Atomics.load(this.i64, M_EPOCH);
+      const seq = Atomics.load(this.i64, M_SEQ);
+      const id = Buffer.from(bytes.slice(M_ID, M_ID + 16)).toString("hex");
+      const digest = Buffer.from(bytes.slice(M_DIGEST, M_DIGEST + 32)).toString("hex");
+      if (Atomics.load(i32, M_VERSION) !== before) continue;
+      return {
+        epoch,
+        manifestSeq: Number(seq),
+        manifestId: `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`,
+        digest: "sha256:" + digest,
+      };
+    }
+    return undefined;
   }
 
   // --------------------------------------------------------------------------- losses

@@ -135,6 +135,8 @@ const MAX_REQUEST_ID = 256;
 /** The run and explicit-ownership scope of the calling context (units 055-t11, 055-t20). */
 export interface CaptureScope {
   readonly runSlot?: number;
+  /** The innermost open run scope's uuid4, as 16 bytes (`fabric.run.scope_id`). */
+  readonly scopeId?: Uint8Array;
   readonly ownership?: ExplicitOwnership;
 }
 
@@ -401,6 +403,7 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
       }
       const handle = table.begin({
         runSlot: scope?.runSlot,
+        scopeId: scope?.scopeId,
         ownership: scope?.ownership,
         parent,
       });

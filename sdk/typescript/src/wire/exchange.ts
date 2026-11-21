@@ -59,6 +59,7 @@ const SIDE_REASON = 5;
 // Byte offsets of a slot.
 const X_IDS = 128; // exchange uuid4 (16), event uuid4 (16), span id (8)
 const X_PARENT = 168; // trace id (16), span id (8), flags, remote, present
+const X_SCOPE = 200; // run scope uuid4 (16), present (1)
 /** Bytes of a slot the transport hook defines (URL, status, headers digest inputs). */
 export const META_OFFSET = 256;
 export const META_BYTES = 2048 - META_OFFSET;
@@ -116,6 +117,8 @@ export interface ParentContext {
 
 export interface BeginOptions {
   readonly runSlot?: number;
+  /** The run scope's uuid4 as 16 bytes (`fabric.run.scope_id`); absent outside a run. */
+  readonly scopeId?: Uint8Array;
   readonly ownership?: ExplicitOwnership;
   readonly parent?: ParentContext;
   /** Wall-clock start in nanoseconds; default: now. */
@@ -159,6 +162,8 @@ export interface ExchangeJob {
   readonly eventId: Uint8Array;
   readonly spanId: Uint8Array;
   readonly parent: ParentContext | undefined;
+  /** The run scope the call started in (16 bytes), or `undefined` outside a run. */
+  readonly scopeId: Uint8Array | undefined;
   readonly request: SideDescriptor;
   readonly response: SideDescriptor;
   readonly meta: Uint8Array;
@@ -217,6 +222,11 @@ export class ExchangeTable {
       i32[word + X_SIDE + SIDE_STATE] = 1; // a request with no body is an exact empty body
       i64[index * SLOT_I64 + X_START_NS] = options.startNs ?? now();
       this.writeIds(index, options.parent);
+      const scopeId = options.scopeId;
+      if (scopeId !== undefined && scopeId.length === 16) {
+        bytes.set(scopeId, index * 2048 + X_SCOPE);
+        bytes[index * 2048 + X_SCOPE + 16] = 1;
+      }
       // A call that starts after its explicit scope ended is adopted at once, and keeps
       // the scope's withheld flag (it survives scope exit).
       if (ownership !== undefined && !provisional) i32[word + X_FLAGS] = FLAG_ADOPTED;
@@ -556,6 +566,7 @@ export class ExchangeTable {
               flags: bytes[X_PARENT + 24]!,
               remote: bytes[X_PARENT + 25] === 1,
             },
+      scopeId: bytes[X_SCOPE + 16] === 1 ? bytes.slice(X_SCOPE, X_SCOPE + 16) : undefined,
       request: side(REQUEST),
       response: side(RESPONSE),
       meta: bytes.subarray(META_OFFSET),
