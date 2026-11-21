@@ -6,6 +6,8 @@
  * request; `Retry-After` bounded; no redirect followed; loopback always direct;
  * `FABRIC_WIRE_PROXY` as a CONNECT tunnel with end-to-end certificate verification.
  */
+import { inspect } from "node:util";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -15,8 +17,10 @@ import {
   DeliveryClient,
   type DeliveryTarget,
   retryAfterMs,
+  targetOf,
   TraceClient,
 } from "../../../src/wire/delivery.js";
+import type { OtlpRoute } from "../../../src/wire/types.js";
 import { NodeContentClient } from "../../../src/wire/node-content.js";
 import { encodeLogRecord, encodeLogsRequest, type OtlpSpan } from "../../../src/wire/otlp.js";
 import {
@@ -242,6 +246,82 @@ describe("§7.1 outcome classes: the status matrix", () => {
     );
     expect(classify(299)).toBe("ok");
     expect(classify(200, 1n)).toBe("rejected");
+    // Python's truth test: a negative count is a rejection too
+    expect(classify(200, -1n)).toBe("rejected");
+  });
+
+  it("a 2xx with a negative rejected count is a rejection, as in Python", async () => {
+    const server = await serving({
+      status: 200,
+      body: Buffer.from("0a0b08ffffffffffffffffff01", "hex"),
+    });
+    const client = new DeliveryClient(target(`${server.url}/v1/logs`), { signal: "logs" });
+    try {
+      expect(await client.post(Buffer.from("x"))).toEqual({
+        outcome: "rejected",
+        status: 200,
+        rejectedRecords: -1n,
+      });
+    } finally {
+      client.close();
+      await server.close();
+    }
+  });
+
+  it("a target built from a route never shows its ingress headers", async () => {
+    const { inspect } = await import("node:util");
+    const server = await serving({ status: 200 });
+    const route = {
+      route: "fabric",
+      endpoint: server.url,
+      signalUrl: `${server.url}/v1/traces`,
+      endpointName: "FABRIC_OTLP_ENDPOINT",
+      headers: { authorization: `Bearer ${CREDENTIAL}` },
+      certificate: undefined,
+      clientCertificate: undefined,
+      clientKey: undefined,
+      timeoutMs: 5000,
+      protocol: "http/protobuf",
+      compression: undefined,
+    } as OtlpRoute;
+    const built = targetOf(route);
+    expect(built.headers.authorization).toBe(`Bearer ${CREDENTIAL}`);
+    for (const shown of [
+      inspect(built, { depth: 9 }),
+      JSON.stringify(built),
+      inspect({ ...built }),
+    ])
+      expect(shown).not.toContain(CREDENTIAL);
+    expect(globalThis.structuredClone(built)).not.toHaveProperty("headers");
+    expect(() => targetOf({ ...route, signalUrl: undefined })).toThrow(/FABRIC_OTLP_ENDPOINT/);
+    // the client still sends them, by name
+    const client = new TraceClient(built);
+    try {
+      expect((await client.export([span])).outcome).toBe("ok");
+      expect(server.received[0]!.headers.authorization).toBe(`Bearer ${CREDENTIAL}`);
+    } finally {
+      client.close();
+      await server.close();
+    }
+  });
+
+  it("a malformed FABRIC_WIRE_PROXY is named, never echoed (it may carry credentials)", () => {
+    const secret = "FWCANARY-proxy-secret";
+    for (const bad of [
+      `socks5://u:${secret}@proxy.example:1080`,
+      `http://u:${secret}@proxy.example:3128/path`,
+      `http://u:${secret}@proxy.example:3128/?q`,
+      `http://u:${secret}@[not a host`,
+    ]) {
+      let message = "";
+      try {
+        new DeliveryClient(target("https://node.example/v1/logs"), { signal: "logs", proxy: bad });
+      } catch (error) {
+        message = `${(error as Error).message} ${inspect(error)}`;
+      }
+      expect(message).toMatch(/FABRIC_WIRE_PROXY (is not a valid URL|must be an http)/);
+      expect(message).not.toContain(secret);
+    }
   });
 });
 
@@ -598,6 +678,31 @@ describe("§3.4 proxies: loopback always direct; FABRIC_WIRE_PROXY is a verified
     } finally {
       for (const c of [misnamed, untrusted, defaultTrust]) c.close();
       for (const s of [rogue, genuine, viaRogue, viaGenuine]) await s.close();
+    }
+  });
+
+  it("a proxy that never answers the CONNECT is a timeout retry within the deadline", async () => {
+    const silent = await recordingSocket();
+    const client = new DeliveryClient(
+      target("https://fabric-node.test:4318/v1/logs", { certificate: pki.caFile, timeoutMs: 300 }),
+      { signal: "logs", proxy: silent.url },
+    );
+    try {
+      const started = Date.now();
+      expect(await client.post(Buffer.from(BODY_CANARY))).toEqual({
+        outcome: "retry",
+        status: 0,
+        errorCode: "timeout",
+      });
+      expect(Date.now() - started).toBeLessThan(2000);
+      expect(silent.connections).toBe(1);
+      const seen = silent.bytes().toString("latin1");
+      expect(seen).toMatch(/^CONNECT fabric-node\.test:4318 HTTP\/1\.1\r\n/);
+      expect(seen).not.toContain(CREDENTIAL);
+      expect(seen).not.toContain(BODY_CANARY);
+    } finally {
+      client.close();
+      await silent.close();
     }
   });
 

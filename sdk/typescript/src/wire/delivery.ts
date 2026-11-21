@@ -75,15 +75,18 @@ export interface PostResult {
   readonly status: number;
   /** A bounded `Retry-After` (ms) of a refused or failed response, when it named one. */
   readonly retryAfterMs?: number;
-  /** A 2xx whose `partial_success` rejected records (content only): their count. */
+  /** A 2xx whose `partial_success` rejected records (content only): their count, never 0. */
   readonly rejectedRecords?: bigint;
   /** A fixed transport error code (`ECONNREFUSED`, `timeout`, `proxy_refused`, …). */
   readonly errorCode?: string;
 }
 
-/** The class of a response (Python `NodeContentClient._post`). */
+/**
+ * The class of a response (Python `NodeContentClient._post`). Any non-zero rejected
+ * count, negative included, turns a 2xx into a rejection, as Python's truth test does.
+ */
 export function classify(status: number, rejectedRecords = 0n): Outcome {
-  if (status >= 200 && status < 300 && rejectedRecords <= 0n) return "ok";
+  if (status >= 200 && status < 300 && rejectedRecords === 0n) return "ok";
   if (PERMANENT_STATUSES.has(status) || (status >= 200 && status < 300)) return "rejected";
   return "retry";
 }
@@ -116,19 +119,55 @@ export class Backoff {
   }
 }
 
-/** A route's target: its signal URL (or `url`, the content endpoint) and settings. */
+/**
+ * A route's target: its signal URL (or `url`, the content endpoint) and settings. The
+ * ingress headers are credentials: as on the route, `headers` is a non-enumerable
+ * property, readable by name but never shown by `util.inspect`, `JSON.stringify`,
+ * spread or structured clone (a caller moving a target across threads passes the
+ * headers explicitly).
+ */
 export function targetOf(route: OtlpRoute, url?: string): DeliveryTarget {
   const target = url ?? route.signalUrl;
-  if (target === undefined) throw new Error("no delivery endpoint is configured");
-  return {
+  if (target === undefined)
+    throw new Error(
+      "no delivery endpoint is configured: set FABRIC_OTLP_ENDPOINT (or " +
+        "OTEL_EXPORTER_OTLP_ENDPOINT) and FABRIC_WIRE_CONTENT_ENDPOINT",
+    );
+  const out = {
     url: target,
-    headers: { ...route.headers },
     certificate: route.certificate,
     clientCertificate: route.clientCertificate,
     clientKey: route.clientKey,
     timeoutMs: route.timeoutMs,
     compression: route.compression,
   };
+  Object.defineProperty(out, "headers", {
+    value: Object.freeze({ ...route.headers }),
+    enumerable: false,
+  });
+  return out as DeliveryTarget;
+}
+
+/**
+ * `FABRIC_WIRE_PROXY` as a URL: `http://` or `https://`, a host, no path, query or
+ * fragment (Python `delivery_proxy_from_env`). Throws fixed text naming the variable,
+ * never the value (it may carry the proxy credentials).
+ */
+function proxyUrl(value: string): URL {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new Error("FABRIC_WIRE_PROXY is not a valid URL");
+  }
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.hostname === "" ||
+    !["", "/"].includes(url.pathname) ||
+    /[?#]/.test(value)
+  )
+    throw new Error("FABRIC_WIRE_PROXY must be an http:// or https:// proxy host and port");
+  return url;
 }
 
 const ERROR_CODE = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
@@ -177,9 +216,9 @@ class TunnelAgent extends https.Agent {
   readonly #tls: TlsMaterial;
   readonly #timeoutMs: number;
 
-  constructor(proxy: string, material: TlsMaterial, timeoutMs: number) {
+  constructor(proxy: URL, material: TlsMaterial, timeoutMs: number) {
     super({ keepAlive: true, maxSockets: MAX_SOCKETS, scheduling: "fifo" });
-    this.#proxy = new URL(proxy);
+    this.#proxy = proxy;
     this.#tls = material;
     this.#timeoutMs = timeoutMs;
   }
@@ -297,10 +336,12 @@ export class DeliveryClient {
     };
     this.#tls = material;
     const secure = this.#url.protocol === "https:";
-    this.proxied = secure && options.proxy !== undefined && !isLoopbackEndpoint(target.url);
+    // Validated even when unused (a loopback endpoint), so a bad value is named at once.
+    const proxy = options.proxy === undefined ? undefined : proxyUrl(options.proxy);
+    this.proxied = secure && proxy !== undefined && !isLoopbackEndpoint(target.url);
     const agentOptions = { keepAlive: true, maxSockets: MAX_SOCKETS, scheduling: "fifo" as const };
     this.#agent = this.proxied
-      ? new TunnelAgent(options.proxy!, material, target.timeoutMs)
+      ? new TunnelAgent(proxy!, material, target.timeoutMs)
       : secure
         ? new https.Agent(agentOptions)
         : new http.Agent(agentOptions);
@@ -401,7 +442,7 @@ export class DeliveryClient {
               outcome,
               status,
               ...(hint === undefined ? {} : { retryAfterMs: hint }),
-              ...(rejected > 0n ? { rejectedRecords: rejected } : {}),
+              ...(rejected !== 0n ? { rejectedRecords: rejected } : {}),
             });
           });
         });
