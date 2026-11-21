@@ -54,12 +54,15 @@ def _node() -> str | None:
     node = os.environ.get("FABRIC_TEST_NODE") or shutil.which("node")
     if node is None:
         return None
-    version = subprocess.run(  # noqa: S603
-        [node, "-p", "process.versions.node"],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip()
+    try:
+        version = subprocess.run(  # noqa: S603
+            [node, "-p", "process.versions.node"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+    except OSError:
+        return None
     parts = [int(p) for p in version.split(".")[:2] if p.isdigit()]
     return (
         node
@@ -69,18 +72,34 @@ def _node() -> str | None:
 
 
 NODE = _node()
-pytestmark = [
-    pytest.mark.skipif(
-        NODE is None, reason="needs Node.js 24.4 or newer (FABRIC_TEST_NODE)"
+_MISSING = next(
+    (
+        reason
+        for missing, reason in (
+            (NODE is None, "needs Node.js 24.4 or newer (FABRIC_TEST_NODE)"),
+            (
+                not (SDK / "node_modules" / "esbuild").is_dir(),
+                "run 'npm ci' in sdk/typescript",
+            ),
+            (shutil.which("cc") is None, "needs a C compiler for the lock module"),
+        )
+        if missing
     ),
-    pytest.mark.skipif(
-        not (SDK / "node_modules" / "esbuild").is_dir(),
-        reason="run 'npm ci' in sdk/typescript",
-    ),
-    pytest.mark.skipif(
-        shutil.which("cc") is None, reason="needs a C compiler for the lock module"
-    ),
-]
+    None,
+)
+# The ts-wire-parity job sets FABRIC_REQUIRE_NODE_E2E=1: there a missing prerequisite
+# fails the run instead of skipping it (a skipped acceptance test proves nothing).
+_REQUIRED = os.environ.get("FABRIC_REQUIRE_NODE_E2E") == "1"
+pytestmark = pytest.mark.skipif(
+    _MISSING is not None and not _REQUIRED, reason=_MISSING or ""
+)
+
+
+@pytest.fixture(autouse=True)
+def _prerequisites() -> None:
+    if _MISSING is not None:
+        pytest.fail(f"FABRIC_REQUIRE_NODE_E2E=1 but this machine {_MISSING}")
+
 
 # The scripted provider's exact response bytes: a tool call (JSON), then a streamed answer.
 RESPONSE_JSON = json.dumps({

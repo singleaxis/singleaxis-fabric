@@ -15,6 +15,29 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **The first verified record of a Node.js agent (spec 055, unit 055-t13).**
+  Still not installable from the package; the source build proves it in CI. A
+  Node.js script that calls global `fetch` after an explicit `install()` now
+  gets a complete record: the Fabric worker protects each model call, writes
+  it to the encrypted spool and delivers it to the Fabric Node, and
+  `python -m fabric.reconstruct` reports the run complete and terminated and
+  replays the exact request and response bytes. Python and Node.js write the
+  same spool records for the same call. Delivery sends a file's spans only
+  after all its content was accepted, never sends an accepted body twice, and
+  retries a Node that is down with growing pauses (0.5 s up to 30 s, longer if
+  the Node asks with `Retry-After`). A content record the Node refuses for good
+  is counted, warned about once (by class, never content), not retried, and
+  reported by the reader as `not_captured(store_failed)`; it never blocks the
+  records after it. A record another process wrote (for example one that was
+  killed) is delivered by the next process with the same ids and bytes.
+  `flush()` and `close()` keep their time limits; an exiting process waits at
+  most the shutdown timeout unless `FABRIC_WIRE_DRAIN_ON_EXIT_S` is set, and a
+  process that leaves records nobody is draining writes the content-free
+  `.exit-backlog` note (`FW-033`). The passivity gate now runs the whole
+  recorder: a 60-second sustained load with a 40 MiB request, and a stalled
+  disk, Node, redaction service, admission lock and capture worker each leave
+  the application's throughput, responses, cancellations and output unchanged.
+  The privacy gate also scans every OTLP request a sink receives.
 - **Node.js capture groundwork: private delivery clients (spec 055, unit
   055-t12).** Still not installable from the package. Node.js capture now has
   the clients that send its record to the Fabric Node: an OTLP/HTTP protobuf
