@@ -15,6 +15,22 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: private delivery clients (spec 055, unit
+  055-t12).** Still not installable from the package. Node.js capture now has
+  the clients that send its record to the Fabric Node: an OTLP/HTTP protobuf
+  encoder with no dependency that produces the same bytes as the Python
+  sender for the same spans and content records (exact 64-bit integers), a
+  content client that sends several records per request and, when the Node
+  refuses a request as a whole, sends each record again on its own so only
+  the refused record is rejected, and a trace exporter. Delivery never
+  follows a redirect, never uses `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/
+  `NO_PROXY` or Node's `NODE_USE_ENV_PROXY`, always reaches a loopback Node
+  directly, requires verified HTTPS for a remote Node, and uses only
+  `FABRIC_WIRE_PROXY` as a `CONNECT` tunnel with the certificate checked end
+  to end. A `Retry-After` is honoured up to 30 seconds. No global
+  OpenTelemetry provider is installed or replaced. The privacy gate gains a
+  network step that proves no Fabric byte reaches a proxy, a redirect target
+  or any address that was not configured.
 - **Node.js capture groundwork: runs, segments and resume tokens (spec 055,
   unit 055-t11).** Still not installable from the package. A Node.js agent can
   group its model calls into runs: `run(options, fn)` runs `fn` in a run scope
