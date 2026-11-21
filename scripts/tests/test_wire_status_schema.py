@@ -226,10 +226,16 @@ def node_app(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def _ts_documents(
-    app: Path, tmp_path: Path, mode: str, env: dict[str, str], native: dict[str, Any] | None = None
+    app: Path,
+    tmp_path: Path,
+    mode: str,
+    env: dict[str, str],
+    native: dict[str, Any] | None = None,
 ) -> list[tuple[str, dict[str, Any]]]:
     environ = {
-        k: v for k, v in os.environ.items() if not k.startswith(("FABRIC_", "OTEL_", "NODE_"))
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith(("FABRIC_", "OTEL_", "NODE_"))
     }
     environ.update(env)
     if mode == "env":
@@ -258,7 +264,10 @@ def _check(document: dict[str, Any]) -> None:
 
 def _base(tmp_path: Path) -> dict[str, str]:
     spool = tmp_path / "spool"
-    return {"FABRIC_WIRE_SPOOL_DIR": str(spool), "FABRIC_OTLP_ENDPOINT": "http://127.0.0.1:9"}
+    return {
+        "FABRIC_WIRE_SPOOL_DIR": str(spool),
+        "FABRIC_OTLP_ENDPOINT": "http://127.0.0.1:9",
+    }
 
 
 def _garbage_prebuilds(tmp_path: Path, digest_matches: bool) -> dict[str, Any]:
@@ -318,7 +327,11 @@ def test_typescript_status_documents_validate_for_each_reason(
     """Spec 055 §4.7: envStatus() and install().status() from the packed package validate
     for each disabled reason of §4.4 and §4.7, and name the reason's catalogue id."""
     documents = _ts_documents(
-        node_app, tmp_path, mode, env(tmp_path), None if native is None else native(tmp_path)
+        node_app,
+        tmp_path,
+        mode,
+        env(tmp_path),
+        None if native is None else native(tmp_path),
     )
     assert documents, case
     for _label, document in documents:

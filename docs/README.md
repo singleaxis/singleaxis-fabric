@@ -28,6 +28,7 @@ in git.
 | [Explicit APIs](explicit-apis.md) | `decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters (Python and TypeScript) |
 | [Qualified-run mode](qualified-run-mode.md) | Opt-in receipt- and witness-backed verification |
 | [Host sensors](host-sensors.md) | auditd receiver and eBPF host emitter, local and production mode |
+| [Node.js wire capture](node-wire-capture.md) | Zero-code model-call capture for Node.js agents (built, not yet released), the status command |
 | [Limitations and roadmap](limitations-and-roadmap.md) | What is not captured, known defects, the roadmap |
 
 ## Reference

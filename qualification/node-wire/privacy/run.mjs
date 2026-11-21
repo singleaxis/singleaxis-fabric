@@ -2,7 +2,7 @@
 // Copyright 2026 AI5Labs Research OPC Private Limited
 // SPDX-License-Identifier: Apache-2.0
 //
-// The `ts-wire-privacy` gate of spec 055 §9.2 (unit 055-t8; extended by 055-t13, -t16,
+// The `ts-wire-privacy` gate of spec 055 §9.2 (unit 055-t8; extended by 055-t13, -t14, -t16,
 // -t20, -t21): canary scan, scanner self-test and (055-t12) the network step.
 //
 //   node qualification/node-wire/privacy/run.mjs --out report.json
@@ -29,6 +29,9 @@
 // recording socket on every address that was not configured. No Fabric byte or header
 // may reach a proxy, a redirect target or the provider.
 //
+// Artifact step (unit 055-t14, lib/artifact.mjs): with --artifact, the packed tarball's
+// contents, the status file and exit note a preloaded agent leaves, and a self-test.
+//
 // Scanner self-test: the retain_original scenario again with a test-only fault in the
 // harness's Fabric worker that leaks one canary into a span attribute and one into a
 // spool header; the scanner must report both, or the gate fails. Then (055-t13) a
@@ -42,9 +45,10 @@ import { chmodSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, w
 import http from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { canaryScan, checkTarball, selfTest as artifactSelfTest } from "./lib/artifact.mjs";
 import { REPO, build } from "./lib/build.mjs";
 import { networkStep } from "./lib/network.mjs";
 
@@ -54,6 +58,12 @@ const OUT = args.includes("--out") ? args[args.indexOf("--out") + 1] : undefined
 // --network-only: the network step and its self-test alone (CI runs it again on a Node
 // with the http/https startup proxy mode). --require-startup-proxy-mode: fail unless this
 // Node has that mode (24.5 and later), so the run cannot pass without exercising it.
+// --artifact TARBALL (unit 055-t14): the artifact step over the packed npm tarball (file
+// list, package.json scripts and dependencies, dist/ and prebuilds/ strings, symbols and
+// loaded modules) with its self-test, and the canary scan of the status file and exit
+// note a preloaded agent leaves. --artifact-only: that step alone.
+const ARTIFACT = args.includes("--artifact") ? args[args.indexOf("--artifact") + 1] : undefined;
+const ARTIFACT_ONLY = args.includes("--artifact-only");
 const NETWORK_ONLY = args.includes("--network-only");
 const REQUIRE_PROXY_MODE = args.includes("--require-startup-proxy-mode");
 const log = (line) => process.stderr.write(`${line}\n`);
@@ -66,6 +76,40 @@ const OTHER_CANARIES = [
     // planted only by the scanner self-test's fault
     "leak_attribute", "leak_header",
 ]; // prettier-ignore
+
+/** The artifact step over the packed tarball, with its self-test; `undefined` without one. */
+async function artifactStep() {
+    if (ARTIFACT === undefined) return undefined;
+    const tarball = isAbsolute(ARTIFACT) ? ARTIFACT : join(process.cwd(), ARTIFACT);
+    const contents = checkTarball(tarball);
+    log(`artifact: ${contents.violations.length === 0 ? "passed" : "FAILED"} (${contents.files} files, prebuilds ${contents.prebuilds.join(", ") || "none"}, ${contents.violations.length} violations)`);
+    const canaries = await canaryScan(tarball);
+    log(`artifact canary scan: ${canaries.passed ? "passed" : "FAILED"} (status file ${JSON.stringify(canaries.status_file)}, exit note ${canaries.exit_note_written ? "written" : "absent"}, ${canaries.violations.length} violations)`);
+    const self = await artifactSelfTest(tarball);
+    log(`artifact self-test: ${self.passed ? "reported every planted violation" : `missed ${self.missed.join(", ") || "the status-file leak"}`}`);
+    return { contents, canaries, self };
+}
+
+if (ARTIFACT_ONLY) {
+    const step = await artifactStep();
+    const gates = {
+        artifact: step !== undefined && step.contents.violations.length === 0 && step.canaries.passed,
+        artifact_self_test: step?.self.passed === true,
+    };
+    const report = {
+        schema: "fabric.node-wire-privacy-report/v1",
+        spec: "055 §9.2 ts-wire-privacy (artifact step)",
+        node: process.versions.node,
+        artifact_only: true,
+        gates,
+        artifact: step,
+        result: Object.values(gates).every(Boolean) ? "passed" : "failed",
+    };
+    if (OUT !== undefined) writeFileSync(OUT, `${JSON.stringify(report, null, 2)}\n`);
+    log(`gates: ${JSON.stringify(gates)}`);
+    log(`result: ${report.result}`);
+    process.exit(report.result === "passed" ? 0 : 1);
+}
 
 const bundle = build();
 const codec = loadCodec();
@@ -380,8 +424,9 @@ if (REQUIRE_PROXY_MODE && !proxyMode) {
     log(`--require-startup-proxy-mode: Node ${process.versions.node} has no http/https startup proxy mode; run this step on Node 24.5 or later`);
 }
 rmSync(bundle.dir, { recursive: true, force: true });
+const artifact = NETWORK_ONLY ? undefined : await artifactStep();
 
-const canaryScan = scenarios.every((row) => row.passed);
+const canaryScanPassed = scenarios.every((row) => row.passed);
 const report = {
     schema: "fabric.node-wire-privacy-report/v1",
     spec: "055 §9.2 ts-wire-privacy",
@@ -392,19 +437,29 @@ const report = {
         "the agent process's output (stdout and stderr)",
         "the OTLP requests a sink received when the SDK's sender delivered the spool (content logs and spans)",
         "network: every byte and connection reaching a hostile proxy, a redirect target, the provider or the configured proxy",
+        ...(artifact === undefined
+            ? []
+            : [
+                  "the packed npm tarball: file list, package.json scripts and dependencies, dist/ and prebuilds/ strings, loaded modules, exported symbols",
+                  "the status file and the spool's exit note a preloaded agent leaves",
+              ]),
     ],
     not_yet_scanned: {
         "the Node's persistent queue and the store (e2e with the real Node)": "055-t17",
         "registration files and the loss ledger under faults": "055-t16",
-        "the status file and the exit note": "055-t14",
+        ...(artifact === undefined ? { "the status file, the exit note and the packed tarball": "run with --artifact" } : {}),
     },
     gates: {
-        ...(NETWORK_ONLY ? {} : { canary_scan: canaryScan, scanner_self_test: selfTestDetected }),
+        ...(NETWORK_ONLY ? {} : { canary_scan: canaryScanPassed, scanner_self_test: selfTestDetected }),
+        ...(artifact === undefined
+            ? {}
+            : { artifact: artifact.contents.violations.length === 0 && artifact.canaries.passed, artifact_self_test: artifact.self.passed }),
         network: network.passed,
         network_self_test: networkSelfTest,
         ...(REQUIRE_PROXY_MODE ? { startup_proxy_mode: proxyMode } : {}),
     },
     ...(NETWORK_ONLY ? { network_only: true } : { scenarios, self_test: fault, self_test_sink: sinkFault }),
+    ...(artifact === undefined ? {} : { artifact }),
     network,
     network_self_test: networkFault,
     ...(globalAgentFault === undefined ? {} : { network_self_test_global_agent: globalAgentFault }),

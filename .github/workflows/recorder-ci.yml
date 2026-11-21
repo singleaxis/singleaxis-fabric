@@ -204,7 +204,9 @@ jobs:
           npm run build
           npm test
           npm run test:package
-          npm run package:qualified -- --smoke
+          # No prebuilds in this job: the tarball with all six and its tests are the
+          # ts-wire-package job's (spec 055 §9.4).
+          npm run package:qualified -- --smoke --allow-partial-prebuilds
       - name: Fresh install from the README with current OpenTelemetry releases
         # Runs the README's exact npm install lines (the SDK resolved to the
         # tarball built above) in an empty directory, runs its example
@@ -321,6 +323,68 @@ jobs:
         run: |
           FABRIC_TEST_NODE="$(command -v node)" python -m pytest scripts/tests/test_node_wire_capture_e2e.py -v
 
+  ts-wire-package:
+    # Spec 055 §9.4, §9.5 (unit 055-t14, milestone M2): the npm tarball a customer installs,
+    # with the six digest-checked prebuilds of the typescript-native job, tested as
+    # installed. test/package-artifact.node.mjs: the root import installs no hook; the
+    # --import and --require preloads in ES module and CommonJS apps; preload plus
+    # install() is one runtime; a missing prebuild and malformed configuration are
+    # statuses; autoload_off; no install script. scripts/tests/test_node_wire_zero_code_e2e.py:
+    # unmodified scripts using global fetch, the official openai client and the official
+    # @anthropic-ai/sdk client, started only with NODE_OPTIONS and environment variables,
+    # each produce a run python -m fabric.reconstruct verifies, and behave identically with
+    # the preload on and off. scripts/tests/test_wire_status_schema.py: the TypeScript
+    # status documents of every disabled reason validate. The tarball is uploaded for the
+    # privacy job's artifact step. Runs on the minimum qualified Node 24.
+    name: Wire package (Node 24.4.0)
+    needs: typescript-native
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.4.0"
+          cache: npm
+          cache-dependency-path: |
+            sdk/typescript/package-lock.json
+            qualification/node-wire/package-lock.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fabric-wire-prebuilds
+          path: sdk/typescript/prebuilds-build
+      - name: Build and pack the tarball with all six prebuilds
+        working-directory: sdk/typescript
+        run: |
+          npm ci
+          npm run build
+          npm run package:qualified -- --smoke --destination "${RUNNER_TEMP}/npm"
+          echo "FABRIC_TEST_NODE_TARBALL=$(ls "${RUNNER_TEMP}"/npm/singleaxis-fabric-*.tgz)" >> "${GITHUB_ENV}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fabric-npm-tarball
+          path: ${{ runner.temp }}/npm/singleaxis-fabric-*.tgz
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the Python SDK (the reader, the recording sink, the status schema)
+        run: |
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - name: The packed tarball as installed
+        working-directory: sdk/typescript
+        env:
+          FABRIC_REQUIRE_NODE_E2E: "1"
+        run: npm run test:package
+      - name: Zero-code capture from the tarball, behaviour identity and status documents
+        env:
+          FABRIC_REQUIRE_NODE_E2E: "1"
+        run: |
+          FABRIC_TEST_NODE="$(command -v node)" python -m pytest -v \
+            scripts/tests/test_node_wire_zero_code_e2e.py scripts/tests/test_wire_status_schema.py
+
   typescript-native:
     # Spec 055 §4.4, §9.2: the Node-API lock module, built and tested on the six targets
     # (Linux x64/arm64 on glibc and musl, macOS x64/arm64), with the loader's SHA-256
@@ -338,7 +402,12 @@ jobs:
     # its self-test. Runs on the minimum qualified Node 24 build. Later units add the
     # ledger and artifact steps. 055-t13: each scenario's spool is then delivered by the
     # SDK's sender to a recording sink and every OTLP request it received is scanned.
+    # 055-t14: the artifact step over the packed tarball of ts-wire-package (file list,
+    # package.json scripts and dependencies, dist/ and prebuilds/ strings, loaded modules,
+    # exported symbols, with its self-test) and the canary scan of the status file and the
+    # exit note a preloaded agent leaves.
     name: Wire privacy (Node 24.4.0)
+    needs: ts-wire-package
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -350,8 +419,14 @@ jobs:
       - name: Install locked dependencies
         working-directory: sdk/typescript
         run: npm ci
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fabric-npm-tarball
+          path: npm-tarball
       - name: Run the privacy gate
-        run: node qualification/node-wire/privacy/run.mjs --out privacy-24.4.0.json
+        run: >-
+          node qualification/node-wire/privacy/run.mjs --out privacy-24.4.0.json
+          --artifact "$(ls npm-tarball/singleaxis-fabric-*.tgz)"
       - name: Upload the privacy report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

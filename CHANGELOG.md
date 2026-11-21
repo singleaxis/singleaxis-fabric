@@ -15,6 +15,35 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Zero-code model-call capture for Node.js agents (spec 055, unit 055-t14).**
+  Built and tested from the packed npm package; not releasable yet. Start an
+  unmodified agent with `FABRIC_WIRE_AUTOLOAD=1` and
+  `NODE_OPTIONS=--import=@singleaxis/fabric/register` (or `--require` for a
+  CommonJS launcher) and the model calls it makes through global `fetch`, the
+  official `openai` client or the official `@anthropic-ai/sdk` client are
+  recorded, protected, spooled and delivered; `python -m fabric.reconstruct`
+  verifies the run and replays the exact bytes. The agent sees exactly what it
+  saw without the preload: the same results, stream events, errors, retries,
+  aborts and timeouts. Capture turns on only on the Node.js builds the package's
+  compatibility table lists as active; anywhere else nothing is installed and
+  the status says why. `@singleaxis/fabric/wire` offers `install()`, the run API
+  and `envStatus()`; the preload and `install()` share one runtime per process.
+  Importing the package root still installs nothing, and the package has no
+  install script.
+- **One command says why a Node.js agent records nothing:**
+  `node -p "require('@singleaxis/fabric/wire').envStatus()"` prints the
+  `fabric.wire-status/v1` status document with each warning's text and fix,
+  without installing anything. `capture.status()` returns the same document,
+  and `FABRIC_WIRE_STATUS_FILE` makes each process write it at start and exit
+  (mode 0600), for `fabric doctor`. New diagnostic `FW-034`: the spool directory
+  is not set or cannot be used. `FW-016` (a protected global tracer provider) is
+  now catalogued for Python only: Node.js capture always delivers through its
+  own client, so it cannot occur there.
+- **The npm tarball carries the native lock module** for Linux and macOS on x64
+  and arm64 (`prebuilds/`), each checked against the SHA-256 the loader embeds;
+  nothing is compiled on install. The release workflow refuses to publish a
+  tarball that exports the preload while qualification gate `TS-1U` or `TS-1D`
+  has not passed, so the next npm release waits for those gates (unit 055-t17).
 - **The first verified record of a Node.js agent (spec 055, unit 055-t13).**
   Still not installable from the package; the source build proves it in CI. A
   Node.js script that calls global `fetch` after an explicit `install()` now

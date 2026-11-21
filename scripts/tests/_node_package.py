@@ -65,7 +65,11 @@ def missing() -> str | None:
 
 
 def _run(args: list[str], cwd: Path) -> None:
-    env = {**os.environ, "npm_config_update_notifier": "false", "npm_config_fund": "false"}
+    env = {
+        **os.environ,
+        "npm_config_update_notifier": "false",
+        "npm_config_fund": "false",
+    }
     env.pop("NODE_OPTIONS", None)
     done = subprocess.run(  # noqa: S603
         args, cwd=cwd, env=env, capture_output=True, text=True, timeout=600, check=False

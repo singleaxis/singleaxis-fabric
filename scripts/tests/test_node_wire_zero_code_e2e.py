@@ -42,7 +42,9 @@ import _node_package  # noqa: E402
 from _wire_capture_common import Sink, capture_protection, write_tls  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
-SCHEMA = REPO / "contracts" / "diagnostics" / "v1" / "schema" / "wire-status-v1.schema.json"
+SCHEMA = (
+    REPO / "contracts" / "diagnostics" / "v1" / "schema" / "wire-status-v1.schema.json"
+)
 TENANT = "tenant-zero-code"
 ID_KEY = "zero-code-id-key-0123456789abcdef"
 SPOOL_KEY = bytes(range(32))
@@ -183,7 +185,9 @@ def sink(tmp_path: Path) -> Iterator[Sink]:
     destination.stop()
 
 
-def agent_env(root: Path, provider: Provider, sink: Sink, dialect: str) -> dict[str, str]:
+def agent_env(
+    root: Path, provider: Provider, sink: Sink, dialect: str
+) -> dict[str, str]:
     """Only environment variables: the preload, Fabric's settings and the client's own."""
     base = {
         k: v
@@ -240,7 +244,9 @@ def file_store(rows: list[dict[str, Any]], root: Path) -> None:
         store.put_bytes_object(descriptor, bytes.fromhex(row["body"]))
 
 
-def reconstruct(rows: list[dict[str, Any]], root: Path) -> tuple[int, dict[str, Any], str]:
+def reconstruct(
+    rows: list[dict[str, Any]], root: Path
+) -> tuple[int, dict[str, Any], str]:
     spans = root / "spans.jsonl"
     spans.write_text(
         "".join(json.dumps(r) + "\n" for r in rows if r.get("kind") == "span")
@@ -325,11 +331,13 @@ def test_an_unmodified_script_started_with_the_preload_produces_a_verified_run(
     for side, expected in (("request", provider.received), ("response", provider.sent)):
         objects = [e["objects"][side] for e in exchanges]
         assert all(o["verification"] == "verified" for o in objects), objects
-        assert [store.read(store.evidence_ref_for(o["object_id"])) for o in objects] == (
-            expected
-        )
+        assert [
+            store.read(store.evidence_ref_for(o["object_id"])) for o in objects
+        ] == (expected)
     # The tool loop stitches: the call the first response emitted is the one consumed.
-    assert exchanges[0]["tool_call_ids_emitted"] == exchanges[1]["tool_call_ids_consumed"]
+    assert (
+        exchanges[0]["tool_call_ids_emitted"] == exchanges[1]["tool_call_ids_consumed"]
+    )
     assert exchanges[0]["tool_call_ids_emitted"] != []
 
 
@@ -417,7 +425,9 @@ def _identity_run(
         env = agent_env(root, provider, sink, dialect)  # type: ignore[arg-type]
         env["BASE"] = f"http://127.0.0.1:{provider.port}"
         if not preload:
-            env = {k: v for k, v in env.items() if not k.startswith(("FABRIC_", "NODE_"))}
+            env = {
+                k: v for k, v in env.items() if not k.startswith(("FABRIC_", "NODE_"))
+            }
         node = _node_package.node_binary()
         assert node is not None
         done = subprocess.run(  # noqa: S603
@@ -449,7 +459,9 @@ def test_behaviour_is_identical_with_and_without_the_preload(
     assert (on[2], on[3]) == (off[2], off[3])
     # The scenarios really ran: an error, a retry, an abort and a timeout were observed.
     transcript = on[0]
-    if kind == "fetch":  # fetch resolves an HTTP error; the clients throw it (and retry)
+    if (
+        kind == "fetch"
+    ):  # fetch resolves an HTTP error; the clients throw it (and retry)
         assert transcript["error_400"]["ok"]["status"] == 400
         assert transcript["retried_500"]["ok"]["status"] == 500
     else:

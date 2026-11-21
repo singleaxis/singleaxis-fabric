@@ -426,3 +426,91 @@ test(
         assert.doesNotMatch(stderr, /not json/);
     },
 );
+
+test(
+    "packed: a late install() captures the calls made after it, never the ones before",
+    {
+        ...packaged,
+        skip: packaged.skip || (!CAPTURING_NODE && "needs Node.js 24.4 or newer"),
+    },
+    () => {
+        const source = `
+import { createServer } from "node:http";
+const server = createServer((req, res) => { req.resume(); req.on("end", () => res.end("{}")); });
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const url = \`http://127.0.0.1:\${server.address().port}/v1/chat/completions\`;
+await (await fetch(url, { method: "POST", body: "{}" })).text();
+const { install } = await import("@singleaxis/fabric/wire");
+const handle = install();
+await (await fetch(url, { method: "POST", body: "{}" })).text();
+server.close();
+console.log(JSON.stringify({ capturing: handle.capturing, matched: handle.status().status.matched }));
+`;
+        const { out } = runApp("late.mjs", source, endpointEnv());
+        assert.deepEqual(out, { capturing: true, matched: 1 });
+    },
+);
+
+test(
+    "packed: with the application's own OpenTelemetry tracing, both record unchanged",
+    {
+        ...packaged,
+        skip: packaged.skip || (!CAPTURING_NODE && "needs Node.js 24.4 or newer"),
+    },
+    () => {
+        const dir = app();
+        const env = {
+            ...process.env,
+            npm_config_update_notifier: "false",
+            npm_config_cache: join(dir, ".npm"),
+        };
+        delete env.NODE_OPTIONS;
+        const versions = JSON.parse(
+            readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+        ).devDependencies;
+        const added = spawnSync(
+            "npm",
+            [
+                "install",
+                "--no-save",
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
+                "--package-lock=false",
+                `@opentelemetry/sdk-trace-node@${versions["@opentelemetry/sdk-trace-node"]}`,
+                `@opentelemetry/context-async-hooks@${versions["@opentelemetry/context-async-hooks"]}`,
+                TARBALL,
+            ],
+            { cwd: dir, env, encoding: "utf8", timeout: 300_000 },
+        );
+        assert.equal(added.status, 0, added.stderr);
+        activateHere(join(dir, "node_modules", "@singleaxis", "fabric"));
+        const source = `
+import { createServer } from "node:http";
+import { trace } from "@opentelemetry/api";
+import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+const exporter = new InMemorySpanExporter();
+const provider = new NodeTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
+provider.register();
+void BasicTracerProvider;
+const { install } = await import("@singleaxis/fabric/wire");
+const server = createServer((req, res) => { req.resume(); req.on("end", () => res.end("{}")); });
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const url = \`http://127.0.0.1:\${server.address().port}/v1/chat/completions\`;
+await trace.getTracer("app").startActiveSpan("agent.turn", async (span) => {
+  await (await fetch(url, { method: "POST", body: "{}" })).text();
+  span.end();
+});
+server.close();
+await provider.forceFlush();
+console.log(JSON.stringify({ spans: exporter.getFinishedSpans().map((s) => s.name),
+  matched: install().status().status.matched }));
+`;
+        const { out, stderr } = runApp("otel.mjs", source, { ...PRELOAD, ...endpointEnv() });
+        // The application's exporter sees only its own span: Fabric's records never go
+        // through the host's tracer provider; the call is still captured once.
+        assert.deepEqual(out, { spans: ["agent.turn"], matched: 1 });
+        assert.equal(stderr, "");
+    },
+);
