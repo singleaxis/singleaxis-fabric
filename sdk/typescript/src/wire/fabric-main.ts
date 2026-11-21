@@ -24,6 +24,7 @@ import type { WireRuntime } from "./runtime.js";
 import { Sender } from "./sender.js";
 import { Spool } from "./spool.js";
 import type { SpoolDoc } from "./spool-codec.js";
+import { type StatusDocument, exitDocument, writeStatusFile } from "./status.js";
 import {
   CapturePipeline,
   STOP_RESULT,
@@ -60,6 +61,11 @@ export interface FabricMainSnapshot {
   readonly drainOnExitMs: number;
   /** `FABRIC_WIRE_DIAGNOSTICS`: the sender's class-only warnings reach stderr only on `stderr`. */
   readonly diagnostics?: "silent" | "stderr";
+  /**
+   * `FABRIC_WIRE_STATUS_FILE` and the install document the installing thread decided:
+   * this worker writes it when it starts and the exit document at the orderly stop.
+   */
+  readonly status?: { readonly path: string; readonly install: StatusDocument };
 }
 
 /** Distinct warnings one worker prints at most (each once). */
@@ -123,6 +129,7 @@ export function runFabricMain(): Promise<void> | undefined {
     return undefined;
   }
   const post = (message: unknown): void => parentPort?.postMessage(message);
+  const warn = warnings(snapshot.diagnostics, post);
   const native = loadNative(snapshot.native as Parameters<typeof loadNative>[0]);
   if (!native.ok) throw new Error(`the native lock module is unusable (${native.reason})`);
   const config = snapshot.pipeline;
@@ -158,12 +165,18 @@ export function runFabricMain(): Promise<void> | undefined {
     orphans: (): readonly Orphan[] =>
       scanOrphans({ addon: native.addon, spoolDir: spool.dir, runtime }),
     quarantined: (docs) => quarantinedLosses(pipeline, docs),
-    warn: warnings(snapshot.diagnostics, post),
+    warn,
     failures: () => {
       const stats = pipeline.stats();
       return stats.losses.recorded + (stats.manifests?.dropped ?? 0) + spool.failed;
     },
   });
+  const status = snapshot.status;
+  // The install document, once per process: a replacement worker after a crash does not
+  // write it again over a newer one.
+  if (status !== undefined && (workerData as { restarted?: unknown }).restarted !== true) {
+    writeStatusFile(status.path, { ...status.install, written_at: new Date().toISOString() }, warn);
+  }
   const base = pipelineHandlers(pipeline);
   const handlers: FabricWorkerHandlers = {
     ...base,
@@ -194,8 +207,12 @@ export function runFabricMain(): Promise<void> | undefined {
       uninstalled(pipeline, context);
       await base.stop!(context);
       const result = await stopDelivery(sender, spool, snapshot, context, pipeline.closed === true);
+      const stats = exitStats(pipeline, sender, result, context.stop?.counters);
+      if (status !== undefined) {
+        writeStatusFile(status.path, exitDocument(status.install, result.delivered, stats), warn);
+      }
       try {
-        post({ [STOP_RESULT]: result });
+        post({ [STOP_RESULT]: { ...result, stats } });
       } catch {
         // the installing thread reads no result: the registration stays unfinalized
       }
@@ -213,6 +230,41 @@ export function runFabricMain(): Promise<void> | undefined {
     },
   };
   return runFabricWorker(handlers);
+}
+
+/**
+ * The exit document's counters (content-free integers): the installing thread's (matched,
+ * not captured, unmatched model-shaped requests), the pipeline's admissions and losses by
+ * reason, and the sender's deliveries and rejections.
+ */
+function exitStats(
+  pipeline: CapturePipeline,
+  sender: Sender,
+  result: StopResult,
+  counters: Readonly<Record<string, number>> | undefined,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  const put = (name: string, value: unknown): void => {
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) out[name] = value;
+  };
+  try {
+    for (const [name, value] of Object.entries(counters ?? {})) put(name, value);
+    if (out.matched !== undefined) put("captured", out.matched - (out.not_captured ?? 0));
+    const stats = pipeline.stats();
+    for (const [name, value] of Object.entries(stats.outcomes)) put(name, value);
+    put("lost", stats.losses.recorded);
+    for (const [reason, value] of Object.entries(stats.losses.byReason))
+      put(`lost.${reason}`, value);
+    const sent = sender.stats();
+    put("delivered", sent.delivered);
+    put("content_rejected", sent.content_rejected);
+    put("traces_rejected", sent.traces_rejected);
+    put("quarantined", sent.quarantined);
+    put("backlog", result.backlog);
+  } catch {
+    // the counters gathered so far
+  }
+  return out;
 }
 
 async function stopDelivery(

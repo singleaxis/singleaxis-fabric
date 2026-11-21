@@ -123,6 +123,8 @@ export interface WorkerRequest {
   readonly exiting?: boolean;
   /** `stop`: the capture points whose hooks `close()` removed, and the cut it happened at. */
   readonly uninstalled?: Uninstalled;
+  /** `stop`: the installing thread's content-free counters, for the exit status document. */
+  readonly counters?: Readonly<Record<string, number>>;
 }
 
 /**
@@ -138,6 +140,8 @@ interface FabricWorkerData {
   readonly [FABRIC_WORKER_MARKER]: 1;
   readonly shared: RuntimeShared;
   readonly snapshot: unknown;
+  /** This worker replaces one that crashed. */
+  readonly restarted?: boolean;
 }
 
 function markerData(data: unknown): FabricWorkerData | undefined {
@@ -174,6 +178,7 @@ export class FabricWorker {
   private stopping: ((clean: boolean) => void) | undefined;
   private quickCrashes = 0;
   private requests = 0;
+  private started = false;
   /** Requests awaiting a reply: the worker holds the process open while any does. */
   private waiting = 0;
   private readonly replies = new Map<number, (result: unknown) => void>();
@@ -199,7 +204,11 @@ export class FabricWorker {
         [FABRIC_WORKER_MARKER]: 1,
         shared: this.runtime.shared,
         snapshot: this.options.snapshot,
+        // A replacement after a crash: once-per-process work (the install status document)
+        // is not repeated.
+        restarted: this.started,
       };
+      this.started = true;
       worker = new Worker(this.options.entry, {
         execArgv: [],
         argv: [],
@@ -310,7 +319,11 @@ export class FabricWorker {
    */
   async stop(
     timeoutMs: number,
-    options: { exiting?: boolean; uninstalled?: Uninstalled } = {},
+    options: {
+      exiting?: boolean;
+      uninstalled?: Uninstalled;
+      counters?: Readonly<Record<string, number>>;
+    } = {},
   ): Promise<boolean> {
     const worker = this.thread;
     if (worker === undefined) return true;
@@ -361,6 +374,8 @@ export interface FabricWorkerContext {
     readonly deadline: number;
     readonly exiting: boolean;
     readonly uninstalled?: Uninstalled | undefined;
+    /** The installing thread's counters (the exit status document), when it sent them. */
+    readonly counters?: Readonly<Record<string, number>> | undefined;
   };
 }
 
@@ -438,6 +453,10 @@ function listen(context: FabricWorkerContext, handlers: FabricWorkerHandlers): v
         uninstalled:
           off !== undefined && Array.isArray(off.points) && typeof off.cut === "bigint"
             ? off
+            : undefined,
+        counters:
+          request.counters !== null && typeof request.counters === "object"
+            ? request.counters
             : undefined,
       };
       return;

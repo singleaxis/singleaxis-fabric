@@ -23,9 +23,9 @@
  * document and the qualification-table gate of the packaged build.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { fileURLToPath } from "node:url";
+import { isMainThread } from "node:worker_threads";
 
 import { DeploymentPolicy } from "../deployment-policy.js";
 import { labelPseudonym } from "../identity.js";
@@ -44,7 +44,7 @@ import {
   initialStates,
   manifestTemplate,
 } from "./manifest.js";
-import { loadNative, type NativeLoadOptions } from "./native.js";
+import { loadNative, nativeTarget, type NativeLoadOptions } from "./native.js";
 import { encodeOpaqueId } from "./p1.js";
 import { decideGate } from "./protect.js";
 import { register, unsealedPriorEpochs, type Registration } from "./registration.js";
@@ -52,6 +52,19 @@ import { bindRunTable, captureScope, createRunTable } from "./run-api.js";
 import { STATE_CLOSING, WireRuntime, createRuntimeShared } from "./runtime.js";
 import { spoolKeyId } from "./spool-codec.js";
 import { secureDir } from "./spool.js";
+import {
+  type HookCounters,
+  type StatusDocument,
+  type StatusFacts,
+  Reason,
+  exitDocument,
+  installDocument,
+  maskedWithheld,
+  packagedQualification,
+  printable,
+  runtimeListed,
+  writeStatusFile,
+} from "./status.js";
 import type { WireSettings } from "./types.js";
 import { type UndiciHook, installUndiciHook } from "./undici.js";
 import {
@@ -102,9 +115,16 @@ export interface WireHandle {
   close(options?: { timeoutMs?: number }): Promise<boolean>;
   /** The orderly stop's report, once `close()` ran. */
   readonly stopResult: StopResult | undefined;
+  /**
+   * The content-free status document (`fabric.wire-status/v1`, spec 055 §4.7): the
+   * capture state, each capture point's state and reason, the runtime qualification, the
+   * catalogue ids of every warning and notice, and this thread's counters; after
+   * `close()`, the exit document. `node -p` prints each id's text and fix beside it.
+   */
+  status(): StatusDocument;
 }
 
-let installed: WireHandle | undefined;
+let installed: { handle: WireHandle; fingerprint: string } | undefined;
 
 function moduleFile(): string | undefined {
   // The wire core is one CommonJS file in the package (and in the source-build bundles):
@@ -118,7 +138,31 @@ function moduleFile(): string | undefined {
   }
 }
 
-function inert(reason: string): WireHandle {
+/** The diagnostics channel: fixed text naming the fix, only with `FABRIC_WIRE_DIAGNOSTICS=stderr`. */
+function stderrWarn(
+  settings: Pick<WireSettings, "diagnostics"> | undefined,
+): (text: string) => void {
+  return (text) => {
+    if (settings?.diagnostics !== "stderr") return;
+    try {
+      process.stderr.write(`${text}\n`);
+    } catch {
+      // diagnostics never reach the agent as an error
+    }
+  };
+}
+
+/**
+ * A handle that captures nothing and says why. Its install document is written to the
+ * status file here (no Fabric worker runs), once per process.
+ */
+function inert(
+  reason: string,
+  facts: Omit<StatusFacts, "capture" | "reason">,
+  statusFile?: string,
+): WireHandle {
+  const document = installDocument({ ...facts, capture: "disabled", reason });
+  if (statusFile !== undefined) writeStatusFile(statusFile, document, stderrWarn(facts.settings));
   return {
     capturing: false,
     reason,
@@ -127,7 +171,37 @@ function inert(reason: string): WireHandle {
     flush: () => Promise.resolve(false),
     close: () => Promise.resolve(false),
     stopResult: undefined,
+    status: () => printable({ ...document }),
   };
+}
+
+/** The runtime facts every document carries, before anything is loaded. */
+function runtimeFacts(table: QualificationTable, platform: string | null = nativeTarget()) {
+  const runtime = currentRuntime(platform);
+  return { runtime, listed: runtimeListed(table, runtime) };
+}
+
+/**
+ * What makes two installs compatible: the settings that decide what is captured and
+ * where it goes (never a secret's value, only whether one is set).
+ */
+function fingerprint(settings: WireSettings): string {
+  return JSON.stringify([
+    settings.spoolDir,
+    settings.undici,
+    settings.nodeHttp,
+    [...settings.extraEndpoints, ...settings.endpoints].map((m) => m.endpointId),
+    settings.store?.kind,
+    settings.contentEndpoint,
+    settings.otlp.endpoint,
+    settings.capturePolicyPath,
+    settings.labels,
+    settings.identityMode,
+    settings.tenantId,
+    settings.sourceId,
+    settings.secrets.idKey !== undefined,
+    settings.secrets.spoolKey !== undefined,
+  ]);
 }
 
 /** The emitted source id (Python `_source_id`, J1). */
@@ -148,44 +222,71 @@ function emittedSourceId(
 }
 
 function packagedTable(): QualificationTable {
-  for (const candidate of ["../wire-qualification.json", "../../wire-qualification.json"]) {
-    try {
-      const base = moduleFile();
-      if (base === undefined) break;
-      const url = new URL(candidate, `file://${base}`);
-      return JSON.parse(readFileSync(url, "utf8")) as QualificationTable;
-    } catch {
-      // try the next location
-    }
-  }
-  return { tuples: [] };
+  const base = moduleFile();
+  return base === undefined
+    ? { tuples: [] }
+    : packagedQualification(fileURLToPath(new URL(".", `file://${base}`)));
+}
+
+/** Whether `options` asks for anything beyond the defaults the environment decides. */
+function onlyDefaults(options: InstallOptions): boolean {
+  return Object.keys(options).every((key) => key === "drainOnExit");
 }
 
 /**
- * Installs wire capture in this process (one runtime per process: a second call returns
- * the first handle). Throws only for malformed configuration.
+ * Installs wire capture in this process: one runtime per process. A second call with no
+ * options, or with options that resolve to the same capture, returns the first handle (the
+ * preload and an explicit `install()` share it); options that would capture differently
+ * throw fixed text (close the installed handle first), never a second capture.
+ * Throws only for malformed or conflicting configuration.
  */
 export function install(options: InstallOptions = {}): WireHandle {
-  if (isFabricWorkerThread()) return inert("fabric_worker");
-  if (installed !== undefined) return installed;
+  const table = options.qualification ?? packagedTable();
+  if (isFabricWorkerThread()) return inert(Reason.fabricWorker, runtimeFacts(table));
+  if (!isMainThread) {
+    // An application worker thread: attaching to the process runtime is spec 055 §4.5's
+    // isolate attach (unit 055-t19). Until then it records nothing and says so (FW-030).
+    return inert(Reason.workerThread, runtimeFacts(table));
+  }
   const env = options.env ?? process.env;
+  if (installed !== undefined) {
+    if (onlyDefaults(options)) return installed.handle;
+    const again = fingerprint(resolveConfig(options, env));
+    if (again === installed.fingerprint) return installed.handle;
+    throw new WireConfigError(
+      "wire capture is already installed in this process with a different configuration: " +
+        "close() the installed handle before installing again",
+    );
+  }
   const settings = resolveConfig(options, env);
-  if (settings.spoolDir === undefined) return inert("no_spool");
+  const handle = installChecked(options, env, settings, table);
+  installed = { handle, fingerprint: fingerprint(settings) };
+  return handle;
+}
+
+function installChecked(
+  options: InstallOptions,
+  env: Readonly<Record<string, string | undefined>>,
+  settings: WireSettings,
+  table: QualificationTable,
+): WireHandle {
+  const file = settings.statusFile;
+  const base = { settings, ...runtimeFacts(table) };
+  if (settings.otelSdkDisabled) return inert(Reason.otelSdkDisabled, base, file);
+  if (settings.spoolDir === undefined) return inert(Reason.noSpool, base, file);
   const entry = options.workerEntry ?? moduleFile();
-  if (entry === undefined) return inert("no_worker_entry");
+  if (entry === undefined) return inert(Reason.internalError, base, file);
   try {
     secureDir(settings.spoolDir);
   } catch {
-    return inert("spool_unusable");
+    return inert(Reason.spoolUnusable, base, file);
   }
   // Spec 055 §4.2 (R9): only malformed configuration throws. Any other failure past this
   // point undoes what was set up (hook, run table, worker, registration) and returns a
   // handle that captures nothing and names the reason; it never reaches the application.
   const undo: (() => void)[] = [];
   try {
-    const handle = installWith(options, env, settings, settings.spoolDir, entry, undo);
-    installed = handle;
-    return handle;
+    return installWith(options, env, settings, settings.spoolDir, entry, table, undo);
   } catch (error) {
     for (const step of undo.reverse()) {
       try {
@@ -195,7 +296,7 @@ export function install(options: InstallOptions = {}): WireHandle {
       }
     }
     if (error instanceof WireConfigError) throw error;
-    return inert("internal_error");
+    return inert(Reason.internalError, base, file);
   }
 }
 
@@ -205,10 +306,42 @@ function installWith(
   settings: WireSettings,
   spoolDir: string,
   entry: string | URL,
+  table: QualificationTable,
   undo: (() => void)[],
 ): WireHandle {
+  const file = settings.statusFile;
   const native = loadNative({ ...options.native, selfTestDir: spoolDir });
-  if (!native.ok) return inert(native.reason);
+  if (!native.ok) {
+    return inert(
+      native.reason,
+      { settings, ...runtimeFacts(table), nativeReasonId: native.reasonId },
+      file,
+    );
+  }
+  const build = currentRuntime(native.target);
+  const facts = { settings, runtime: build, listed: runtimeListed(table, build) };
+  const enabled = { [UNDICI_POINT]: settings.undici, [NODE_HTTP_POINT]: settings.nodeHttp };
+  const planned = initialStates({
+    runtime: build,
+    table,
+    nativeOk: true,
+    enabled,
+    installed: { [UNDICI_POINT]: settings.undici },
+    endpoints: settings.extraEndpoints.length + settings.endpoints.length,
+  });
+  const wireStates = {
+    [UNDICI_POINT]: planned[UNDICI_POINT]!,
+    [NODE_HTTP_POINT]: planned[NODE_HTTP_POINT]!,
+  };
+  // Spec 055 §9.4: a capture point is active only for a tuple of the qualification table.
+  // With no point that can be active, nothing is installed: no hook, no worker, no epoch.
+  if (wireStates[UNDICI_POINT][0] !== "active") {
+    return inert(
+      wireStates[UNDICI_POINT][1] ?? Reason.noActivePoint,
+      { ...facts, states: wireStates },
+      file,
+    );
+  }
 
   const endpoints = [...settings.extraEndpoints, ...settings.endpoints];
   const provisional = pipelineConfig(settings, { sourceId: "s-0", endpoints, env });
@@ -253,15 +386,7 @@ function installWith(
     registration.final();
     registration.close();
   });
-  const build = currentRuntime(native.target);
-  const states = initialStates({
-    runtime: build,
-    table: options.qualification ?? packagedTable(),
-    nativeOk: true,
-    enabled: { [UNDICI_POINT]: settings.undici, [NODE_HTTP_POINT]: settings.nodeHttp },
-    installed: { [UNDICI_POINT]: settings.undici },
-    endpoints: endpoints.length,
-  });
+  const states = planned;
   const template = manifestTemplate(settings, {
     sourceId,
     gate,
@@ -293,6 +418,15 @@ function installWith(
   } catch {
     // the worker publishes it at its first tick instead
   }
+  // The install document: the Fabric worker writes it to the status file when it starts.
+  const statusFacts: StatusFacts = {
+    ...facts,
+    capture: "installed",
+    gate,
+    states: wireStates,
+    maskedWithheld: maskedWithheld(gate, settings, options.transformations),
+  };
+  const installed_ = installDocument(statusFacts);
   const contentRoute = settings.otlpLogs ?? settings.otlp;
   const snapshot: FabricMainSnapshot = {
     pipeline: {
@@ -316,6 +450,7 @@ function installWith(
     shutdownTimeoutMs: settings.shutdownTimeoutMs,
     drainOnExitMs: settings.drainOnExitMs,
     diagnostics: settings.diagnostics,
+    ...(file === undefined ? {} : { status: { path: file, install: installed_ } }),
   };
   const worker = new FabricWorker(runtime, {
     entry,
@@ -328,24 +463,29 @@ function installWith(
   });
   worker.start();
   undo.push(() => void worker.stop(0));
-  const table = new ExchangeTable(runtime);
+  const exchanges = new ExchangeTable(runtime);
   const runs = createRunTable(runtime, settings, {
     sourceId,
     production: gate.profile === "production",
   });
   bindRunTable(runs);
   undo.push(() => bindRunTable(undefined));
-  let hook: UndiciHook | undefined;
-  if (settings.undici) {
-    hook = installUndiciHook({
-      table,
-      endpoints,
-      scope: captureScope,
-      providerRequestId: settings.providerRequestId,
-    });
-    const subscribed = hook;
-    undo.push(() => subscribed.uninstall());
-  }
+  // The undici point is active (checked above): its hook is subscribed. A hook that
+  // subscribes nothing is a failed install, undone like any other failure.
+  const hook: UndiciHook = installUndiciHook({
+    table: exchanges,
+    endpoints,
+    scope: captureScope,
+    providerRequestId: settings.providerRequestId,
+  });
+  undo.push(() => hook.uninstall());
+  if (!hook.installed) throw new Error("the undici hook subscribed nothing");
+  const counters = (): HookCounters => ({
+    matched: hook.stats.matched,
+    not_captured: hook.stats.notCaptured,
+    unmatched_model_shaped: hook.stats.unmatchedModelShaped,
+  });
+  let exitStatus: StatusDocument | undefined;
 
   let closing: Promise<boolean> | undefined;
   let stopResult: StopResult | undefined;
@@ -356,20 +496,32 @@ function installWith(
       try {
         // The hook goes first; the cut is the position after which nothing it captured
         // can be allocated (050 §3.8: a chained `disabled(shutdown)` manifest).
-        const removed = hook;
-        const cut = removed === undefined ? undefined : runtime.cut(() => removed.uninstall());
+        const cut = runtime.cut(() => hook.uninstall());
         if (cut !== undefined) off = { points: [UNDICI_POINT], cut };
         runtime.setState(STATE_CLOSING);
-        table.shutdown();
+        exchanges.shutdown();
         runs.onFinal();
       } catch {
         // capture is stopping either way; the record says what was lost
       }
+      const final = counters();
       const clean = await worker.stop(timeoutMs, {
         exiting,
+        counters: { ...final },
         ...(off === undefined ? {} : { uninstalled: off }),
       });
-      stopResult = worker.stopResult as StopResult | undefined;
+      const reported = worker.stopResult as (StopResult & { stats?: unknown }) | undefined;
+      if (reported !== undefined) {
+        const { stats, ...result } = reported;
+        stopResult = result;
+        const known = stats !== null && typeof stats === "object" ? stats : {};
+        exitStatus = exitDocument(installed_, result.delivered, {
+          ...final,
+          ...(known as Record<string, number>),
+        });
+      } else {
+        exitStatus = exitDocument(installed_, false, { ...final });
+      }
       const closed = clean && stopResult?.closed === true;
       try {
         if (closed) registration.final();
@@ -411,6 +563,10 @@ function installWith(
       close(closeOptions.timeoutMs ?? settings.shutdownTimeoutMs, false),
     get stopResult() {
       return stopResult;
+    },
+    status() {
+      if (exitStatus !== undefined) return printable({ ...exitStatus });
+      return printable(installDocument({ ...statusFacts, counters: counters() }));
     },
   };
   return handle;

@@ -16,6 +16,7 @@ import { WireConfigError } from "../../../src/wire/config.js";
 import { install, resetInstalledForTests } from "../../../src/wire/install.js";
 
 import { cleanupDirs, native, spoolDir } from "../spool/helpers.js";
+import { activeHere } from "../status/helpers.js";
 
 const fault = vi.hoisted(() => ({ on: false }));
 
@@ -44,28 +45,53 @@ function env(dir: string): Record<string, string> {
   };
 }
 
+// Spec 055 §9.4 (055-t14): below Node 24 no capture point can be active, so install()
+// sets nothing up at all (no hook, worker or epoch) and the fault below is never reached.
+const NODE_24 = Number(process.versions.node.split(".")[0]) >= 24;
+
 describe("install()", { timeout: 60_000 }, () => {
-  it("a failure that is not configuration returns an inert handle and undoes the setup", async () => {
+  it.skipIf(NODE_24)("below Node 24 it sets nothing up and names the reason", async () => {
     const dir = spoolDir();
     const n = native();
     const listeners = process.listenerCount("beforeExit");
-    let handle: ReturnType<typeof install> | undefined;
-    fault.on = true;
-    expect(() => {
-      handle = install({
-        env: env(dir),
-        native: { prebuildsDir: n.build.dir, digests: { [n.build.target]: n.digest } },
-      });
-    }).not.toThrow();
-    expect(handle!.capturing).toBe(false);
-    expect(handle!.reason).toBe("internal_error");
-    expect(await handle!.flush()).toBe(false);
-    expect(await handle!.close()).toBe(false);
+    const handle = install({
+      env: env(dir),
+      native: { prebuildsDir: n.build.dir, digests: { [n.build.target]: n.digest } },
+      qualification: activeHere(n.build.target),
+    });
+    expect(handle.capturing).toBe(false);
+    expect(handle.reason).toBe("unsupported_version");
+    expect(handle.status().warning_ids).toContain("FW-026");
     expect(process.listenerCount("beforeExit")).toBe(listeners);
-    // The epoch registered before the failure was finalized and removed.
     const epochs = join(dir, ".epochs");
     expect(existsSync(epochs) ? readdirSync(epochs) : []).toEqual([]);
   });
+
+  it.runIf(NODE_24)(
+    "a failure that is not configuration returns an inert handle and undoes the setup",
+    async () => {
+      const dir = spoolDir();
+      const n = native();
+      const listeners = process.listenerCount("beforeExit");
+      let handle: ReturnType<typeof install> | undefined;
+      fault.on = true;
+      expect(() => {
+        handle = install({
+          env: env(dir),
+          native: { prebuildsDir: n.build.dir, digests: { [n.build.target]: n.digest } },
+          qualification: activeHere(n.build.target),
+        });
+      }).not.toThrow();
+      expect(handle!.capturing).toBe(false);
+      expect(handle!.reason).toBe("internal_error");
+      expect(await handle!.flush()).toBe(false);
+      expect(await handle!.close()).toBe(false);
+      expect(process.listenerCount("beforeExit")).toBe(listeners);
+      // The epoch registered before the failure was finalized and removed.
+      const epochs = join(dir, ".epochs");
+      expect(existsSync(epochs) ? readdirSync(epochs) : []).toEqual([]);
+    },
+  );
 
   it("malformed configuration still throws its fixed text", () => {
     const dir = spoolDir();

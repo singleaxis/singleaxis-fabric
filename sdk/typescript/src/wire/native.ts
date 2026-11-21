@@ -20,7 +20,7 @@
  * thread, the Fabric worker and each attaching isolate.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -308,9 +308,11 @@ export function nativeTarget(
 }
 
 function defaultPrebuildsDir(): string {
-  // dist/index.{js,cjs} sit one level below the package root, beside prebuilds/.
+  // The wire core is dist/wire/core.cjs, two levels below the package root, which holds
+  // prebuilds/ (spec 055 §9.4); a bundle one level below the root finds it beside itself.
   const here = typeof __dirname === "string" ? __dirname : dirname(fileURLToPath(import.meta.url));
-  return join(here, "..", "prebuilds");
+  const packaged = join(here, "..", "..", "prebuilds");
+  return existsSync(packaged) ? packaged : join(here, "..", "prebuilds");
 }
 
 function hasExactExports(value: unknown): value is NativeAddon {
