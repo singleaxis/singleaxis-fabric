@@ -256,9 +256,7 @@ export class LossLedger {
 
   #lock(index: number | undefined, op: 1 | 2): number {
     const [start, length] =
-      index === undefined
-        ? [0, HEADER_BYTES]
-        : [HEADER_BYTES + index * SLOT_BYTES, SLOT_BYTES];
+      index === undefined ? [0, HEADER_BYTES] : [HEADER_BYTES + index * SLOT_BYTES, SLOT_BYTES];
     return this.#addon.recordLock(this.#handle, BigInt(start), BigInt(length), op);
   }
 
@@ -569,7 +567,7 @@ function createLedger(directory: string, addon: NativeAddon, pid: number): void 
       }
       check("allocate", addon.allocate(handle, BigInt(LEDGER_SIZE)));
       const data = Buffer.concat([ledgerHeader(), Buffer.alloc(LEDGER_SIZE - HEADER_BYTES)]);
-      for (let offset = 0; offset < data.length; ) {
+      for (let offset = 0; offset < data.length;) {
         const piece = data.subarray(offset, Math.min(data.length, offset + IO_CHUNK));
         const wrote = check("pwrite", addon.pwrite(handle, piece, BigInt(offset)));
         if (wrote === 0) throw new LedgerError("pwrite", NativeCode.IO);
@@ -583,7 +581,11 @@ function createLedger(directory: string, addon: NativeAddon, pid: number): void 
       linkSync(tmp, path);
     } catch (error) {
       if ((error as { code?: unknown }).code !== "EEXIST") {
-        throw new Error("the spool loss ledger could not be linked into place");
+        throw new Error(
+          "the spool loss ledger could not be linked into place; fix: check that " +
+            "FABRIC_WIRE_SPOOL_DIR is on a local volume that supports hard links",
+          { cause: error },
+        );
       }
     }
     removeQuietly(tmp);

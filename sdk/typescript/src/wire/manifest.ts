@@ -1041,7 +1041,7 @@ export class MarkerQueue {
   pump(spool: Pick<Spool, "writeBatch">, until?: (marker: MarkerEntry) => boolean): number {
     let take = 0;
     while (take < this.held.length && until?.(this.held[take]!) !== true) take++;
-    let written = 0;
+    let written: number;
     try {
       written = writePrefix(spool, this.held.slice(0, take));
     } catch {

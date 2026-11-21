@@ -341,7 +341,9 @@ export function nodeSpoolIo(addon: NativeAddon): SpoolIo {
       }
     },
     syncAncestor: (path) => {
-      const fd = scrub("open", () => openSync(path, constants.O_RDONLY | (constants.O_DIRECTORY ?? 0)));
+      const fd = scrub("open", () =>
+        openSync(path, constants.O_RDONLY | (constants.O_DIRECTORY ?? 0)),
+      );
       try {
         scrub("fsync", () => fsyncSync(fd));
       } finally {
@@ -1011,7 +1013,10 @@ export class Spool {
     const kept = records.flatMap((record, index) => (results[index] === null ? [index] : []));
     if (group && kept.length > 0) {
       // One batch file (D4): every kept record's outcome is the file's.
-      const [outcome] = this.#write([this.#prepareGroup(kept.map((index) => records[index]!))], reserve);
+      const [outcome] = this.#write(
+        [this.#prepareGroup(kept.map((index) => records[index]!))],
+        reserve,
+      );
       for (const index of kept) results[index] = outcome ?? null;
       return results;
     }
@@ -1356,9 +1361,7 @@ export class Spool {
           }
         } else {
           try {
-            this.#admission(() =>
-              this.#io.rename(this.#path(name), this.#path(name + ACK_SUFFIX)),
-            );
+            this.#admission(() => this.#io.rename(this.#path(name), this.#path(name + ACK_SUFFIX)));
           } catch (failure) {
             if (errnoOf(failure) !== "ENOENT") throw failure; // renamed by an earlier try
           }
@@ -1482,7 +1485,12 @@ export class Spool {
         this.#io.syncAncestor(parent);
       } catch (error) {
         const code = errnoOf(error);
-        if (!marked || typeof code !== "string" || !REFUSED.has(code) || this.#createdIn.has(parent)) {
+        if (
+          !marked ||
+          typeof code !== "string" ||
+          !REFUSED.has(code) ||
+          this.#createdIn.has(parent)
+        ) {
           throw error;
         }
         // A completed walk is on record: this ancestor and those above it were made
@@ -1695,7 +1703,10 @@ export class Spool {
  * after an unwritten record is written in this pump, so a later marker (a `final` above
  * all) never overtakes an earlier one. Returns how many are spooled. Never throws.
  */
-export function writePrefix(spool: Pick<Spool, "writeBatch">, records: readonly SpoolEntry[]): number {
+export function writePrefix(
+  spool: Pick<Spool, "writeBatch">,
+  records: readonly SpoolEntry[],
+): number {
   let done = 0;
   for (let start = 0; start < records.length; start += WRITE_BATCH) {
     const chunk = records.slice(start, start + WRITE_BATCH);

@@ -324,7 +324,7 @@ export class Sender {
     if (ledger === undefined || !this.spool.holder) return 0;
     let recovered = 0;
     for (const { index, records } of ledger.orphans()) {
-      let delivered = false;
+      let delivered: boolean;
       let spans: OtlpSpan[] = [];
       try {
         spans = records
@@ -887,8 +887,9 @@ export class Sender {
     try {
       const durable = this.ensureDurable();
       settled =
-        (options.exiting === true && !this.spool.holder ? true : await this.#settle(deadline, true)) &&
-        durable;
+        (options.exiting === true && !this.spool.holder
+          ? true
+          : await this.#settle(deadline, true)) && durable;
     } catch {
       settled = false;
     }

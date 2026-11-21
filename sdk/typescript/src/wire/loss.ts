@@ -285,9 +285,12 @@ export class LossTable {
    */
   pump(spool: Pick<Spool, "writeBatch">): boolean {
     const ranges = this.take();
-    let index = 0;
+    let index: number;
     try {
-      index = writePrefix(spool, ranges.map((range) => lossDoc(range)));
+      index = writePrefix(
+        spool,
+        ranges.map((range) => lossDoc(range)),
+      );
     } catch {
       index = 0;
     }
