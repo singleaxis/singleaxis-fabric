@@ -1,0 +1,24 @@
+{
+  "capture": "closed",
+  "delivered": true,
+  "notice_ids": [
+    "FW-005"
+  ],
+  "phase": "exit",
+  "pid": 4242,
+  "schema": "fabric.wire-status/v1",
+  "sdk_version": "0.12.1",
+  "unmatched_model_hosts": [
+    {
+      "count": 1,
+      "fix": "export FABRIC_WIRE_ENDPOINTS='[{\"endpoint_id\":\"models-example-com\",\"dialect\":\"openai\",\"hosts\":[\"models.example.com\"]}]'",
+      "host": "models.example.com",
+      "port": 443
+    }
+  ],
+  "warning_ids": [
+    "FW-002",
+    "FW-006"
+  ],
+  "written_at": "2026-11-12T19:32:35.954Z"
+}

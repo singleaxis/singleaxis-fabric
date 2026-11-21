@@ -190,3 +190,40 @@ SHA-256 digests of those test keys that the vectors expect. They are
 cross-language test vectors, never a deployment or service key. Only these exact
 commit/path/rule/line fingerprints are baselined; the squash merge of PR #305
 gets its own entry when it lands.
+
+## Spec 058 E2a chart render test source id (2026-11-15)
+
+The spec 058 E2a feature branch (PR #311) added
+`charts/fabric/tests/test-secrets-and-injector.sh`, which first rendered a
+production chart with `--set` of the render-only source id that
+`charts/fabric/tests/fixtures/production-assertions.yaml` already holds. The scan
+flags that line (rule `generic-api-key`) in the feature-branch commit `63f7326…`,
+line 120. A source id is the public `s-` pseudonym the Node binds a batch to, not
+a credential, and this one names no live resource. A later commit on the branch
+reads it from the fixture file instead, so the squash merge does not carry the
+line. Only this exact commit/path/rule/line fingerprint is baselined.
+
+## Spec 057 P3c SC-RA-3 live-mode test key (2026-11-17)
+
+The spec 057 P3c feature branch (PR #321) added
+`qualification/security-context/tests/test_sc_ra3_live_mode.py`, which tests the
+SC-RA-3 live mode against a loopback stand-in for the model endpoint. The scan
+flags one line (rule `generic-api-key`) in the feature-branch commit `465acac…`,
+line 62: the literal `sc-ra3-wrong-key`, the deliberately wrong value the test
+gives so the stand-in answers 401. The stand-in runs only on loopback inside the
+test; the value is never a deployment, model or service key. A later commit on
+the branch derives it from the test's own stand-in value instead, so the squash
+merge does not carry the line. Only this exact commit/path/rule/line fingerprint
+is baselined.
+
+## Spec 055 T15 split-test privacy canary (2026-11-21)
+
+The spec 055 T15 feature branch (PR #336) added
+`sdk/typescript/test/wire/parts/helpers.ts`, whose split and review-copy tests
+plant a privacy canary in request text and assert it never reaches a protected
+object. The scan flags one line (rule `generic-api-key`) in the feature-branch
+commit `370a9bd…`, line 24: the constant named `SECRET` holding the literal
+`canary-ssn-078-05-1120`, the same made-up canary the Python PROTECT tests use.
+It is never a deployment, model or service key. A later commit on the branch
+renames the constant (`CANARY`), so the squash merge does not carry the line.
+Only this exact commit/path/rule/line fingerprint is baselined.
