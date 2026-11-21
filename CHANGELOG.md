@@ -15,6 +15,27 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Large multimodal requests from Node.js agents keep their text (spec 055,
+  unit 055-t15).** A JSON request over `FABRIC_WIRE_MAX_BODY_BYTES` (32 MiB by
+  default) that carries inline images, audio or files as base64 is no longer cut
+  short: the Fabric worker stores the request without those parts (the
+  skeleton) and each part as its own `model.exchange.part` object, under the
+  part role's own privacy mode. Under `retain_original` the skeleton and parts
+  reassemble to the exact request bytes and its digest; the Python reader
+  reassembles a Node.js record the same way. The scan reads the original bytes
+  (it never re-serializes the JSON) and finds what Python's does, offset for
+  offset, at most 64 parts per side. A part over the object limit is recorded
+  as a description only (`part_cap`); a request over
+  `FABRIC_WIRE_MAX_RETAIN_BYTES` (64 MiB) is still cut (`body_cap`). A policy
+  that does not name `model.exchange.part` stores no parts.
+- **`original_plus_masked` works for Node.js capture.** The original and a
+  masked review copy from your redaction service, linked by `derived_from`, for
+  a whole request or response and for each extracted part. If the review copy
+  cannot be made (no service or transformation, timeout, error, oversized
+  answer), both are withheld (`protection_failed`), with no digest or length of
+  the original. The `FW-032` warning now also names an `original_plus_masked`
+  role that has no redaction service or transformation, so it is not silently
+  withheld.
 - **Zero-code model-call capture for Node.js agents (spec 055, unit 055-t14).**
   Built and tested from the packed npm package; not releasable yet. Start an
   unmodified agent with `FABRIC_WIRE_AUTOLOAD=1` and
