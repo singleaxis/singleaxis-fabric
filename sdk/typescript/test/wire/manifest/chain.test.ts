@@ -409,11 +409,11 @@ describe("the marker queue", () => {
     const spool = {
       writeBatch(records: readonly { doc: Record<string, unknown> }[], reserve?: boolean) {
         expect(reserve).toBe(true);
-        expect(records.length).toBe(1);
-        const n = records[0]!.doc.n as number;
-        if (n === refuse) return [null];
-        written.push(n);
-        return [`rec-${n}`];
+        const ns = records.map((record) => record.doc.n as number);
+        // one batch file: written whole, or (holding the refused one) over the bound whole
+        if (ns.includes(refuse)) return ns.map(() => null);
+        written.push(...ns);
+        return ns.map((n) => `rec-${n}`);
       },
     };
     expect(queue.pump(spool as never)).toBe(2);

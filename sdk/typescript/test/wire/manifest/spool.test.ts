@@ -89,7 +89,7 @@ describe("manifest and final markers in a sealed spool", () => {
     digests.push(chain.ref!.digest);
     queue.queue(beats.final(epoch, 57n));
     expect(queue.pump(spool)).toBe(3);
-    expect(spool.mine.size).toBe(3);
+    expect(spool.mine.size).toBe(1); // one batch file (FWSPOOLB, D4), as Python `_write_docs`
 
     const python = runPython(PY_READ, [dir, String(1 << 20), KEY.toString("hex")]);
     expect(python.map((r: any) => [r.valid, r.kind, r.span])).toEqual([

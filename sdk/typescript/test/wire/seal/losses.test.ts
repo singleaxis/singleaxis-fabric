@@ -203,9 +203,12 @@ describe("spooled loss records", { timeout: 60_000 }, () => {
     const written: unknown[] = [];
     const spool = {
       writeBatch: (records: readonly { doc: Record<string, unknown> }[]) => {
-        if (budget-- <= 0) return [new Error("full")];
-        written.push(records[0]!.doc.loss);
-        return ["a.rec"];
+        // a batch file that does not fit is over the bound whole (written one by one next)
+        if (records.length > budget)
+          return records.map(() => (records.length > 1 ? null : new Error("full")));
+        budget -= records.length;
+        written.push(...records.map((record) => record.doc.loss));
+        return records.map(() => "a.rec");
       },
     };
     expect(table.pump(spool as never)).toBe(false);

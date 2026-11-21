@@ -216,20 +216,24 @@ describe("admission bound", () => {
 
   it("a shared loss ledger lives inside the reserve: disk stays within bound + 1 MiB", () => {
     const big = sized(200_000);
-    const fill = (dir: string): number => {
-      const spool = make(dir, { maxBytes: 1000 });
+    const fill = (dir: string, ledger = true): number => {
+      const spool = make(dir, { maxBytes: 1000, ledger });
       let written = 0;
       while (spool.write(big.doc, big.bodies, true) !== null) written += 1;
       expect(spool.diskTotal()).toBeLessThanOrEqual(spool.maxBytes + spool.reserveBytes);
       return written;
     };
     // Without a ledger the whole reserve is usable: five 200 KB records fit.
-    expect(fill(spoolDir())).toBe(5);
+    expect(fill(spoolDir(), false)).toBe(5);
     // A Python writer's preallocated ledger (260 KiB) takes its share of the reserve.
     const dir = spoolDir();
     mkdirSync(dir, 0o700);
     writeFileSync(join(dir, LEDGER), Buffer.alloc(LEDGER_BYTES), { mode: 0o600 });
-    expect(fill(dir)).toBe(3);
+    expect(fill(dir, false)).toBe(3);
+    // So does this writer's own ledger (055-t16), created when the spool opens.
+    const own = spoolDir();
+    expect(fill(own)).toBe(3);
+    expect(lstatSync(join(own, LEDGER)).size).toBe(LEDGER_BYTES);
     const spool = make(dir, { maxBytes: 1000 });
     expect(spool.ledgerSeen).toBe(true);
     expect(spool.reserveBytes).toBe(RESERVE_BYTES - LEDGER_BYTES);
@@ -238,7 +242,7 @@ describe("admission bound", () => {
 
   it("a ledger created after the writer opened is seen at the next admission", () => {
     const dir = spoolDir();
-    const spool = make(dir, { maxBytes: 1000 });
+    const spool = make(dir, { maxBytes: 1000, ledger: false });
     expect(spool.reserveBytes).toBe(RESERVE_BYTES);
     writeFileSync(join(dir, LEDGER), Buffer.alloc(LEDGER_BYTES), { mode: 0o600 });
     expect(spool.write(loss.doc, [], true)).not.toBeNull();
