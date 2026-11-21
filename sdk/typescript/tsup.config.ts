@@ -1,6 +1,6 @@
 // Copyright 2026 AI5Labs Research OPC Private Limited
 // SPDX-License-Identifier: Apache-2.0
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync } from "node:fs";
 
 import { defineConfig, type Options } from "tsup";
 
@@ -27,6 +27,11 @@ const wireCoreExternal = {
   },
 };
 
+// tsup builds the configurations below concurrently, so none of them may clean dist/: a
+// clean in one could delete what another already wrote (dist/wire/core.cjs). dist/ is
+// emptied once, here, before any of them starts.
+rmSync("dist", { recursive: true, force: true });
+
 export default defineConfig([
   {
     // The root package: inert, it never imports the wire core.
@@ -35,7 +40,7 @@ export default defineConfig([
     dts: true,
     sourcemap: true,
     esbuildOptions: noSources,
-    clean: true,
+    clean: false,
     target: "es2022",
   },
   {
