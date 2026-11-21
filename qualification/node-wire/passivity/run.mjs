@@ -461,6 +461,7 @@ function recorder() {
                 node_requests: samples[arm].map((x) => x.node_requests),
                 redaction_requests: samples[arm].map((x) => x.redaction_requests),
                 closed: samples[arm].map((x) => x.closed),
+                exit: samples[arm].map((x) => x.exit),
                 close_ms: samples[arm].map((x) => round(x.close_ms)),
                 passed: kept.ok && loop.within,
             };
@@ -470,9 +471,20 @@ function recorder() {
         const faultsActive =
             samples["stall-redaction"].every((x) => x.redaction_requests > 0) &&
             samples["stall-sender"].every((x) => x.closed === false) &&
-            // 055-t16: a full disk never closes in order (its losses and final are not spooled)
-            samples["disk-full"].every((x) => x.closed === false) &&
-            samples["stall-ledger"].every((x) => x.closed === false) &&
+            // 055-t16: a full disk never closes in order (its losses and final are not spooled),
+            // and the exit counters show the fault was real, not merely the barrier marker
+            // failing: disk_full losses held in the loss ledger's slots; with the header lock
+            // held elsewhere from the start, slot claims that failed at their deadline (the
+            // holder lets go before close(), so close's claim may then succeed).
+            samples["disk-full"].every(
+                (x) => x.closed === false && x.exit?.["lost.disk_full"] > 0 && x.exit?.ledger_slots > 0,
+            ) &&
+            samples["stall-ledger"].every(
+                (x) =>
+                    x.closed === false &&
+                    x.exit?.["lost.disk_full"] > 0 &&
+                    x.exit?.ledger_failures > 0,
+            ) &&
             samples.enabled.every((x) => x.closed === true && (x.node_requests["/v1/traces"] ?? 0) > 0);
         const sustainedLoop = loopDeltas(long.sustained, long["sustained-baseline"], scale);
         const delivered = long.sustained.every((x) => (x.node_requests["/v1/traces"] ?? 0) > 0);

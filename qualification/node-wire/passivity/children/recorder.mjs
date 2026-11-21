@@ -16,8 +16,9 @@
 //   saturated         the capture worker takes 200 ms per exchange (its queue fills)
 //   disk-full         creating a spool file fails with ENOSPC: every record and loss is
 //                     refused, losses go to the preallocated loss ledger (055-t16)
-//   stall-ledger      disk-full, and another process holds the ledger's header lock, so
-//                     every ledger slot claim waits for its deadline (055-t16)
+//   stall-ledger      disk-full, and another process holds the ledger's header lock from
+//                     before install(), so every ledger slot claim waits for its deadline
+//                     and fails (055-t16)
 //   sustained         the recorder for 60 s with a 40 MiB mutable request (the sustained
 //                     event-loop case); `sustained-baseline` is the same with no capture
 //
@@ -28,7 +29,7 @@
 
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -119,6 +120,10 @@ if (CAPTURE) {
             "disk-full": { diskFull: spool },
             "stall-ledger": { diskFull: spool },
         }[ARM] ?? {};
+    // stall-ledger: the header lock is held before the recorder starts, so every slot claim
+    // (the first manifest's included) waits out its deadline; taken after install(), the
+    // Fabric worker had already claimed its slot and the stall touched almost nothing.
+    if (ARM === "stall-ledger") releaseAdmission = await holdLedgerHeader(spool);
     const entry = join(tmp, "worker-entry.cjs");
     writeFileSync(
         entry,
@@ -156,7 +161,6 @@ if (CAPTURE) {
     if (ARM === "stall-admission") {
         releaseAdmission = recorder.holdAdmission(spool, config.prebuilds, config.digest);
     }
-    if (ARM === "stall-ledger") releaseAdmission = await holdLedgerHeader(join(spool, ".ledger"));
 }
 
 /**
@@ -165,8 +169,16 @@ if (CAPTURE) {
  * `fcntl.lockf` takes the same lock Python's spool takes; the Fabric worker's claims then
  * wait for their deadline and fail, counted.
  */
-async function holdLedgerHeader(path) {
-    for (let i = 0; i < 500 && !existsSync(path); i++) await new Promise((r) => setTimeout(r, 10));
+async function holdLedgerHeader(spool) {
+    // The ledger as Python's `_create` writes it (FWLEDGR1, 64 slots of 4 KiB, all zeros):
+    // the spool opens it as its own instead of creating one.
+    mkdirSync(spool, { mode: 0o700 });
+    const ledger = Buffer.alloc(4096 + 64 * 4096);
+    ledger.write("FWLEDGR1", 0, "latin1");
+    ledger.writeUInt32BE(64, 8);
+    ledger.writeUInt32BE(4096, 12);
+    const path = join(spool, ".ledger");
+    writeFileSync(path, ledger, { mode: 0o600 });
     const holder = spawn(
         "python3",
         [
@@ -266,6 +278,14 @@ releaseAdmission();
 const closeStarted = performance.now();
 const closed = handle === undefined ? null : await handle.close({ timeoutMs: 2000 });
 const closeMs = performance.now() - closeStarted;
+// 055-t16: the exit counters that prove a fault arm's fault was real (content-free integers).
+const exitStats = handle?.status?.()?.stats ?? {};
+const exit = Object.fromEntries(
+    ["lost.disk_full", "ledger_slots", "ledger_failures", "ledger_overflows", "spool_undurable"].map((name) => [
+        name,
+        exitStats[name] ?? null,
+    ]),
+);
 await provider.close();
 await node.close();
 await redaction?.close();
@@ -288,5 +308,6 @@ console.log(
         close_ms: closeMs,
         node_requests: Object.fromEntries(node.seen.paths),
         redaction_requests: redaction?.seen.requests,
+        exit,
     }),
 );
