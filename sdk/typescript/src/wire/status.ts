@@ -18,6 +18,7 @@ import {
   accessSync,
   closeSync,
   constants,
+  lstatSync,
   openSync,
   readFileSync,
   readdirSync,
@@ -543,8 +544,18 @@ export function envStatus(
     [NODE_HTTP_POINT]: states[NODE_HTTP_POINT]!,
   };
   const active = wire[UNDICI_POINT][0] === "active";
+  // The most specific reason first, as install() decides it: no spool, then the native
+  // module's own reason, then the capture point's.
   const reason =
-    settings.spoolDir === undefined ? Reason.noSpool : active ? undefined : wire[UNDICI_POINT][1];
+    settings.spoolDir === undefined
+      ? Reason.noSpool
+      : !spoolUsable(settings.spoolDir)
+        ? Reason.spoolUnusable
+        : !native.ok
+          ? native.reason
+          : active
+            ? undefined
+            : wire[UNDICI_POINT][1];
   return printable(
     installDocument({
       ...base,
@@ -555,6 +566,21 @@ export function envStatus(
       maskedWithheld: maskedWithheld(gate, settings),
     }),
   );
+}
+
+/**
+ * Read only, as `install()`'s `secureDir` decides it: a path that does not exist yet is
+ * usable (install creates it, mode 0700); one that exists must be a real directory (not a
+ * symlink) owned by this user.
+ */
+function spoolUsable(path: string): boolean {
+  try {
+    const info = lstatSync(path);
+    if (info.isSymbolicLink() || !info.isDirectory()) return false;
+    return process.getuid === undefined || info.uid === process.getuid();
+  } catch (error) {
+    return (error as { code?: unknown }).code === "ENOENT";
+  }
 }
 
 let packaged: QualificationTable | undefined;

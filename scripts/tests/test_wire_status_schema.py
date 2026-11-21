@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Spec 055 §4.7: the ``fabric.wire-status/v1`` document has a schema, and the documents
 the Python SDK really writes to ``FABRIC_WIRE_STATUS_FILE`` (install, failure, disabled
-and exit) validate against it. The TypeScript SDK's documents join from unit 055-t14.
+and exit) validate against it. From unit 055-t14 the TypeScript SDK's documents, produced by the packed package for each
+disabled reason and by a capturing install, validate too.
 
 Also pins the diagnostics family: every file under ``contracts/diagnostics/v1`` is listed
 in its manifest with its exact SHA-256, and every id a status document carries is
@@ -164,3 +165,192 @@ def test_diagnostics_family_is_pinned() -> None:
     assert set(pinned) == on_disk, sorted(set(pinned) ^ on_disk)
     for rel, digest in pinned.items():
         assert hashlib.sha256((FAMILY / rel).read_bytes()).hexdigest() == digest, rel
+
+
+# ----------------------------------------------------------- TypeScript (unit 055-t14)
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _node_package  # noqa: E402
+
+_NODE_MISSING = _node_package.missing()
+_NODE_REQUIRED = os.environ.get("FABRIC_REQUIRE_NODE_E2E") == "1"
+_node = pytest.mark.skipif(
+    _NODE_MISSING is not None and not _NODE_REQUIRED, reason=_NODE_MISSING or ""
+)
+
+# Each case: the documents one Node process produces from the packed package. `docs` is
+# an array of [label, document]; the case's expectations are (capture, reason, an id).
+_TS_PRODUCER = r"""
+const { writeFileSync, mkdirSync } = require("node:fs");
+const { join } = require("node:path");
+const { Worker } = require("node:worker_threads");
+const wire = require("@singleaxis/fabric/wire");
+const [mode, scratch] = process.argv.slice(2);
+const out = [];
+const env = JSON.parse(process.env.CASE_ENV || "{}");
+const native = JSON.parse(process.env.CASE_NATIVE || "{}");
+(async () => {
+  if (mode === "env") out.push(["envStatus", wire.envStatus(env, { native })]);
+  if (mode === "install") {
+    const handle = wire.install();
+    out.push(["status", handle.status()]);
+    if (handle.capturing) {
+      await handle.close({ timeoutMs: 3000 });
+      out.push(["closed", handle.status()]);
+    }
+  }
+  if (mode === "worker") {
+    const doc = await new Promise((resolve, reject) => {
+      const w = new Worker(
+        'const { parentPort } = require("node:worker_threads");' +
+          'parentPort.postMessage(JSON.stringify(require("@singleaxis/fabric/wire").install().status()));',
+        { eval: true });
+      w.once("message", resolve);
+      w.once("error", reject);
+    });
+    out.push(["worker", JSON.parse(doc)]);
+  }
+  console.log(JSON.stringify(out));
+})().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+
+@pytest.fixture(scope="module")
+def node_app(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    if _NODE_MISSING is not None:
+        pytest.fail(f"FABRIC_REQUIRE_NODE_E2E=1 but this machine {_NODE_MISSING}")
+    directory = tmp_path_factory.mktemp("f055-t14-status-app")
+    _node_package.install_app(directory)
+    (directory / "produce.cjs").write_text(_TS_PRODUCER, encoding="utf-8")
+    return directory
+
+
+def _ts_documents(
+    app: Path, tmp_path: Path, mode: str, env: dict[str, str], native: dict[str, Any] | None = None
+) -> list[tuple[str, dict[str, Any]]]:
+    environ = {
+        k: v for k, v in os.environ.items() if not k.startswith(("FABRIC_", "OTEL_", "NODE_"))
+    }
+    environ.update(env)
+    if mode == "env":
+        environ = {k: v for k, v in environ.items() if not k.startswith("FABRIC_")}
+        environ["CASE_ENV"] = json.dumps(env)
+        environ["CASE_NATIVE"] = json.dumps(native or {})
+    node = _node_package.node_binary()
+    assert node is not None
+    done = subprocess.run(  # noqa: S603
+        [node, "produce.cjs", mode, str(tmp_path)], cwd=app, env=environ,
+        capture_output=True, text=True, timeout=120, check=False,
+    )  # fmt: skip
+    assert done.returncode == 0, done.stderr[-2000:]
+    documents: list[tuple[str, dict[str, Any]]] = [
+        (label, doc) for label, doc in json.loads(done.stdout.strip().splitlines()[-1])
+    ]
+    return documents
+
+
+def _check(document: dict[str, Any]) -> None:
+    errors = [e.message for e in _validator().iter_errors(document)]
+    assert errors == [], (document, errors)
+    assert document["sdk_language"] == "typescript"
+    assert set(document["warning_ids"]) | set(document["notice_ids"]) <= _catalogued()
+
+
+def _base(tmp_path: Path) -> dict[str, str]:
+    spool = tmp_path / "spool"
+    return {"FABRIC_WIRE_SPOOL_DIR": str(spool), "FABRIC_OTLP_ENDPOINT": "http://127.0.0.1:9"}
+
+
+def _garbage_prebuilds(tmp_path: Path, digest_matches: bool) -> dict[str, Any]:
+    build = _node_package.runtime_tuple(_node_package.node_binary() or "node")
+    directory = tmp_path / "prebuilds"
+    (directory / build["platform"]).mkdir(parents=True)
+    data = b"not a shared object"
+    (directory / build["platform"] / "fabric_wire.node").write_bytes(data)
+    native: dict[str, Any] = {"prebuildsDir": str(directory)}
+    if digest_matches:
+        native["digests"] = {build["platform"]: hashlib.sha256(data).hexdigest()}
+    return native
+
+
+# (case, mode, env builder, native builder, capture, capture_reason, id that must appear)
+_TS_CASES: list[tuple[str, str, Any, Any, str, str | None, str | None]] = [
+    ("config_invalid", "env", lambda t: {"FABRIC_WIRE_ENDPOINTS": "not json"}, None,
+     "not_installed", None, "FW-025"),
+    ("otel_sdk_disabled", "env", lambda t: {**_base(t), "OTEL_SDK_DISABLED": "true"}, None,
+     "disabled", "otel_sdk_disabled", "FW-007"),
+    ("no_spool", "env", lambda t: {}, None, "disabled", "no_spool", "FW-034"),
+    ("spool_unusable", "env", lambda t: {**_base(t), "FABRIC_WIRE_SPOOL_DIR": "/dev/null"},
+     None, "disabled", "spool_unusable", "FW-034"),
+    ("native_missing", "env", _base, lambda t: {"prebuildsDir": str(t / "none")},
+     "disabled", "native_missing", "FW-028"),
+    ("native_digest_mismatch", "env", _base, lambda t: _garbage_prebuilds(t, False),
+     "disabled", "native_digest_mismatch", "FW-028"),
+    ("native_load_failed", "env", _base, lambda t: _garbage_prebuilds(t, True),
+     "disabled", "native_load_failed", "FW-028"),
+    ("platform_unsupported", "env", _base, lambda t: {"platform": "aix"},
+     "disabled", "platform_unsupported", "FW-027"),
+    ("hook_disabled", "env", lambda t: {**_base(t), "FABRIC_WIRE_UNDICI": "0"}, None,
+     "disabled", "hook_disabled", "FW-029"),
+    ("autoload_off", "env", _base, None, None, None, "FW-031"),
+    ("status_file_unwritable", "env",
+     lambda t: {**_base(t), "FABRIC_WIRE_STATUS_FILE": str(t / "missing" / "s.json")},
+     None, None, None, "FW-023"),
+    ("content_disabled", "env",
+     lambda t: {**_base(t), "FABRIC_WIRE_CONTENT_ENDPOINT": "http://127.0.0.1:9/v1/logs",
+                "FABRIC_TENANT_ID": "t1"}, None, None, None, "FW-008"),
+    ("metadata_only", "env", _base, None, None, None, "FW-003"),
+    ("worker_without_process_runtime", "worker", _base, None, "disabled",
+     "worker_without_process_runtime", "FW-030"),
+]  # fmt: skip
+
+
+@_node
+@pytest.mark.parametrize(
+    ("case", "mode", "env", "native", "capture", "reason", "id_"),
+    _TS_CASES,
+    ids=[c[0] for c in _TS_CASES],
+)
+def test_typescript_status_documents_validate_for_each_reason(
+    node_app: Path, tmp_path: Path, case: str, mode: str, env: Any, native: Any,
+    capture: str | None, reason: str | None, id_: str | None,
+) -> None:  # fmt: skip
+    """Spec 055 §4.7: envStatus() and install().status() from the packed package validate
+    for each disabled reason of §4.4 and §4.7, and name the reason's catalogue id."""
+    documents = _ts_documents(
+        node_app, tmp_path, mode, env(tmp_path), None if native is None else native(tmp_path)
+    )
+    assert documents, case
+    for _label, document in documents:
+        _check(document)
+    document = documents[0][1]
+    if capture is not None:
+        assert document["capture"] == capture, document
+    if reason is not None:
+        assert document["status"]["capture_reason"] == reason, document
+    if id_ is not None:
+        assert id_ in document["warning_ids"] + document["notice_ids"], document
+    if document["capture"] == "not_installed":
+        assert document["reason_id"] == "FW-014" and document["fix"], document
+
+
+@_node
+def test_typescript_install_and_exit_documents_and_the_status_file_validate(
+    node_app: Path, tmp_path: Path
+) -> None:
+    """A capturing install (the table activates this build): status() before and after
+    close() and the status file the Fabric worker wrote at exit."""
+    status_file = tmp_path / "status.json"
+    env = {**_base(tmp_path), "FABRIC_WIRE_STATUS_FILE": str(status_file)}
+    documents = _ts_documents(node_app, tmp_path, "install", env)
+    assert [(d["phase"], d["capture"]) for _, d in documents] == [
+        ("install", "installed"),
+        ("exit", "closed"),
+    ], documents
+    for _label, document in documents:
+        _check(document)
+    assert "FW-005" in documents[0][1]["notice_ids"]
+    written = json.loads(status_file.read_text(encoding="utf-8"))
+    _check(written)
+    assert (written["phase"], written["capture"]) == ("exit", "closed")
+    assert oct(status_file.stat().st_mode & 0o777) == oct(0o600)
