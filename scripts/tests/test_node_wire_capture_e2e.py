@@ -23,10 +23,8 @@ Needs Node 24.4 or newer (the first build that publishes the body channels), the
 
 from __future__ import annotations
 
-import base64
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -57,19 +55,31 @@ def _node() -> str | None:
     if node is None:
         return None
     version = subprocess.run(  # noqa: S603
-        [node, "-p", "process.versions.node"], capture_output=True, text=True, check=False
+        [node, "-p", "process.versions.node"],
+        capture_output=True,
+        text=True,
+        check=False,
     ).stdout.strip()
     parts = [int(p) for p in version.split(".")[:2] if p.isdigit()]
-    return node if len(parts) == 2 and (parts[0] > 24 or (parts[0] == 24 and parts[1] >= 4)) else None
+    return (
+        node
+        if len(parts) == 2 and (parts[0] > 24 or (parts[0] == 24 and parts[1] >= 4))
+        else None
+    )
 
 
 NODE = _node()
 pytestmark = [
-    pytest.mark.skipif(NODE is None, reason="needs Node.js 24.4 or newer (FABRIC_TEST_NODE)"),
     pytest.mark.skipif(
-        not (SDK / "node_modules" / "esbuild").is_dir(), reason="run 'npm ci' in sdk/typescript"
+        NODE is None, reason="needs Node.js 24.4 or newer (FABRIC_TEST_NODE)"
     ),
-    pytest.mark.skipif(shutil.which("cc") is None, reason="needs a C compiler for the lock module"),
+    pytest.mark.skipif(
+        not (SDK / "node_modules" / "esbuild").is_dir(),
+        reason="run 'npm ci' in sdk/typescript",
+    ),
+    pytest.mark.skipif(
+        shutil.which("cc") is None, reason="needs a C compiler for the lock module"
+    ),
 ]
 
 # The scripted provider's exact response bytes: a tool call (JSON), then a streamed answer.
@@ -127,7 +137,10 @@ class Provider:
                 stream = json.loads(body).get("stream") is True
                 data = RESPONSE_SSE if stream else RESPONSE_JSON
                 self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream" if stream else "application/json")
+                self.send_header(
+                    "Content-Type",
+                    "text/event-stream" if stream else "application/json",
+                )
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
@@ -197,8 +210,12 @@ def qualification(built: dict[str, Any]) -> dict[str, Any] | None:
     return {**table, "tuples": [*table["tuples"], tuple_]}
 
 
-def agent_env(root: Path, provider: Provider, sink: Sink, spool: Path) -> dict[str, str]:
-    base = {k: v for k, v in os.environ.items() if not k.startswith(("FABRIC_", "OTEL_"))}
+def agent_env(
+    root: Path, provider: Provider, sink: Sink, spool: Path
+) -> dict[str, str]:
+    base = {
+        k: v for k, v in os.environ.items() if not k.startswith(("FABRIC_", "OTEL_"))
+    }
     headers = root / "otlp-headers"
     headers.write_text("Authorization=" + EGRESS_AUTH.replace(" ", "%20") + "\n")
     headers.chmod(0o600)
@@ -208,9 +225,17 @@ def agent_env(root: Path, provider: Provider, sink: Sink, spool: Path) -> dict[s
         "FABRIC_TENANT_ID": TENANT,
         "FABRIC_WIRE_ID_KEY": ID_KEY,
         "FABRIC_WIRE_SPOOL_DIR": str(spool),
-        "FABRIC_WIRE_ENDPOINTS": json.dumps([{
-            "endpoint_id": "e2e-model", "dialect": "openai", "hosts": ["127.0.0.1"],
-            "ports": [provider.port], "schemes": ["http"]}]),  # fmt: skip
+        "FABRIC_WIRE_ENDPOINTS": json.dumps(
+            [
+                {
+                    "endpoint_id": "e2e-model",
+                    "dialect": "openai",
+                    "hosts": ["127.0.0.1"],
+                    "ports": [provider.port],
+                    "schemes": ["http"],
+                }
+            ]
+        ),
         "FABRIC_WIRE_CONTENT_ENDPOINT": f"https://localhost:{sink.port}/v1/logs",
         "FABRIC_OTLP_ENDPOINT": f"https://localhost:{sink.port}",
         "FABRIC_OTLP_HEADERS_FILE": str(headers),
@@ -240,6 +265,7 @@ def file_store(rows: list[dict[str, Any]], root: Path) -> None:
     exact bytes at ``<tenant>/evidence/<object_id>`` with the descriptor beside them."""
     from fabric.content_store import LocalFilesystemContentStore
 
+    (root / TENANT).mkdir(parents=True, exist_ok=True)
     store = LocalFilesystemContentStore(root=str(root), tenant_id=TENANT)
     for row in rows:
         if row.get("kind") != "log":
@@ -253,15 +279,19 @@ def file_store(rows: list[dict[str, Any]], root: Path) -> None:
         store.put_bytes_object(descriptor, bytes.fromhex(row["body"]))
 
 
-def reconstruct(rows: list[dict[str, Any]], root: Path) -> tuple[int, dict[str, Any], str]:
+def reconstruct(
+    rows: list[dict[str, Any]], root: Path, *extra: str
+) -> tuple[int, dict[str, Any], str]:
     spans = root / "spans.jsonl"
-    spans.write_text("".join(json.dumps(r) + "\n" for r in rows if r.get("kind") == "span"))
+    spans.write_text(
+        "".join(json.dumps(r) + "\n" for r in rows if r.get("kind") == "span")
+    )
     store = root / "store"
     file_store(rows, store)
     out = root / "report.json"
     done = subprocess.run(  # noqa: S603
         [sys.executable, "-m", "fabric.reconstruct", "--spans", str(spans),
-         "--store-root", str(store), "--tenant", TENANT, "--out", str(out)],
+         "--store-root", str(store), "--tenant", TENANT, "--out", str(out), *extra],
         env={**os.environ, "FABRIC_WIRE_ID_KEY": ID_KEY}, capture_output=True, text=True,
         timeout=120, check=False,
     )  # fmt: skip
@@ -313,10 +343,51 @@ def test_a_node_fetch_run_is_verified_complete_and_replays_its_bytes(
         e["objects"][side]["verification"] == "verified"
         for e in exchanges for side in ("request", "response")
     )  # fmt: skip
-    assert [r for r, _ in replayed] == provider.received == [r.encode() for r in REQUESTS]
+    assert (
+        [r for r, _ in replayed] == provider.received == [r.encode() for r in REQUESTS]
+    )
     assert [r for _, r in replayed] == [RESPONSE_JSON, RESPONSE_SSE]
     # The tool loop stitches: the call the first response emitted is the one consumed.
-    assert exchanges[0]["tool_call_ids_emitted"] == exchanges[1]["tool_call_ids_consumed"] != []
+    assert (
+        exchanges[0]["tool_call_ids_emitted"]
+        == exchanges[1]["tool_call_ids_consumed"]
+        != []
+    )
+
+
+def test_a_rejected_content_record_is_retired_and_read_as_not_captured_store_failed(
+    tmp_path: Path, built: dict[str, Any], provider: Provider, sink: Sink
+) -> None:
+    """Spec 055 §7.1: a body the Node refuses for good (here every content request is
+    answered 400, so each is resent alone and refused again) is settled, never retried
+    forever; its span is still exported unchanged and the file retired. The reader then
+    reports each side ``not_captured(store_failed)``, never stored."""
+    (sink.directory / "fault-logs").write_text("400")
+    spool = tmp_path / "spool"
+    result = run_agent(built, agent_env(tmp_path, provider, sink, spool), provider)
+    assert [s["body"].encode() for s in result["seen"]] == [RESPONSE_JSON, RESPONSE_SSE]
+    assert result["stop"]["backlog"] == 0
+    assert not list(spool.glob("*.rec"))
+    rows = sink.rows()
+    assert not [r for r in rows if r.get("kind") == "log"]  # nothing was stored
+    spans = [
+        r for r in rows if r.get("kind") == "span" and r["name"] == "fabric.model_call"
+    ]
+    assert len(spans) == len(REQUESTS)
+    assert all(s["attributes"]["fabric.wire.store_status"] == "stored" for s in spans)
+    projection = tmp_path / "projection.json"
+    code, report, stderr = reconstruct(rows, tmp_path, "--projection", str(projection))
+    assert code == 1, stderr  # the record is not complete: its bodies are missing
+    (run,) = report["runs"]
+    assert run["run_state"] == "terminated"
+    assert {g["gap_type"] for g in run["gaps"]} == {"missing_object"}, run["gaps"]
+    document = json.loads(projection.read_text())
+    sides = [
+        (step["layers"]["content"][role]["status"], step["layers"]["content"][role]["reason"])
+        for step in document["steps"] if step["step_kind"] == "model_call"
+        for role in ("model.exchange.request", "model.exchange.response")
+    ]  # fmt: skip
+    assert sides == [("not_captured", "store_failed")] * 2 * len(REQUESTS), sides
 
 
 # --------------------------------------------------------------------------- parity
@@ -419,11 +490,15 @@ def frames_of(spool: Path) -> list[dict[str, Any]]:
         capture_output=True, text=True, timeout=60, check=True,
     )  # fmt: skip
     found: list[dict[str, Any]] = json.loads(done.stdout)
-    return sorted(found, key=lambda f: f["doc"]["span"]["attributes"]["fabric.source.sequence"])
+    return sorted(
+        found, key=lambda f: f["doc"]["span"]["attributes"]["fabric.source.sequence"]
+    )
 
 
 def reframed(doc: dict[str, Any], blob: str) -> str:
-    bodies = [blob[2 * b["offset"] : 2 * (b["offset"] + b["length"])] for b in doc["bodies"]]
+    bodies = [
+        blob[2 * b["offset"] : 2 * (b["offset"] + b["length"])] for b in doc["bodies"]
+    ]
     done = subprocess.run(  # noqa: S603
         [sys.executable, "-c", PY_REFRAME, json.dumps([doc, bodies])],
         capture_output=True, text=True, timeout=60, check=True,

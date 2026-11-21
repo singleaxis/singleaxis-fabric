@@ -15,7 +15,9 @@ Request headers are never written anywhere.
 
 Fault injection: while ``OUT_DIR/fault`` holds an HTTP status code, every
 authenticated POST is answered with that status and nothing is recorded
-(reliability run S6a: a destination answering 403 or 400 for a while).
+(reliability run S6a: a destination answering 403 or 400 for a while). While
+``OUT_DIR/fault-logs`` holds one, only content (``/v1/logs``) requests are answered
+with it (a Node refusing content records while it accepts spans, spec 055 §7.1).
 
 The TLS handshake runs on each connection's handler thread, never in ``accept()`` on the
 server's only accept thread, and every connection has a socket timeout: one connection
@@ -50,6 +52,7 @@ TIMEOUT_S = 30
 RECORDS = OUT / "records.jsonl"
 RAW = OUT / "raw"
 FAULT = OUT / "fault"
+FAULT_LOGS = OUT / "fault-logs"
 _WRITE_LOCK = threading.Lock()
 
 
@@ -123,9 +126,9 @@ def _decode_logs(body: bytes) -> list[dict[str, Any]]:
     return rows
 
 
-def _fault() -> int | None:
+def _fault(path: Path = FAULT) -> int | None:
     try:
-        text = FAULT.read_text("ascii").strip()
+        text = path.read_text("ascii").strip()
     except OSError:
         return None
     return int(text) if text.isdigit() else None
@@ -167,6 +170,8 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(HTTPStatus.UNAUTHORIZED)
             return
         fault = _fault()
+        if fault is None and self.path == "/v1/logs":
+            fault = _fault(FAULT_LOGS)
         if fault is not None:
             self._reply(HTTPStatus(fault), b"", "text/plain")
             return
