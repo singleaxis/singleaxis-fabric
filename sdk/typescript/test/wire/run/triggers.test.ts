@@ -103,9 +103,9 @@ describe("seal triggers (spec 050 §3.6, one test per row)", () => {
       const call = h.alloc(); // its first position: the outer exit commits and seals it
       expect(call.segment).toBe(h.markers("run_start").at(-1)!.segment_id);
     });
-    expect(h.messages.filter((m) => m.t === "segment").map((m) => (m as { op: string }).op)).toEqual(
-      ["commit"],
-    );
+    expect(
+      h.messages.filter((m) => m.t === "segment").map((m) => (m as { op: string }).op),
+    ).toEqual(["commit"]);
     expect(h.seals().map((s) => s.positions)).toEqual(["0", "1"]);
     expect(h.markers("run_end").at(-1)!.segment_id).toBe(h.seals()[1]!.segment);
     // A nested block makes it real at once (as Python opens a segment at block entry).
@@ -122,9 +122,9 @@ describe("seal triggers (spec 050 §3.6, one test per row)", () => {
     const g = harness();
     run({}, () => [resumeToken(), resumeToken()]);
     expect(g.seals()).toHaveLength(2);
-    expect(g.messages.filter((m) => m.t === "segment").map((m) => (m as { op: string }).op)).toEqual(
-      ["commit", "discard"],
-    );
+    expect(
+      g.messages.filter((m) => m.t === "segment").map((m) => (m as { op: string }).op),
+    ).toEqual(["commit", "discard"]);
   });
 
   it("resumeTokens(n): one seal listing n branch ids, one token per branch", () => {

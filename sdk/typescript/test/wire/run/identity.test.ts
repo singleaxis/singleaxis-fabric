@@ -214,7 +214,11 @@ describe("token accept/reject vectors through run({resume})", () => {
     expect(seen.map((x) => [x.name, (x as { code?: string }).code, x.message])).toEqual([
       ["FabricWarning", "FABRIC_RESUME_TOKEN_DROPPED", TOKEN_DROPPED_WARNING],
     ]);
-    const w = harness({ warn: () => { throw new Error("listener"); } });
+    const w = harness({
+      warn: () => {
+        throw new Error("listener");
+      },
+    });
     expect(run({ resume: bad }, () => 5)).toBe(5);
     expect(w.table.stats().tokens_rejected).toBe(1);
   });
