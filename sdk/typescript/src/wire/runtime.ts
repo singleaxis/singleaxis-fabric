@@ -468,6 +468,12 @@ export class WireRuntime {
     Atomics.store(this.i64, run + 2, 0n);
   }
 
+  /** The run's open segment as two 64-bit halves (both zero: none open). */
+  runSegment(runSlot: number): readonly [bigint, bigint] {
+    const run = RUN_BASE + runSlot * 4;
+    return [Atomics.load(this.i64, run), Atomics.load(this.i64, run + 1)];
+  }
+
   /** Positions allocated in the run's open segment. */
   runPositions(runSlot: number): bigint {
     return Atomics.load(this.i64, RUN_BASE + runSlot * 4 + 2);
