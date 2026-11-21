@@ -74,6 +74,20 @@ accepted).
 Its self-test runs the child again with one body sent through the global
 `fetch` dispatcher (which honours the proxy environment and follows
 redirects); the step must report it, or the gate fails.
+Where the Node has the `http`/`https` startup proxy mode (24.5 and later, the
+releases with `--use-env-proxy`), a second self-test sends one body on Node's
+global `http` agent; it must reach the hostile `HTTP_PROXY`, which proves the
+mode was live in the child. The report's `startup_proxy_mode_active` says
+whether the run exercised it. Node 24.4.0, the privacy job's main Node, has the
+mode for `fetch` only, so CI runs the step again on the newest qualified Node
+24:
+
+```sh
+node qualification/node-wire/privacy/run.mjs --network-only --require-startup-proxy-mode --out report.json
+```
+
+`--network-only` runs the network step and its self-tests alone;
+`--require-startup-proxy-mode` fails the run on a Node without the mode.
 
 ## Scanner self-test
 

@@ -315,6 +315,24 @@ jobs:
           name: privacy-24.4.0
           path: privacy-24.4.0.json
           if-no-files-found: error
+      # The network step again on the newest qualified Node 24: 24.4.0 predates Node's
+      # http/https startup proxy mode (24.5, --use-env-proxy), so only this run proves
+      # Fabric's private agents ignore it. The self-test sends one body on Node's global
+      # agent, which must reach the hostile HTTP_PROXY, or the run fails.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.22.3"
+      - name: Run the network step with Node's startup proxy mode
+        run: >-
+          node qualification/node-wire/privacy/run.mjs --network-only
+          --require-startup-proxy-mode --out privacy-network-24.22.3.json
+      - name: Upload the network report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: privacy-network-24.22.3
+          path: privacy-network-24.22.3.json
+          if-no-files-found: error
 
   fabric-node:
     name: Fabric Node processor

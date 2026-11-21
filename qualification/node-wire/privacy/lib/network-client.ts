@@ -12,6 +12,7 @@
  *   node network-client.cjs '<json config>'
  */
 import diagnostics_channel from "node:diagnostics_channel";
+import http from "node:http";
 import type net from "node:net";
 
 import { RedactionClient } from "../../../../sdk/typescript/src/redaction.js";
@@ -30,8 +31,12 @@ interface Config {
   readonly redactionPort: number;
   readonly codes: readonly number[];
   readonly canaries: { readonly body: string; readonly credential: string };
-  /** Self-test only: `fetch` sends one body through the global dispatcher (never Fabric code). */
-  readonly fault?: "fetch";
+  /**
+   * Self-test only (never Fabric code): `fetch` sends one body through the global
+   * dispatcher; `global_agent` sends one through `http.request` on Node's global agent,
+   * which Node's startup proxy mode routes to `HTTP_PROXY` (Node 24.5 and later).
+   */
+  readonly fault?: "fetch" | "global_agent";
 }
 
 const config = JSON.parse(process.argv[2]!) as Config;
@@ -124,6 +129,22 @@ async function main(): Promise<Record<string, unknown>> {
       headers,
       signal: AbortSignal.timeout(2000),
     }).catch(() => undefined);
+  }
+  if (config.fault === "global_agent") {
+    // The self-test's leak: Node's global http agent, which the startup proxy mode
+    // sends through HTTP_PROXY. Proves the mode Fabric's private agents ignore was live.
+    await new Promise<void>((resolve) => {
+      const request = http.request(`${config.node}/v1/logs`, { method: "POST", headers, timeout: 2000 }, (res) => {
+        res.resume();
+        res.on("end", resolve);
+      });
+      request.on("error", () => resolve());
+      request.on("timeout", () => {
+        request.destroy();
+        resolve();
+      });
+      request.end(C.body);
+    });
   }
   return results;
 }

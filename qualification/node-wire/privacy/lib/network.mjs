@@ -254,7 +254,12 @@ export async function networkStep(clientPath, options = {}) {
         if (JSON.stringify(r[key]) !== JSON.stringify(want)) violations.push({ where: "outcome", key, got: r[key], want });
     }
     // The remote Node got both requests with the ingress credential and no proxy header.
-    if (remote.received.length !== 2 || remote.received.some((q) => q.headers["proxy-authorization"] !== undefined)) {
+    if (
+        remote.received.length !== 2 ||
+        remote.received.some(
+            (q) => q.headers.authorization !== `Bearer ${C.credential}` || q.headers["proxy-authorization"] !== undefined,
+        )
+    ) {
         violations.push({ where: "remote Node", requests: remote.received.length });
     }
     if (child.error !== undefined) violations.push({ where: "child", error: child.error });
@@ -264,7 +269,13 @@ export async function networkStep(clientPath, options = {}) {
     return {
         passed: violations.length === 0,
         node: child.node,
-        startup_proxy_mode: useEnvFlag ? "NODE_USE_ENV_PROXY=1 --use-env-proxy" : "NODE_USE_ENV_PROXY=1",
+        // Node's startup proxy mode for http/https (the global agent) exists from Node
+        // 24.5, the release that added --use-env-proxy; before it NODE_USE_ENV_PROXY=1
+        // only reaches fetch, so this run did not exercise the http/https mode.
+        startup_proxy_mode: useEnvFlag
+            ? "NODE_USE_ENV_PROXY=1 --use-env-proxy"
+            : "NODE_USE_ENV_PROXY=1 (fetch only: this Node has no http/https startup proxy mode)",
+        startup_proxy_mode_active: useEnvFlag,
         redirect_statuses: CODES,
         connections: child.connections ?? [],
         proxy_connects: proxy.connects.length,

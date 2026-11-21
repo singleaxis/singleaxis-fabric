@@ -47,6 +47,11 @@ import { networkStep } from "./lib/network.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const OUT = args.includes("--out") ? args[args.indexOf("--out") + 1] : undefined;
+// --network-only: the network step and its self-test alone (CI runs it again on a Node
+// with the http/https startup proxy mode). --require-startup-proxy-mode: fail unless this
+// Node has that mode (24.5 and later), so the run cannot pass without exercising it.
+const NETWORK_ONLY = args.includes("--network-only");
+const REQUIRE_PROXY_MODE = args.includes("--require-startup-proxy-mode");
 const log = (line) => process.stderr.write(`${line}\n`);
 
 const MODES = ["retain_original", "metadata_only", "omit", "redact", "masked_only", "tokenize", "disabled"];
@@ -266,17 +271,19 @@ function scenario(mode, options = {}) {
 
 }
 
-const scenarios = MODES.map((mode) => {
-    const row = scenario(mode);
-    log(`${mode}: ${row.passed ? "passed" : "FAILED"} (${row.exchanges ?? 0} exchange records, ${row.violations?.length ?? "?"} violations)`);
-    return row;
-});
+const scenarios = NETWORK_ONLY
+    ? []
+    : MODES.map((mode) => {
+          const row = scenario(mode);
+          log(`${mode}: ${row.passed ? "passed" : "FAILED"} (${row.exchanges ?? 0} exchange records, ${row.violations?.length ?? "?"} violations)`);
+          return row;
+      });
 // Scanner self-test: the leaked canaries must be reported, in a span attribute and in a
 // spool header, or the scanner cannot be trusted.
-const fault = scenario("retain_original", { fault: "leak" });
-const reported = new Set((fault.violations ?? []).map((v) => v.canary));
+const fault = NETWORK_ONLY ? undefined : scenario("retain_original", { fault: "leak" });
+const reported = new Set((fault?.violations ?? []).map((v) => v.canary));
 const selfTestDetected = reported.has("leak_attribute") && reported.has("leak_header");
-log(`scanner self-test: ${selfTestDetected ? "reported both leaks" : "did NOT report both leaks"}`);
+if (!NETWORK_ONLY) log(`scanner self-test: ${selfTestDetected ? "reported both leaks" : "did NOT report both leaks"}`);
 // Network step (055-t12): hostile proxy environment and startup proxy mode, redirects
 // from the delivery and redaction endpoints, recording sockets on every other address.
 const network = await networkStep(bundle.network);
@@ -284,8 +291,20 @@ log(`network: ${network.passed ? "passed" : "FAILED"} (${network.violations.leng
 // Its self-test: one body sent through the global fetch dispatcher (which honours the
 // proxy environment and follows redirects) must be reported, or the step proves nothing.
 const networkFault = await networkStep(bundle.network, { fault: "fetch" });
-const networkSelfTest = networkFault.violations.some((v) => ["HTTP_PROXY", "redirect Location"].includes(v.where));
+let networkSelfTest = networkFault.violations.some((v) => ["HTTP_PROXY", "redirect Location"].includes(v.where));
+// Where this Node has the http/https startup proxy mode, a body sent on Node's global
+// agent must reach HTTP_PROXY: that proves the mode Fabric's private agents ignore was
+// live in the child, so the clean run's silence means something.
+const proxyMode = network.startup_proxy_mode_active === true;
+const globalAgentFault = proxyMode ? await networkStep(bundle.network, { fault: "global_agent" }) : undefined;
+if (globalAgentFault !== undefined) {
+    networkSelfTest &&= globalAgentFault.violations.some((v) => v.where === "HTTP_PROXY");
+}
 log(`network self-test: ${networkSelfTest ? "reported the leak" : "did NOT report the leak"}`);
+log(`startup proxy mode: ${network.startup_proxy_mode}`);
+if (REQUIRE_PROXY_MODE && !proxyMode) {
+    log(`--require-startup-proxy-mode: Node ${process.versions.node} has no http/https startup proxy mode; run this step on Node 24.5 or later`);
+}
 rmSync(bundle.dir, { recursive: true, force: true });
 
 const canaryScan = scenarios.every((row) => row.passed);
@@ -304,11 +323,16 @@ const report = {
         "registration files and the loss ledger under faults": "055-t16",
         "the status file and the exit note": "055-t14",
     },
-    gates: { canary_scan: canaryScan, scanner_self_test: selfTestDetected, network: network.passed, network_self_test: networkSelfTest },
-    scenarios,
-    self_test: fault,
+    gates: {
+        ...(NETWORK_ONLY ? {} : { canary_scan: canaryScan, scanner_self_test: selfTestDetected }),
+        network: network.passed,
+        network_self_test: networkSelfTest,
+        ...(REQUIRE_PROXY_MODE ? { startup_proxy_mode: proxyMode } : {}),
+    },
+    ...(NETWORK_ONLY ? { network_only: true } : { scenarios, self_test: fault }),
     network,
     network_self_test: networkFault,
+    ...(globalAgentFault === undefined ? {} : { network_self_test_global_agent: globalAgentFault }),
 };
 report.result = Object.values(report.gates).every(Boolean) ? "passed" : "failed";
 if (OUT !== undefined) writeFileSync(OUT, `${JSON.stringify(report, null, 2)}\n`);
