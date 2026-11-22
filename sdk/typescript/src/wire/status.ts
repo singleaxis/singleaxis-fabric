@@ -98,7 +98,7 @@ export interface HookCounters {
   readonly matched: number;
   readonly not_captured: number;
   readonly unmatched_model_shaped: number;
-  /** Matched calls an unqualified undici copy published (FW-026); absent: none. */
+  /** Matched calls an unqualified undici copy published (FW-035); absent: none. */
   readonly unqualified_publisher?: number;
 }
 

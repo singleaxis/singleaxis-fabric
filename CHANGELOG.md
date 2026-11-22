@@ -905,6 +905,13 @@ it never makes, applies, waits for or returns one.
   said content capture was on. The sender now writes each body and its
   descriptor into the directory store exactly as the Python SDK does.
 
+- **A Node.js model call aborted before any response claimed a response that
+  was never recorded (spec 055, unit 055-t17).** An SDK timeout or cancel
+  before the response headers was recorded as `closed_early`, which says a
+  response arrived, so the reader reported it `missing_object` and the run
+  partial for the wrong reason. It is now recorded as `error`, as the Python
+  SDK records a call that fails before its response.
+
 - **eBPF host emitter: file access and failed execs were missing on Linux
   6.19+ kernels such as Ubuntu's 7.0.** On those kernels, an eBPF program
   attached to the `openat` or `execve` syscall tracepoint was never run, so

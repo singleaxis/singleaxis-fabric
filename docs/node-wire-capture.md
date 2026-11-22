@@ -62,8 +62,11 @@ Limits of the claim:
   through that copy too: those calls are recorded as `uninstrumented_client`
   losses, and the run cannot verify complete (`FW-035`). Do not load the
   `undici` package in an agent you want recorded.
-- A request whose response is cut short (an abort, a closed connection) is
-  recorded as far as it went, marked truncated.
+- A request whose response is cut short (an abort or cancel mid-stream, a
+  closed connection) is recorded as far as it went, marked truncated, and its
+  run reads back `partial`, as the Python SDK's runs do: the reader cannot
+  vouch for a response it never saw whole. A call aborted before any response
+  (an SDK timeout) is recorded with its request and response state `error`.
 - `process.exit()` and `SIGKILL` cannot wait for delivery: what was spooled is
   delivered by the next process on the spool; a position allocated but never
   written makes that process's record incomplete, never falsely complete.
