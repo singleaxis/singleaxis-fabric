@@ -27,9 +27,8 @@ const mode = process.argv[2];
 
 // close() keeps retrying delivery to the OTLP endpoint nobody listens on until its
 // budget's delivery share is spent (the records stay in the spool, where the tests read
-// them). At 3 s a loaded machine (three test files at once, 10 threads per host) ran out
-// before the stop wrote its exit stats and last records; 6 s leaves the stop room.
-const CLOSE_MS = 6_000;
+// them); the Fabric worker's stop ends where this budget ends (worker.ts requestDeadline).
+const CLOSE_MS = 3_000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

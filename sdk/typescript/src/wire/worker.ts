@@ -122,6 +122,12 @@ export interface WorkerRequest {
   readonly kind: "flush" | "stop";
   /** The caller's budget in ms; the worker turns it into its own deadline on receipt. */
   readonly budgetMs: number;
+  /**
+   * When the caller's budget ends, in wall-clock ms (`performance.timeOrigin + now()`):
+   * the caller's timer started when it sent the request, so a request that waited in the
+   * worker's queue has less than `budgetMs` left. See {@link requestDeadline}.
+   */
+  readonly deadlineAt?: number;
   /** `stop` at process exit: a process that does not drain only leaves its records durable. */
   readonly exiting?: boolean;
   /** `stop`: the capture points whose hooks `close()` removed, and the cut it happened at. */
@@ -313,7 +319,13 @@ export class FabricWorker {
       return await new Promise<unknown>((resolve) => {
         this.replies.set(id, resolve);
         timer = setTimeout(() => resolve(undefined), Math.max(0, timeoutMs));
-        const request: WorkerRequest = { id, kind, budgetMs: Math.max(0, timeoutMs), ...extra };
+        const request: WorkerRequest = {
+          id,
+          kind,
+          budgetMs: Math.max(0, timeoutMs),
+          deadlineAt: wallNow() + Math.max(0, timeoutMs),
+          ...extra,
+        };
         try {
           worker.postMessage({ [WORKER_REQUEST]: request });
         } catch {
@@ -353,6 +365,7 @@ export class FabricWorker {
         id: ++this.requests,
         kind: "stop",
         budgetMs: Math.max(0, timeoutMs),
+        deadlineAt: wallNow() + Math.max(0, timeoutMs),
         ...options,
       };
       worker.postMessage({ [WORKER_REQUEST]: request });
@@ -478,6 +491,33 @@ async function stopMessage(context: FabricWorkerContext): Promise<void> {
   }
 }
 
+/** Wall-clock ms with sub-ms resolution, comparable across threads of one process. */
+function wallNow(): number {
+  return performance.timeOrigin + performance.now();
+}
+
+/**
+ * This worker's deadline for `request`, on its own `performance.now()` clock. The caller's
+ * timer started when it sent the request, so the deadline is where the caller's budget
+ * ends (`deadlineAt`), not `budgetMs` after this worker received it: a request that waited
+ * behind a busy pass (seen under load: the stop's exit status was never written, because
+ * the installing thread terminated the worker first) would otherwise overrun the caller.
+ * A wall clock stepped between the two threads' origins can only move it earlier, and
+ * never below a quarter of the budget, so a stepped clock still leaves the stop time to
+ * write its final records.
+ */
+export function requestDeadline(
+  request: Pick<WorkerRequest, "budgetMs" | "deadlineAt">,
+  now: number = performance.now(),
+  origin: number = performance.timeOrigin,
+): number {
+  const budget = Math.max(0, Number(request.budgetMs) || 0);
+  const relative = now + budget;
+  const at = Number(request.deadlineAt);
+  if (!Number.isFinite(at)) return relative;
+  return Math.min(relative, Math.max(now + budget / 4, at - origin));
+}
+
 /** Answers the installing thread's requests (flush) and takes the stop budget. */
 function listen(context: FabricWorkerContext, handlers: FabricWorkerHandlers): void {
   const port = parentPort;
@@ -486,7 +526,7 @@ function listen(context: FabricWorkerContext, handlers: FabricWorkerHandlers): v
     const request = (message as Record<string, unknown> | null)?.[WORKER_REQUEST] as
       WorkerRequest | undefined;
     if (request === undefined || typeof request.id !== "number") return;
-    const deadline = performance.now() + Math.max(0, Number(request.budgetMs) || 0);
+    const deadline = requestDeadline(request);
     if (request.kind === "stop") {
       const off = request.uninstalled;
       context.stop = {
