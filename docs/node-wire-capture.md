@@ -89,7 +89,8 @@ fabric verify
 (it never replaces what is there, and never adds it twice) and sets
 `FABRIC_WIRE_AUTOLOAD=1` with the project's settings, only when all three hold:
 the command runs Node.js; `@singleaxis/fabric` resolves from the agent's
-working directory with its qualification gates passed; and this Node.js build
+working directory with its qualification gates passed and its preload file
+present; and this Node.js build
 and platform are listed `active` in the package's
 `@singleaxis/fabric/wire-qualification.json`. Otherwise it starts the agent
 unchanged (only the explicit API's tenant, agent and run label are added) and

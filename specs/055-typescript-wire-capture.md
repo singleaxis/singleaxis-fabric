@@ -1839,7 +1839,10 @@ launcher's `run` (WP8-9: no `bin` exists; it must reproduce the shared goldens f
 rows and the `integration-rows-v1.json` entries (WP8-17: `plan` answers `FC-010` and the registry
 does not exist), and the `ttfr-laptop-node` job in its after-TS-1U form (WP8-10/WP8-19: no TTFR
 harness exists; until then `scripts/tests/test_fabric_run_node_e2e.py` checks the same path and G1's
-300 s budget in the `ts-wire-package` job).
+300 s budget in the `ts-wire-package` job). Review of `055-t18`: condition 2 also requires the
+`./register` export to resolve (in Node's ESM condition order) to a file inside the package, since
+`--import` of a missing file stops Node before the agent's first line (058 I3); a partial install
+is `FC-099`. Condition 3 matches the bundled undici exactly, as the SDK's `activeTuple` does.
 
 Two points where 058's text needs a one-line follow-up, to be made by
 `055-t18` in a 058 revision note (they do not change 058's interface):

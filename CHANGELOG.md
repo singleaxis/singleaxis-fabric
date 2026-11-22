@@ -919,8 +919,16 @@ it never makes, applies, waits for or returns one.
   itself (PEP 538) before any Fabric code runs, and `exec` passed it on, so a
   non-Python agent saw a variable a bare run would not. The agent now gets the
   environment `fabric run` was started with.
-- `fabric doctor` no longer asks a Node.js binary for the Python SDK when the
-  last run was a Node.js run.
+- `fabric doctor` no longer asks a Node.js binary, or `python3`, for the Python
+  SDK in a Node.js project: it checks `@singleaxis/fabric` and the Node.js build
+  the way `fabric run` does and prints the reason and fix. `fabric verify` no
+  longer suggests `fabric init --exec` or `--http-host` for a Node.js run (they
+  turn on Python hooks only).
+- `fabric run` never adds the Node.js preload when the installed package's
+  preload file is missing (a partial install), which would have stopped Node
+  before the agent started; it says so with `FC-099`. It also requires the
+  bundled undici to match a qualified build exactly, as the SDK does.
+- `fabric run` keeps the shell's `LC_CTYPE` when `LC_ALL` is set.
 - `fabric run --print-env --format k8s` no longer prints an empty
   `kubectl create secret` line when no key file is in the environment.
 
