@@ -295,14 +295,22 @@ jobs:
     # identical spool frames after the spec 055 §7.3 substitution, and both runs, each
     # delivered to a sink, reconstruct to the same projection; a content record the
     # Node refuses for good is retired and read as not_captured(store_failed). Also the
-    # sender's own tests and the fixture replayer. Runs on the minimum qualified Node 24.
-    name: Wire parity (Node 24.4.0)
-    runs-on: ubuntu-24.04
+    # sender's own tests and the fixture replayer. 055-t17: runs on every claimed tuple of
+    # the qualification table and writes a JSON report (qualification/node-wire/report.py);
+    # the reports of the claimed tuples are committed under qualification/node-wire/results/.
+    name: Wire parity (Node ${{ matrix.node-version }}, ${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node-version: "24.4.0", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+          - { node-version: "24.22.3", platform: linux-x64-glibc, runner: ubuntu-24.04 }
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24.4.0"
+          node-version: ${{ matrix.node-version }}
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
       - name: Install locked dependencies
@@ -325,8 +333,19 @@ jobs:
       - name: The first verified Node record, and Python/TypeScript frame parity
         env:
           FABRIC_REQUIRE_NODE_E2E: "1"
+          FABRIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          FABRIC_TEST_NODE="$(command -v node)" python -m pytest scripts/tests/test_node_wire_capture_e2e.py -v
+          FABRIC_TEST_NODE="$(command -v node)" python qualification/node-wire/report.py \
+            --gate parity --node "$(command -v node)" \
+            --out parity-${{ matrix.node-version }}-${{ matrix.platform }}.json \
+            -- scripts/tests/test_node_wire_capture_e2e.py
+      - name: Upload the parity report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: parity-${{ matrix.node-version }}-${{ matrix.platform }}
+          path: parity-${{ matrix.node-version }}-${{ matrix.platform }}.json
+          if-no-files-found: error
 
   ts-wire-package:
     # Spec 055 §9.4, §9.5 (unit 055-t14, milestone M2): the npm tarball a customer installs,
@@ -412,14 +431,23 @@ jobs:
     # exported symbols, with its self-test) and the canary scan of the status file and the
     # exit note a preloaded agent leaves. 055-t16: a full-disk scenario whose losses only
     # the loss ledger holds; its decoded slots and the spans a drainer exports are scanned.
-    name: Wire privacy (Node 24.4.0)
+    # 055-t17: every step on every claimed tuple; on 24.22.3 the network step also requires
+    # Node's http/https startup proxy mode (24.5+), which 24.4.0 predates, so only that run
+    # proves Fabric's private agents ignore it.
+    name: Wire privacy (Node ${{ matrix.node-version }}, ${{ matrix.platform }})
     needs: ts-wire-package
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node-version: "24.4.0", platform: linux-x64-glibc, runner: ubuntu-24.04, extra: "" }
+          - { node-version: "24.22.3", platform: linux-x64-glibc, runner: ubuntu-24.04, extra: "--require-startup-proxy-mode" }
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24.4.0"
+          node-version: ${{ matrix.node-version }}
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
       - name: Install locked dependencies
@@ -431,32 +459,171 @@ jobs:
           path: npm-tarball
       - name: Run the privacy gate
         run: >-
-          node qualification/node-wire/privacy/run.mjs --out privacy-24.4.0.json
+          node qualification/node-wire/privacy/run.mjs ${{ matrix.extra }}
+          --out privacy-${{ matrix.node-version }}-${{ matrix.platform }}.json
           --artifact "$(ls npm-tarball/singleaxis-fabric-*.tgz)"
       - name: Upload the privacy report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: privacy-24.4.0
-          path: privacy-24.4.0.json
+          name: privacy-${{ matrix.node-version }}-${{ matrix.platform }}
+          path: privacy-${{ matrix.node-version }}-${{ matrix.platform }}.json
           if-no-files-found: error
-      # The network step again on the newest qualified Node 24: 24.4.0 predates Node's
-      # http/https startup proxy mode (24.5, --use-env-proxy), so only this run proves
-      # Fabric's private agents ignore it. The self-test sends one body on Node's global
-      # agent, which must reach the hostile HTTP_PROXY, or the run fails.
+
+  ts-wire-matrix:
+    # Spec 055 §9.3, §9.5 (unit 055-t17): the TS-1U and TS-1D client matrix, the negative
+    # rows and the chaos suite, from the packed tarball of ts-wire-package, on every
+    # claimed tuple. scripts/tests/test_node_wire_matrix.py: every row of
+    # qualification/node-wire/matrix.json with the preload off and on, local and production
+    # profiles (one clear identity case), read back by python -m fabric.reconstruct.
+    # scripts/tests/test_node_wire_negative.py: Node 22.23.5 and 24.0.0, Bun and Deno
+    # (qualification/node-wire/runtimes). scripts/tests/test_node_wire_chaos.py: the
+    # real-process chaos cases of qualification/node-wire/chaos/cases.json; the others are
+    # the unit tests it names, run by typescript-sdk. Each writes a JSON report; the reports
+    # of the claimed tuples are committed under qualification/node-wire/results/.
+    name: Wire client matrix and chaos (Node ${{ matrix.node-version }}, ${{ matrix.platform }})
+    needs: ts-wire-package
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node-version: "24.4.0", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+          - { node-version: "24.22.3", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+    env:
+      FABRIC_REQUIRE_NODE_E2E: "1"
+      FABRIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      # The unqualified builds of the negative rows first; the claimed build last (on PATH).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24.22.3"
-      - name: Run the network step with Node's startup proxy mode
-        run: >-
-          node qualification/node-wire/privacy/run.mjs --network-only
-          --require-startup-proxy-mode --out privacy-network-24.22.3.json
-      - name: Upload the network report
+          node-version: "22.23.5"
+      - run: echo "NODE_22=$(command -v node)" >> "${GITHUB_ENV}"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.0.0"
+      - run: echo "NODE_24_0=$(command -v node)" >> "${GITHUB_ENV}"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: |
+            qualification/node-wire/package-lock.json
+            qualification/node-wire/runtimes/package-lock.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fabric-npm-tarball
+          path: npm-tarball
+      - name: Install Bun and Deno for the negative rows (pinned, no install scripts)
+        working-directory: qualification/node-wire/runtimes
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          echo "FABRIC_TEST_BUN=$PWD/$(ls -d node_modules/@oven/bun-linux-x64*/bin/bun | head -1)" >> "${GITHUB_ENV}"
+          echo "FABRIC_TEST_DENO=$PWD/$(ls -d node_modules/@deno/linux-x64*/deno | head -1)" >> "${GITHUB_ENV}"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the Python SDK (the reader, the recording sink, the Python writer)
+        run: |
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - name: The client matrix
+        env:
+          FABRIC_NODE_WIRE_MATRIX_REPORT: matrix-${{ matrix.node-version }}-${{ matrix.platform }}.json
+        run: |
+          export FABRIC_TEST_NODE="$(command -v node)"
+          export FABRIC_TEST_NODE_TARBALL="$(ls "${PWD}"/npm-tarball/singleaxis-fabric-*.tgz)"
+          python -m pytest -v scripts/tests/test_node_wire_matrix.py
+      - name: The negative rows (Node 22, Node 24.0, Bun, Deno)
+        run: |
+          export FABRIC_TEST_NODE="$(command -v node)"
+          export FABRIC_TEST_NODE_TARBALL="$(ls "${PWD}"/npm-tarball/singleaxis-fabric-*.tgz)"
+          export FABRIC_TEST_NODE_UNSUPPORTED="${NODE_22}:${NODE_24_0}"
+          python qualification/node-wire/report.py --gate negative --node "${FABRIC_TEST_NODE}" \
+            --out negative-${{ matrix.node-version }}-${{ matrix.platform }}.json \
+            -- scripts/tests/test_node_wire_negative.py
+      - name: The chaos suite
+        env:
+          FABRIC_NODE_WIRE_CHAOS_REPORT: chaos-${{ matrix.node-version }}-${{ matrix.platform }}.json
+        run: |
+          export FABRIC_TEST_NODE="$(command -v node)"
+          export FABRIC_TEST_NODE_TARBALL="$(ls "${PWD}"/npm-tarball/singleaxis-fabric-*.tgz)"
+          python -m pytest -v scripts/tests/test_node_wire_chaos.py
+      - name: Upload the matrix, negative and chaos reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: privacy-network-24.22.3
-          path: privacy-network-24.22.3.json
+          name: matrix-${{ matrix.node-version }}-${{ matrix.platform }}
+          path: |
+            matrix-${{ matrix.node-version }}-${{ matrix.platform }}.json
+            negative-${{ matrix.node-version }}-${{ matrix.platform }}.json
+            chaos-${{ matrix.node-version }}-${{ matrix.platform }}.json
+          if-no-files-found: error
+
+  ts-wire-node-e2e:
+    # Spec 055 §9.5 (unit 055-t17): the production-profile end to end through the real
+    # Fabric Node (the collector image, built here as fabric-node-image builds it, in node
+    # mode with the production and content overlays, TLS and an ingress token): a Node agent
+    # using the official openai client from the packed tarball; every span stamped
+    # authenticated by the Node; the bytes read back from the Node's sealed store; the run
+    # complete and terminated. On every claimed tuple, with a JSON report.
+    name: Wire through the Fabric Node (Node ${{ matrix.node-version }}, ${{ matrix.platform }})
+    needs: ts-wire-package
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node-version: "24.4.0", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+          - { node-version: "24.22.3", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the exact Fabric Node image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: components/otel-collector-fabric
+          file: components/otel-collector-fabric/Dockerfile
+          push: false
+          load: true
+          tags: fabric/node:wire-capture-e2e
+          cache-from: type=gha,scope=recorder-image
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: qualification/node-wire/package-lock.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fabric-npm-tarball
+          path: npm-tarball
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the Python SDK (the reader, the sink, the TLS material)
+        run: |
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - name: A Node agent through the production Node, read back from its store
+        env:
+          FABRIC_REQUIRE_NODE_E2E: "1"
+          FABRIC_NODE_IMAGE: fabric/node:wire-capture-e2e
+          FABRIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          export FABRIC_TEST_NODE="$(command -v node)"
+          export FABRIC_TEST_NODE_TARBALL="$(ls "${PWD}"/npm-tarball/singleaxis-fabric-*.tgz)"
+          python qualification/node-wire/report.py --gate node-e2e --node "${FABRIC_TEST_NODE}" \
+            --out node-e2e-${{ matrix.node-version }}-${{ matrix.platform }}.json \
+            -- scripts/tests/test_node_wire_fabric_node_e2e.py
+      - name: Upload the end-to-end report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: node-e2e-${{ matrix.node-version }}-${{ matrix.platform }}
+          path: node-e2e-${{ matrix.node-version }}-${{ matrix.platform }}.json
           if-no-files-found: error
 
   fabric-node:

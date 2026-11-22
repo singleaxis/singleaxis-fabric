@@ -238,6 +238,27 @@ export interface QualificationTuple {
 /** The parts of the qualification table a manifest reads. */
 export interface QualificationTable {
   readonly tuples: readonly QualificationTuple[];
+  /** `TS-1U`, `TS-1D`, `TS-1H`: `passed` or `not_passed` (absent in test tables). */
+  readonly gates?: Readonly<Record<string, string>>;
+}
+
+/**
+ * The gates a capture point needs passed before any of its tuples may be active
+ * (049 TS-1: "until each gate passes, the TypeScript manifest reports those capture
+ * points unsupported"; spec 055 §1: TS-1U + TS-1D permit the undici-only claim, and an
+ * unqualified point never becomes active because another point passed).
+ */
+export const POINT_GATES: Readonly<Record<string, readonly string[]>> = {
+  "wire.ts.undici": ["TS-1U", "TS-1D"],
+  "wire.ts.node_http": ["TS-1H", "TS-1D"],
+};
+
+/** Whether every gate `point` needs has passed in `table` (a table without gates: yes). */
+export function gatesPassed(table: QualificationTable, point: string): boolean {
+  const gates = table.gates;
+  if (gates === undefined) return true;
+  const needed = POINT_GATES[point];
+  return needed !== undefined && needed.every((gate) => gates[gate] === "passed");
 }
 
 /** The runtime build a point state is decided for. */
@@ -290,6 +311,7 @@ export function activeTuple(
   point: string,
   runtime: RuntimeBuild,
 ): QualificationTuple | undefined {
+  if (!gatesPassed(table, point)) return undefined;
   return table.tuples.find(
     (t) =>
       t.point === point &&
@@ -308,7 +330,8 @@ export function activeTuple(
  * 2. no usable native module: `unsupported(unsupported_runtime)`;
  * 3. a Node patch and platform the table does not list at all: `unsupported(unsupported_version)`;
  * 4. switched off: `disabled(hook_disabled)`;
- * 5. no `active` tuple with a report for this point and build: `unsupported(unsupported_version)`;
+ * 5. no `active` tuple with a report for this point and build, or a gate the point needs
+ *    has not passed: `unsupported(unsupported_version)`;
  * 6. the runtime failed: `failed(internal_error)`;
  * 7. the hook is not subscribed: `failed(internal_error)`;
  * 8. no endpoint to match: `installed_inactive(not_configured)`;
