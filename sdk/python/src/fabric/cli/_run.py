@@ -525,8 +525,10 @@ def startup_environ(
     except (OSError, ValueError):
         utf8 = sys.flags.utf8_mode if utf8_mode is None else utf8_mode
         options = sys._xoptions if xoptions is None else xoptions
-        if not utf8 or env.get("PYTHONUTF8") or "utf8" in options:
-            return env  # nothing shows a coercion: the shell set it
+        if not utf8 or env.get("PYTHONUTF8") or "utf8" in options or env.get("LC_ALL"):
+            # Nothing shows a coercion: the shell set it. A non-empty LC_ALL turns the
+            # coercion off (PEP 538) while its C locale still turns UTF-8 mode on.
+            return env
         # Coerced: LC_CTYPE was unset, or C/POSIX given while LANG names another locale.
         original = "C" if env.get("LANG") not in (None, "", "C", "POSIX") else None
     if original is None:

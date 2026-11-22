@@ -237,6 +237,10 @@ def test_startup_environ_undoes_only_pythons_own_coercion() -> None:
                         initial=unreadable),
         startup_environ(coerced, utf8_mode=1, xoptions={"utf8": True}, initial=unreadable),
         startup_environ({**coerced, "PYTHONCOERCECLOCALE": "0"}, initial=nothing),
+        # PEP 538: a non-empty LC_ALL turns the coercion off, while its C locale still
+        # turns UTF-8 mode on (PEP 540): the LC_CTYPE is the shell's own.
+        startup_environ({**coerced, "LC_ALL": "C"}, utf8_mode=1, xoptions={},
+                        initial=unreadable),
     ):  # fmt: skip
         assert kept["LC_CTYPE"] == "C.UTF-8"
     other = {"PATH": "/bin", "LC_CTYPE": "en_US.UTF-8"}
