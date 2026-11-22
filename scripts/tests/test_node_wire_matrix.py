@@ -19,8 +19,13 @@ every row and profile:
    Non-model requests (a POST to ``/v1/files``, a GET) are never exchanges.
 3. **Row-specific rules**: the external undici copy's calls are ``uninstrumented_client``
    losses and the mixed run is not complete; a custom fetch over ``node:http`` is not
-   captured and the manifest declares ``node_http`` uncaptured; the tool loop is one run
-   that verifies ``complete_for_observed_scopes``/``terminated`` with its seals.
+   captured and the manifest declares ``node_http`` uncaptured; the tool loop is one
+   ``terminated`` run whose seals all recompute.
+4. **Every gap is explained and the verdict follows from the gaps**: a gap that lowers a
+   verdict is a response cut short (``truncated`` on an exchange that is not complete)
+   or a loss the row names; the run is complete exactly when it has no such gap. A row
+   whose script aborts or cancels a call is therefore ``partial``, as Python's reader
+   reports the same calls (047 §9); ``matrix.json`` names each row's verdict.
 
 Profiles: ``local`` (the local default policy) and ``production`` (a capture policy, the id
 key and a sealed spool), both in pseudonymous identity mode, plus one ``clear`` identity
@@ -214,6 +219,8 @@ def _check_record(
     for exchange in exchanges:
         (response,) = _replayed(root, [exchange], "response") or [None]
         if response is None:
+            # Only a response that never arrived or was cut short has nothing to replay.
+            assert exchange.get("response_state") != "complete", exchange
             continue
         if exchange.get("response_state") == "complete":
             complete += 1
@@ -225,10 +232,38 @@ def _check_record(
     assert complete >= expect.get("min_complete", 1)
     if expect.get("no_exchanges"):
         assert exchanges == [] and attempts == []
+    # Every gap that lowers a verdict is explained by what the script did: a response
+    # the application or the transport cut short (truncated, on an exchange that is not
+    # complete) or a named loss the row expects. Anything else (a missing or mismatched
+    # object, a gap on a complete exchange, an unexpected loss) fails the row, and the
+    # verdict is complete exactly when no such gap exists: no false complete and no false
+    # partial. Informational gaps (the scripted calls are unrelated conversations) are
+    # reported, not counted.
+    state_of = {e["exchange_id"]: e.get("response_state") for e in exchanges}
+    explained = []
+    for run in report.get("runs", []):
+        for gap in run["gaps"]:
+            if gap.get("effect") == "info":
+                continue
+            kind, reason = gap["gap_type"], gap.get("reason")
+            cut_short = (
+                kind == "truncated"
+                and state_of.get(gap.get("exchange_id")) not in (None, "complete")
+            )
+            named = kind == "loss" and uninstrumented and reason == "uninstrumented_client"
+            assert cut_short or named, (gap, state_of.get(gap.get("exchange_id")))
+            explained.append((kind, reason))
     verdicts = sorted({run["verdict"] for run in report.get("runs", [])})
+    for run in report.get("runs", []):
+        lowered = any(g.get("effect") != "info" for g in run["gaps"])
+        assert run["verdict"].startswith("complete") is not lowered, (
+            run["verdict"], run["gaps"],
+        )  # fmt: skip
     if "verdict" in expect:
         assert verdicts == [expect["verdict"]], (verdicts, report["runs"][0]["gaps"])
-        assert code == 0, stderr
+    if verdicts:
+        # The reader exits 0 exactly when every run is complete (047 G1).
+        assert (code == 0) is all(v.startswith("complete") for v in verdicts), (code, stderr)
     if expect.get("not_complete"):
         assert not any(v.startswith("complete") for v in verdicts), verdicts
     if "run_state" in expect:
@@ -249,6 +284,7 @@ def _check_record(
         "losses": dict(lost),
         "verdicts": verdicts,
         "states": dict(Counter(e.get("response_state") for e in exchanges)),
+        "gaps": dict(sorted(Counter(f"{t}:{r}" for t, r in explained).items())),
     }
 
 
