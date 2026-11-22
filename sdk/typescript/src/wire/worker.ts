@@ -444,6 +444,26 @@ export function runFabricWorker(handlers: FabricWorkerHandlers = {}): Promise<vo
   return consume(context, handlers);
 }
 
+/** At most this long for the stop request's message after the shared stop flag is seen. */
+const STOP_MESSAGE_WAIT_MS = 250;
+
+/**
+ * `FabricWorker.stop()` posts the stop request (budget, counters, the hooks it removed)
+ * as a port message and then sets the shared stop flag. The flag is read from shared
+ * memory and can be seen first, while the message waits for this thread's event loop,
+ * which the loop's awaits (microtasks only) never yield to. Without the message the stop
+ * handler runs with the default budget and no `uninstalled` points, so the chained
+ * `disabled(shutdown)` manifest (050 §3.8) was missing from some runs. This yields to
+ * the event loop, bounded, until the message has arrived.
+ */
+async function stopMessage(context: FabricWorkerContext): Promise<void> {
+  if (parentPort === null) return;
+  const until = performance.now() + STOP_MESSAGE_WAIT_MS;
+  while (context.stop === undefined && performance.now() < until) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+}
+
 /** Answers the installing thread's requests (flush) and takes the stop budget. */
 function listen(context: FabricWorkerContext, handlers: FabricWorkerHandlers): void {
   const port = parentPort;
@@ -569,6 +589,7 @@ async function consume(
         // A job queued after this pass drained the ring but before the stop request (it
         // was enqueued while the losses or the tick were handled) is handled by one more
         // pass, so the stop handler never writes final over a position still queued.
+        await stopMessage(context);
         stopping = true;
         continue;
       }
