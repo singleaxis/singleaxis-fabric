@@ -60,11 +60,13 @@ TOOL_CALL = {
 
 def _chat_json(body: dict[str, Any]) -> dict[str, Any]:
     # A tool call while fewer than two tool results came back (a multi-turn loop), when
-    # tools are offered or on the first turn.
+    # tools are offered or on the first turn, unless the request says tool_choice none.
     results = sum(1 for m in body.get("messages", []) if m.get("role") == "tool")
     message: dict[str, Any] = (
         {"role": "assistant", "content": None, "tool_calls": [TOOL_CALL]}
-        if results < 2 and (body.get("tools") or results == 0)
+        if results < 2
+        and (body.get("tools") or results == 0)
+        and body.get("tool_choice") != "none"
         else {"role": "assistant", "content": "It is 21 C in Paris."}
     )
     return {
