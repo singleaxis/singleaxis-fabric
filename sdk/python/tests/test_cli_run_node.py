@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import SimpleNamespace
@@ -376,6 +377,21 @@ def test_the_node_answer_is_cached_by_path_and_modification_time(
     for _ in range(2):
         _launch(project, env, ["node", "a.js"], probe=failing)
     assert len(failing.calls) == 2
+
+
+def test_the_node_path_fits_the_pre_exec_budget(tmp_path: Path, env: dict[str, str]) -> None:
+    """058 §5.5: at most 150 ms before exec with a warm cache, for the Node.js branch too
+    (package lookup, table, cached Node answer). Node is asked once, on the cold run."""
+    project = make_project(tmp_path, env)
+    install_package(project, table())
+    probe = NodeProbe()
+    _launch(project, env, ["node", "a.js"], probe=probe)  # warms the Node answer cache
+    started = time.perf_counter()
+    for _ in range(5):
+        child, _, _ = _launch(project, env, ["node", "a.js"], probe=probe)
+        assert child["NODE_OPTIONS"] == PRELOAD
+    assert (time.perf_counter() - started) / 5 < 0.15
+    assert len(probe.calls) == 1
 
 
 def test_the_probe_never_inherits_the_agents_node_options(
