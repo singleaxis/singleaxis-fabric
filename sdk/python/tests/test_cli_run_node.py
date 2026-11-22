@@ -196,6 +196,61 @@ def test_an_unqualified_package_changes_nothing(
     assert "FC-099" in said and why in said and "npm i @singleaxis/fabric@latest" in said
 
 
+@pytest.mark.parametrize(
+    "exports",
+    [
+        None,  # the package's own exports, with the file removed
+        {"default": "./dist/register.js"},
+        {"import": "./dist/missing.js", "require": "./dist/register.cjs"},
+        {"import": "../outside.js"},
+        {"require": "./dist/register.cjs"},  # nothing an --import can resolve
+    ],
+    ids=["file-removed", "default-removed", "import-target-missing", "outside", "require-only"],
+)
+def test_a_preload_node_cannot_load_is_never_added(
+    tmp_path: Path, env: dict[str, str], exports: dict[str, str] | None
+) -> None:
+    """I3: ``--import`` of a missing file stops Node before the agent's first line
+    (ERR_MODULE_NOT_FOUND), so a partial install changes nothing and says why."""
+    project = make_project(tmp_path, env)
+    package = install_package(project, table())
+    if exports is None:
+        (package / "dist" / "register.js").unlink()
+    else:
+        (package / "dist" / "register.js").unlink()
+        (project / "node_modules" / "@singleaxis" / "outside.js").write_text("")
+        manifest = json.loads((package / "package.json").read_text())
+        manifest["exports"]["./register"] = exports
+        (package / "package.json").write_text(json.dumps(manifest))
+    child, stderr, _ = _launch(project, env, ["node", "a.js"], tty=True)
+    _unchanged(env, child)
+    said = stderr.getvalue()
+    assert "FC-099" in said and "preload file is missing" in said
+
+
+def test_the_preload_follows_the_export_key_order_node_uses(
+    tmp_path: Path, env: dict[str, str]
+) -> None:
+    """Node's ESM resolver takes the first matching condition in the object's own key
+    order: ``{"node": ..., "import": ...}`` loads the ``node`` file."""
+    project = make_project(tmp_path, env)
+    package = install_package(project, table())
+    manifest = json.loads((package / "package.json").read_text())
+    manifest["exports"]["./register"] = {"node": "./dist/register.cjs", "import": "./dist/x.js"}
+    (package / "package.json").write_text(json.dumps(manifest))
+    child, _, _ = _launch(project, env, ["node", "a.js"])
+    assert child["NODE_OPTIONS"] == PRELOAD
+
+
+def test_a_tuple_names_one_bundled_undici() -> None:
+    """As the SDK's ``activeTuple``: the bundled undici must equal the tuple's; a tuple
+    that names none never qualifies a Node that reports one."""
+    no_undici = {k: v for k, v in tuple_for(BUILD).items() if k != "undici"}
+    assert _node.build_decision(table([no_undici]), BUILD) is not None
+    assert _node.build_decision(table([no_undici]), {**BUILD, "undici": None}) is None
+    assert _node.build_decision(table(), BUILD) is None
+
+
 def test_an_unqualified_node_build_changes_nothing_and_lists_the_qualified_ones(
     tmp_path: Path, env: dict[str, str]
 ) -> None:

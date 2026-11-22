@@ -9,7 +9,9 @@ configuration, the agent started by ``fabric run -- node child.cjs`` has the sam
 stdin, stdout, stderr (not a terminal), exit code and working directory as a bare run and
 the PID ``fabric run`` started with (``exec``). Its environment differs only by
 ``FABRIC_*`` variables and, when qualified, the preload appended to ``NODE_OPTIONS``: what
-the agent set there is kept, first and unchanged. No ``OTEL_*`` variable changes. The
+the agent set there is kept, first and unchanged. No ``OTEL_*`` variable changes. A
+package whose preload file is missing (a partial install, which a bare ``--import``
+would turn into ``ERR_MODULE_NOT_FOUND`` before the agent's first line) gets no preload. The
 installed package here carries an inert preload: this checks the launcher, and the
 preload's own passivity is spec 055's ``ts-wire-passivity`` gate."""
 
@@ -43,6 +45,7 @@ CASES = (
     "qualified-own-node-options",
     "package-absent",
     "node-unqualified",
+    "preload-file-missing",
     "broken-config",
     "missing-config",
 )
@@ -90,6 +93,9 @@ def world(tmp_path: Path, request: pytest.FixtureRequest) -> Iterator[dict[str, 
         install_package(project, table([tuple_for(build)]))
     elif case == "node-unqualified":
         install_package(project, table([tuple_for({**build, "node": "24.999.0"})]))
+    elif case == "preload-file-missing":  # a partial install: Node could not load it
+        package = install_package(project, table([tuple_for(build)]))
+        (package / "dist" / "register.js").unlink()
     (project / "child.cjs").write_text(CHILD)
     yield {"case": case, "env": env, "project": project, "dump": tmp_path / "dump.json"}
 
@@ -135,7 +141,7 @@ def test_a_node_agent_sees_a_bare_run_but_for_fabric_variables(world: dict[str, 
         assert after["FABRIC_WIRE_AUTOLOAD"] == "1"
         own = before.get("NODE_OPTIONS")
         assert after["NODE_OPTIONS"] == (f"{own} {PRELOAD}" if own else PRELOAD)
-    elif case in ("package-absent", "node-unqualified"):
+    elif case in ("package-absent", "node-unqualified", "preload-file-missing"):
         # spec 055 §13.1: no preload, no autoload; the explicit API's settings only
         assert changed <= set(_run.NODE_VARIABLES)
     else:  # I3: a configuration problem leaves the environment exactly as it was

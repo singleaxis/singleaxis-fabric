@@ -123,6 +123,31 @@ def _export_target(entry: Any) -> str | None:
     return None
 
 
+#: The conditions Node matches when it resolves ``--import`` (an ESM import), in the
+#: order of the export object's own keys.
+_IMPORT_CONDITIONS = frozenset({"node", "import", "module-sync", "default"})
+
+
+def _import_target(entry: Any) -> str | None:
+    """The file Node's ESM resolver picks from a conditional export: the first key of the
+    object (in its own order) that is an import condition and resolves."""
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict):
+        for condition, value in entry.items():
+            if condition in _IMPORT_CONDITIONS:
+                found = _import_target(value)
+                if found is not None:
+                    return found
+    return None
+
+
+def _inside(package: Path, target: str) -> Path | None:
+    """``target`` (a ``./`` export path) as a file inside ``package``, else ``None``."""
+    path = (package / target).resolve()
+    return path if package.resolve() in path.parents and path.is_file() else None
+
+
 def load_table(package: Path) -> tuple[dict[str, Any] | None, str | None]:  # noqa: PLR0911 - one return per reason
     """The package's qualification table through its ``exports`` (``None`` and why when
     the package has no preload or no table)."""
@@ -135,6 +160,11 @@ def load_table(package: Path) -> tuple[dict[str, Any] | None, str | None]:  # no
     named = f"{PACKAGE} {version}" if isinstance(version, str) else PACKAGE
     if not isinstance(exports, dict) or "./register" not in exports:
         return None, f"{named} has no zero-code preload (./register)"
+    # A preload Node cannot load stops the agent before its first line (ERR_MODULE_NOT_FOUND),
+    # so a partial or damaged install never gets the --import entry (I3).
+    preload = _import_target(exports.get("./register"))
+    if preload is None or _inside(package, preload) is None:
+        return None, f"{named}: its zero-code preload file is missing (a partial install)"
     target = _export_target(exports.get("./wire-qualification.json"))
     if target is None:
         return None, f"{named} has no qualification table"
@@ -199,7 +229,9 @@ def build_decision(table: Mapping[str, Any], build: Mapping[str, Any]) -> Findin
     if not here:
         return Finding("FC-101", f"{platform or 'this platform'}; qualified: {listed(tuples)}")
     for t in here:
-        if t.get("node") == build.get("node") and t.get("undici") in (None, build.get("undici")):
+        # As the SDK's ``activeTuple``: the bundled undici must equal the tuple's, and a
+        # tuple without one never matches a Node that reports one.
+        if t.get("node") == build.get("node") and t.get("undici") == build.get("undici"):
             return None
     return Finding(
         "FC-100", f"Node {build.get('node')} on {platform}; qualified: {listed(tuples, platform)}"
