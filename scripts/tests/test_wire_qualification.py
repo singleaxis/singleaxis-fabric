@@ -9,7 +9,10 @@ exactly the builds the spec names (Node 22, 24.0.0, the lowest Node 24 build pub
 both body channels and the newest audited 24.x), and no gate or active claim is made
 before its unit. An ``active`` tuple (unit 055-t6) carries the SHA-256 of its committed
 ``ts-wire-passivity`` report, which passed every gate on exactly that build, and the CI
-passivity job runs on exactly the active tuples."""
+passivity job runs on exactly the active tuples. Unit 055-t17 passed ``TS-1U`` and
+``TS-1D``: every active tuple has the passed report of every CI gate of spec 055 §9.2
+committed (passivity, privacy, parity, client matrix, negative rows, chaos, the Fabric
+Node end to end), and every gate job runs on exactly the active tuples."""
 
 from __future__ import annotations
 
@@ -37,10 +40,19 @@ PASSIVITY_GATES = {
     "forbidden_work",
     "behaviour_identity",
     "memory_bound",
+    "large_shapes",
 }
-# Gates added after the committed reports were measured: a report may predate them
-# (large_shapes: unit 055-t8; unit 055-t17 commits the claim's reports with every gate).
-LATER_PASSIVITY_GATES = {"large_shapes"}
+# Spec 055 §9.2: the CI gate jobs whose reports a claimed tuple commits, by report prefix
+# and the job that writes it.
+GATE_REPORTS = {
+    "passivity": "ts-wire-passivity",
+    "privacy": "ts-wire-privacy",
+    "parity": "ts-wire-parity",
+    "matrix": "ts-wire-matrix",
+    "negative": "ts-wire-matrix",
+    "chaos": "ts-wire-matrix",
+    "node-e2e": "ts-wire-node-e2e",
+}
 
 
 def _table() -> dict[str, Any]:
@@ -128,22 +140,80 @@ def test_ci_audits_the_builds_the_spec_names() -> None:
 
 def test_table_makes_no_claim_before_its_units() -> None:
     """Unit 055-t1 writes audited tuples; 055-t6 makes an undici tuple active with its
-    passivity report; core-HTTP tuples arrive with 055-t21 and the gates flip in 055-t17
-    and 055-t22."""
+    passivity report; 055-t17 passes TS-1U and TS-1D; core-HTTP tuples arrive with 055-t21
+    and TS-1H passes in 055-t22."""
     table = _table()
     assert table["gates"] == {
-        "TS-1U": "not_passed",
-        "TS-1D": "not_passed",
+        "TS-1U": "passed",
+        "TS-1D": "passed",
         "TS-1H": "not_passed",
     }
     assert {t["claim"] for t in table["tuples"]} <= {"audited", "active"}
     assert {t["point"] for t in table["tuples"]} == {"wire.ts.undici"}
+    assert {t["undici_origin"] for t in table["tuples"]} == {"bundled"}
     audited = {
         (a["node"], a["platform"])
         for a in table["audits"]
         if a["result"] == "both_body_channels"
     }
     assert {(t["node"], t["platform"]) for t in table["tuples"]} == audited
+
+
+def _gate_report(prefix: str, tuple_: dict[str, Any]) -> Path:
+    return RESULTS / f"{prefix}-{tuple_['node']}-{tuple_['platform']}.json"
+
+
+def test_gates_are_passed_with_every_report_of_every_claimed_tuple() -> None:
+    """Spec 055 §9.2, §9.5 (055-t17): a passed gate claims only tuples whose every CI gate
+    passed on exactly that build, with each job's report committed."""
+    active = _active()
+    assert active, "TS-1U and TS-1D passed, so at least one tuple is claimed"
+    for tuple_ in active:
+        for prefix in GATE_REPORTS:
+            path = _gate_report(prefix, tuple_)
+            assert path.is_file(), f"{path.name}: commit the CI report of this tuple"
+            report = json.loads(path.read_text(encoding="utf-8"))
+            assert report["result"] == "passed", path.name
+            if prefix == "privacy":
+                assert report["schema"] == "fabric.node-wire-privacy-report/v1"
+                assert report["node"] == tuple_["node"], path.name
+                assert all(report["gates"].values()), path.name
+                continue
+            if prefix == "passivity":
+                continue  # test_every_active_tuple_has_its_passed_report_committed
+            ran = report["tuple"]
+            assert (ran["node"], ran["platform"], ran["undici"]) == (
+                tuple_["node"], tuple_["platform"], tuple_["undici"],
+            ), path.name  # fmt: skip
+            if prefix == "matrix":
+                assert report["schema"] == "fabric.node-wire-matrix-report/v1"
+                assert report["rows"] and all(
+                    r["result"] == "passed" for r in report["rows"]
+                )
+            elif prefix == "chaos":
+                assert report["schema"] == "fabric.node-wire-chaos-report/v1"
+                assert report["cases"] and all(
+                    c["result"] == "passed" for c in report["cases"].values()
+                )
+            else:
+                assert report["schema"] == "fabric.node-wire-gate-report/v1"
+                assert report["gate"] == prefix
+                outcomes = {t["outcome"] for t in report["tests"]}
+                assert report["tests"] and outcomes == {"passed"}, path.name
+    for prefix in GATE_REPORTS:
+        committed = {p.name for p in RESULTS.glob(f"{prefix}-[0-9]*.json")}
+        assert committed == {_gate_report(prefix, t).name for t in active}, prefix
+
+
+def test_every_gate_job_runs_on_exactly_the_active_tuples() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    active = {(t["node"], t["platform"]) for t in _active()}
+    for job in sorted(set(GATE_REPORTS.values())):
+        body = text[text.index(f"\n  {job}:\n") + 1 :]
+        end = re.search(r"\n  [a-z][a-z0-9-]*:\n", body)
+        body = body if end is None else body[: end.start()]
+        rows = re.findall(r'node-version: "([^"]+)", platform: ([a-z0-9-]+)', body)
+        assert {(n, p) for n, p in rows} == active, job
 
 
 def _report_path(tuple_: dict[str, Any]) -> Path:
@@ -164,11 +234,7 @@ def test_every_active_tuple_has_its_passed_report_committed() -> None:
         assert report["schema"] == "fabric.node-wire-passivity-report/v1"
         assert report["quick"] is False and report["result"] == "passed"
         assert report["voided_runs"] in (0, 1)
-        assert (
-            PASSIVITY_GATES
-            <= set(report["gates"])
-            <= PASSIVITY_GATES | LATER_PASSIVITY_GATES
-        )
+        assert set(report["gates"]) == PASSIVITY_GATES, path.name
         assert all(report["gates"].values()), path.name
         assert report["tuple"] == {
             "point": tuple_["point"],

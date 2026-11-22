@@ -147,17 +147,26 @@ def test_release_refuses_a_preload_tarball_with_an_unpassed_gate(
     ) == (1 if refused else 0)
 
 
-def test_this_tree_would_be_refused_until_the_gates_pass(tmp_path: Path) -> None:
-    """The source tree exports the preload and its table has not passed TS-1U and TS-1D
-    (unit 055-t17 flips them): a release built from it is refused."""
+def test_this_tree_passes_the_gate_check_now_that_the_gates_passed(
+    tmp_path: Path,
+) -> None:
+    """Unit 055-t17 passed TS-1U and TS-1D: a release built from this tree, which exports
+    the preload, is accepted; the same tree with either gate unpassed would be refused."""
     manifest = json.loads((SDK / "package.json").read_text(encoding="utf-8"))
     table = json.loads((SDK / "wire-qualification.json").read_text(encoding="utf-8"))
     assert "./register" in manifest["exports"]
-    found = check_npm_wire_gates.problems(
-        _tarball(tmp_path, manifest["exports"], table["gates"])
-    )
-    unpassed = [g for g in ("TS-1U", "TS-1D") if table["gates"][g] != "passed"]
-    assert len(found) == len(unpassed)
+    assert {g: table["gates"][g] for g in ("TS-1U", "TS-1D")} == {
+        "TS-1U": "passed",
+        "TS-1D": "passed",
+    }
+    tarball = _tarball(tmp_path, manifest["exports"], table["gates"])
+    assert check_npm_wire_gates.problems(tarball) == []
+    for gate in ("TS-1U", "TS-1D"):
+        unpassed = {**table["gates"], gate: "not_passed"}
+        found = check_npm_wire_gates.problems(
+            _tarball(tmp_path, manifest["exports"], unpassed)
+        )
+        assert len(found) == 1 and gate in found[0], found
 
 
 def test_release_qualification_runs_the_gate_check_on_the_qualified_tarball() -> None:

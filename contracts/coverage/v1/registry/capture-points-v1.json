@@ -141,7 +141,7 @@
       "runtime": "Node.js 24+, exact qualified bundled/external undici builds; Fabric native addon prebuild",
       "process_global": "yes (diagnostics_channel subscription)",
       "activation": "opt-in: explicit wire `install()` or the preload with undici enabled (`FABRIC_WIRE_UNDICI`, on by default once installed). Fix: start the agent with `FABRIC_WIRE_AUTOLOAD=1` and `NODE_OPTIONS=\"--import=@singleaxis/fabric/register\"` (append to an existing NODE_OPTIONS)",
-      "state": "TS track (055); the manifest reports `unsupported` until TS-1U and TS-1D pass for the exact build listed in `sdk/typescript/wire-qualification.json`",
+      "state": "TS-1U and TS-1D passed (055-t17): `active` only on the exact builds `sdk/typescript/wire-qualification.json` lists as `active` (Node 24.4.0 and 24.22.3, linux-x64-glibc, Node's bundled undici); every other build, and every call an external undici copy publishes (an `uninstrumented_client` loss), reports `unsupported`",
       "observes": "matched POST model exchanges published by a qualified undici build (global `fetch`, a qualified external undici, and clients such as the official `openai` and `@anthropic-ai/sdk` that send through them): request/response body publications, timing, HTTP status, response state, error class and run scope",
       "cannot_observe": "unmatched, non-model or GET requests; headers beyond the allowed metadata and C40; unqualified undici publishers; Node.js below 24 and Node 24 builds without body-chunk publications; custom fetch that does not delegate to a qualified point; HTTP/2 unless separately qualified; worker isolates that did not attach; TLS; provider-side receipt",
       "passivity_gate": "TS-1U, TS-1D (055 §9)",

@@ -3,8 +3,8 @@
 """Spec 055 §9.4: an npm tarball that exports the zero-code preload
 (``@singleaxis/fabric/register``) may be published only once the qualification gates the
 preload depends on have passed: ``TS-1U`` (``wire.ts.undici``) and ``TS-1D`` (protection,
-spool, sender and readback), in the tarball's own ``dist/wire-qualification.json``. Until
-unit 055-t17 flips them, no tarball with the preload can reach npm.
+spool, sender and readback), in the tarball's own ``dist/wire-qualification.json``. Unit
+055-t17 passed them; a tarball whose table says otherwise is still refused.
 
     python scripts/release/check_npm_wire_gates.py --tarball qualification/npm/x.tgz
 

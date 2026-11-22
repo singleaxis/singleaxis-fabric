@@ -209,7 +209,7 @@
     {"path": "invalid/wire-qualification-gate-without-active-tuple.json", "sha256": "5dce782344cecc0aba975ed52afec7fbe89d48751ac3f2d047a97bb7ed535019", "expectation": "invalid", "expected_error": "coverage.qualification.gate"},
     {"path": "invalid/wire-qualification-node-22-tuple.json", "sha256": "9c0f5382a2e8ae810ace5ea6e9d482aa1309830bbcd8e6bd0810b70213482824", "expectation": "invalid", "expected_error": "coverage.qualification.tuple"},
     {"path": "invalid/wire-qualification-tuple-without-publication.json", "sha256": "07930b3b48b9400c9ab51db56f879864f86ad9651e7b9e1edaf976dcaca20128", "expectation": "invalid", "expected_error": "coverage.qualification.tuple"},
-    {"path": "registry/capture-points-v1.json", "sha256": "a18946b0b7be7901dbc4ba486f744acbbc32ea64a001bcfb8bf11765bf585b0d", "expectation": "registry", "expected_error": null},
+    {"path": "registry/capture-points-v1.json", "sha256": "c03487c5bb23b80f9d70f12562634215b1c89ac8e342dbee809ea0eaa09c8884", "expectation": "registry", "expected_error": null},
     {"path": "registry/content-roles-v1.json", "sha256": "0018cb7cb6cfd582e5b64b77cce1b5f115f0cab12abfaed56f95e4612733410d", "expectation": "registry", "expected_error": null},
     {"path": "registry/field-registry-v1.json", "sha256": "42d03460e9e1b52037c07385a5d325f1996360717db1c5f62a12bdbfdb40d700", "expectation": "registry", "expected_error": null},
     {"path": "registry/provider-safety-map-v1.json", "sha256": "e0642e8dcb9a858e9699c7cf274c863e99863c756b0985d134f0bcd2a4f97b1b", "expectation": "registry", "expected_error": null},
