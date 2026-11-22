@@ -272,6 +272,22 @@ def _check_record(
         assert not any(v.startswith("complete") for v in verdicts), verdicts
     if "run_state" in expect:
         assert [r.get("run_state") for r in report["runs"]] == [expect["run_state"]]
+    if not expect.get("no_exchanges"):
+        # 055-t17 "newly visible": on a claimed build, the table shipped in the packed
+        # package (gates passed, tuple active) makes manifest 0 declare the point active.
+        manifests = sorted(
+            (r["attributes"] for r in rows
+             if r.get("kind") == "span" and r.get("name") == "fabric.capture_manifest"),
+            key=lambda a: a["fabric.manifest.manifest_seq"],
+        )  # fmt: skip
+        assert manifests, "no capture manifest was delivered"
+        # "<point>@<version>:<kind>:<state>:<a>:<b>:<reason>"
+        (undici,) = [
+            p
+            for p in manifests[0]["fabric.manifest.capture_points"]
+            if p.startswith("wire.ts.undici@")
+        ]
+        assert undici.split(":")[2] == "active", undici
     if "uncaptured_class" in expect:
         # The manifest declares what this process could not capture, never a guess.
         declared = [
