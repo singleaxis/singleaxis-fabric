@@ -246,11 +246,12 @@ def _check_record(
             if gap.get("effect") == "info":
                 continue
             kind, reason = gap["gap_type"], gap.get("reason")
-            cut_short = (
-                kind == "truncated"
-                and state_of.get(gap.get("exchange_id")) not in (None, "complete")
+            cut_short = kind == "truncated" and state_of.get(
+                gap.get("exchange_id")
+            ) not in (None, "complete")
+            named = (
+                kind == "loss" and uninstrumented and reason == "uninstrumented_client"
             )
-            named = kind == "loss" and uninstrumented and reason == "uninstrumented_client"
             assert cut_short or named, (gap, state_of.get(gap.get("exchange_id")))
             explained.append((kind, reason))
     verdicts = sorted({run["verdict"] for run in report.get("runs", [])})
@@ -263,7 +264,10 @@ def _check_record(
         assert verdicts == [expect["verdict"]], (verdicts, report["runs"][0]["gaps"])
     if verdicts:
         # The reader exits 0 exactly when every run is complete (047 G1).
-        assert (code == 0) is all(v.startswith("complete") for v in verdicts), (code, stderr)
+        assert (code == 0) is all(v.startswith("complete") for v in verdicts), (
+            code,
+            stderr,
+        )
     if expect.get("not_complete"):
         assert not any(v.startswith("complete") for v in verdicts), verdicts
     if "run_state" in expect:
