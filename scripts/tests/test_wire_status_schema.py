@@ -155,7 +155,8 @@ def test_diagnostics_family_is_pinned() -> None:
     # 1.1.0: spec 055 §4.7 (the sdk list, the Node.js entries, the wire-status schema);
     # 1.2.0: FW-034 (055-t14: a Node.js spool directory that is unset or unusable)
     # 1.3.0: FW-035 (055-t17: a model call published by an unqualified undici copy)
-    assert manifest["version"] == "1.3.0"
+    # 1.4.0: FC-098 to FC-101 (055-t18: why `fabric run` left a Node.js agent unchanged)
+    assert manifest["version"] == "1.4.0"
     pinned = {manifest["schema"]["path"]: manifest["schema"]["sha256"]}
     pinned.update({f["path"]: f["sha256"] for f in manifest["files"]})
     on_disk = {

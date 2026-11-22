@@ -1,6 +1,6 @@
 {
   "contract": "singleaxis.fabric.cli-config",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "digest_scope": "exact_file_bytes",
   "schema": {
     "path": "schema/fabric-config-v1.schema.json",
