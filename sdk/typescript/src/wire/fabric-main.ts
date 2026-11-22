@@ -16,6 +16,7 @@
  */
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
 
+import { FileContentClient } from "./file-content.js";
 import { NodeContentClient } from "./node-content.js";
 import { type DeliveryTarget, TraceClient } from "./delivery.js";
 import { loadNative } from "./native.js";
@@ -58,6 +59,11 @@ export interface FabricMainSnapshot {
   /** The Node's content endpoint, when one is configured. */
   readonly content:
     { readonly target: DeliveryTarget; readonly headers: Record<string, string> } | undefined;
+  /**
+   * The local profile's direct store (`FABRIC_WIRE_STORE=file:///dir`, no Node): the
+   * sender writes the bodies there itself (`file-content.ts`).
+   */
+  readonly fileStore?: { readonly root: string; readonly tenant: string };
   readonly proxy: string | undefined;
   readonly batchBodies: number;
   readonly concurrency: number;
@@ -159,12 +165,14 @@ export function runFabricMain(): Promise<void> | undefined {
   });
   const traces = new TraceClient(target(snapshot.traces), { proxy: snapshot.proxy });
   const content =
-    snapshot.content === undefined
-      ? undefined
-      : new NodeContentClient(target(snapshot.content), {
+    snapshot.content !== undefined
+      ? new NodeContentClient(target(snapshot.content), {
           serviceName: config.serviceName,
           proxy: snapshot.proxy,
-        });
+        })
+      : snapshot.fileStore !== undefined
+        ? new FileContentClient(snapshot.fileStore.root, snapshot.fileStore.tenant)
+        : undefined;
   const sender = new Sender({
     spool,
     traces,

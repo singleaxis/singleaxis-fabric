@@ -482,6 +482,12 @@ function installWith(
             target: { ...targetOf(contentRoute, settings.contentEndpoint) },
             headers: { ...contentRoute.headers },
           },
+    // The local profile's direct store: the sender writes the bodies there itself.
+    ...(settings.contentEndpoint === undefined &&
+    settings.store?.kind === "file" &&
+    settings.tenantId !== undefined
+      ? { fileStore: { root: settings.store.root, tenant: settings.tenantId } }
+      : {}),
     proxy: settings.proxy,
     batchBodies: settings.contentBatchBodies,
     concurrency: settings.contentConcurrency,
