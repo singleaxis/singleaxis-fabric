@@ -1,0 +1,64 @@
+{
+  "schema": "fabric.node-wire-conformance/v1",
+  "comment": "Spec 055 §9.3 conformance mapping for TS-0 and TS-1U/TS-1D (049 decision 9), unit 055-t17. Each criterion of 049 (C0 contracts, C0A content path and privacy gate, C1 emitters and projection) names the tests that hold it for the TypeScript wire capture, as `path::title` (a test, a describe block or a Python test function); scripts/tests/test_node_wire_qualification_claim.py checks every name exists. TS-1H rows and LR-1 are unit 055-t22's; no TS-2/P2/P3 or 046 conformance is claimed.",
+  "criteria": {
+    "C0-1": {"means": "registry <-> schema <-> spec consistency", "tests": [
+      "scripts/tests/test_coverage_contracts.py::test_repository_coverage_contracts_and_spec_blocks_validate",
+      "scripts/tests/test_coverage_contracts.py::test_c0_1_every_fixture_and_vector_is_pinned_and_checked",
+      "sdk/typescript/test/wire/manifest/fixtures.test.ts::the fixtures themselves pass the same validator",
+      "scripts/tests/test_wire_qualification.py::test_gates_are_passed_with_every_report_of_every_claimed_tuple"]},
+    "C0-2": {"means": "vocabulary closure", "tests": [
+      "scripts/tests/test_coverage_contracts.py::test_c0_2_vocabulary_growth_needs_the_schema_enums",
+      "sdk/typescript/test/wire/codec/p1-types.test.ts::P1 vocabularies equal Python's _capture_types.py",
+      "sdk/typescript/test/wire/config/config.test.ts::every FW- literal in src/wire is a TypeScript catalogue entry",
+      "sdk/typescript/test/wire/status/status.test.ts::every typescript catalogue entry is emitted by some code path"]},
+    "C0-3": {"means": "pseudonym vectors (v1 unchanged, v2 domain separation)", "tests": [
+      "scripts/tests/test_coverage_contracts.py::test_c0_3_pseudonym_v1_is_unchanged_and_v2_is_domain_separated",
+      "sdk/typescript/test/wire/codec/p1-vectors.test.ts::pseudonym-v2 and run-id-pseudonym-v1"]},
+    "C0-4": {"means": "allowlist key by key", "tests": [
+      "scripts/tests/test_coverage_contracts.py::test_c0_4_every_key_is_closed_and_admitted_in_p0",
+      "sdk/typescript/test/wire/protect/parity.test.ts::the role table and fabric.local-default equal Python's",
+      "scripts/tests/test_node_wire_capture_e2e.py::test_python_and_node_write_the_same_frames_for_the_same_fixture"]},
+    "C0-5": {"means": "contract tree and artifact release-qualifiable", "tests": [
+      "scripts/tests/test_npm_release_workflow.py::test_release_refuses_a_preload_tarball_with_an_unpassed_gate",
+      "scripts/tests/test_npm_release_workflow.py::test_this_tree_passes_the_gate_check_now_that_the_gates_passed",
+      "scripts/tests/test_recorder_release_boundary.py::test_release_policy_is_recorder_only"]},
+    "C0A-1": {"means": "per-role end to end", "tests": [
+      "scripts/tests/test_node_wire_fabric_node_e2e.py::test_a_node_agent_through_the_production_node_reads_back_complete",
+      "scripts/tests/test_node_wire_matrix.py::test_matrix_row",
+      "sdk/typescript/test/wire/parts/split.test.ts::retains the parts with half-open ranges and reassembles to source_sha256"]},
+    "C0A-2": {"means": "privacy canaries on telemetry, spool, logs and reports", "tests": [
+      "qualification/node-wire/privacy/run.mjs::fabric.node-wire-privacy-report/v1",
+      "scripts/tests/test_node_wire_fabric_node_e2e.py::test_a_node_agent_through_the_production_node_reads_back_complete",
+      "sdk/typescript/test/wire/parts/split.test.ts::property: retained splits reassemble; protecting modes never leak"]},
+    "C0A-3": {"means": "profile gate matrix", "tests": [
+      "sdk/typescript/test/wire/protect/protect.test.ts::the production gate (049 §7.3, §7.8)",
+      "sdk/typescript/test/wire/protect/protect.test.ts::a production policy makes a local store production; a local one needs no keys",
+      "scripts/tests/test_node_wire_matrix.py::test_matrix_row"]},
+    "C0A-4": {"means": "caller-id mapping; the Node rejects clear ids under a pseudonymous configuration", "tests": [
+      "scripts/tests/test_coverage_contracts.py::test_c0a_4_clear_ids_are_rejected_under_a_pseudonymous_node",
+      "sdk/typescript/test/wire/run/scope.test.ts::no clear caller id reaches any marker, seal or token in the pseudonymous mode",
+      "sdk/typescript/test/wire/run/identity.test.ts::a pseudonymous consumer refuses a clear correlation id (R8); a clear one takes it",
+      "sdk/typescript/test/wire/ts0/ts0.test.ts::clear mode emits the caller's ids as given (the explicit opt-in)"]},
+    "C1-1": {"means": "event id stable across retry and re-export", "tests": [
+      "sdk/typescript/test/wire/sender/sender.test.ts::restart: what a killed process admitted is delivered by the next one with the same ids and bytes",
+      "sdk/typescript/test/wire/seal/pipeline.test.ts::replay unchanged: every read, in TypeScript and in Python, gives the minted id",
+      "scripts/tests/test_node_wire_chaos.py::test_drainer_killed_during_retirement_is_taken_over"]},
+    "C1-2": {"means": "manifest sequencing and chain", "tests": [
+      "sdk/typescript/test/wire/manifest/vectors.test.ts::manifest-chain-v1 through ManifestChain",
+      "sdk/typescript/test/wire/codec/p1-vectors.test.ts::manifest-chain-v1 and manifest-span-v1",
+      "scripts/tests/test_coverage_contracts.py::test_c0_1_manifest_chain_pins_digests_and_fixes_policy_per_epoch"]},
+    "C1-3": {"means": "projection schema; the same exchanges reconstruct identically", "tests": [
+      "scripts/tests/test_node_wire_capture_e2e.py::test_python_and_node_runs_project_the_same",
+      "scripts/tests/test_node_wire_capture_e2e.py::test_a_node_fetch_run_is_verified_complete_and_replays_its_bytes"]},
+    "C1-4": {"means": "split reassembly", "tests": [
+      "sdk/typescript/test/wire/parts/large.test.ts::a 40 MiB request with one inline image keeps its text and reassembles to source_sha256",
+      "sdk/typescript/test/wire/parts/scan.test.ts::covers the shared fixture's edge cases and seeded random bodies"]},
+    "C1-5": {"means": "no false complete", "tests": [
+      "scripts/tests/test_node_wire_chaos.py::test_kill_before_protection_is_never_complete",
+      "scripts/tests/test_node_wire_chaos.py::test_randomized_operations_keep_accounting_and_never_claim_false_complete",
+      "scripts/tests/test_node_wire_matrix.py::test_matrix_row",
+      "sdk/typescript/test/wire/undici/publisher.test.ts::a matched call another undici copy publishes is an uninstrumented_client loss",
+      "sdk/typescript/test/wire/ledger/ledger.test.ts::a torn slot is cleared and counted, never exported, and reported by both drainers"]}
+  }
+}

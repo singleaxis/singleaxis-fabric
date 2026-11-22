@@ -179,6 +179,25 @@ jobs:
       - name: Install locked dependencies
         working-directory: sdk/typescript
         run: npm ci
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the Python SDK for the cross-language tests
+        # Spec 055 §9.5 (055-t5): the epoch registration tests run Python's
+        # fabric.wire._registration against the TypeScript one, both ways.
+        # 055-t7: the spool tests read and write sealed (FWSPENC1) records in Python,
+        # whose envelope needs cryptography (the otlp extra).
+        # 055-t9: the manifest tests validate TypeScript manifests with the contract
+        # validator (scripts/contracts/validate_coverage_contracts.py), which needs the dev
+        # group's jsonschema.
+        # 055-t16: the loss ledger tests recover TypeScript writers' slots with Python's
+        # LossLedger and Sender (and the reverse), so Python drains a spool TypeScript
+        # wrote under a full disk.
+        run: |
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+          echo "FABRIC_TEST_PYTHON=$(command -v python)" >> "${GITHUB_ENV}"
       - name: Lint, typecheck, build, and test
         working-directory: sdk/typescript
         run: |
@@ -188,7 +207,9 @@ jobs:
           npm run build
           npm test
           npm run test:package
-          npm run package:qualified -- --smoke
+          # No prebuilds in this job: the tarball with all six and its tests are the
+          # ts-wire-package job's (spec 055 §9.4).
+          npm run package:qualified -- --smoke --allow-partial-prebuilds
       - name: Fresh install from the README with current OpenTelemetry releases
         # Runs the README's exact npm install lines (the SDK resolved to the
         # tarball built above) in an empty directory, runs its example
@@ -197,6 +218,425 @@ jobs:
         # set that crashes at import.
         working-directory: sdk/typescript
         run: npm run test:fresh-install
+
+  ts-wire-audit:
+    # Spec 055 §3.1, §9.4: which undici diagnostics channels each Node build publishes
+    # for one local fetch POST, compared with sdk/typescript/wire-qualification.json.
+    # Node 22 and 24.0.0 must publish neither body channel, 24.4.0 (the lowest audited
+    # build that publishes both) and the newest audited 24.x both. The versions are exact
+    # pins: a newer Node build is added by auditing it and committing its row first.
+    name: Undici channel audit (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["22.23.5", "24.0.0", "24.4.0", "24.22.3"]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Audit this build and compare with the qualification table
+        run: node scripts/typescript/audit-undici-channels.mjs --check sdk/typescript/wire-qualification.json
+
+  ts-wire-passivity:
+    # Spec 055 §9.2: the passivity gate of wire.ts.undici on each tuple the qualification
+    # table makes active (scripts/tests/test_wire_qualification.py keeps this matrix and
+    # the active tuples equal): calibration, hook cost (30 alternating trials in isolated
+    # processes), the gate self-test (an injected stall of twice each budget must fail
+    # it), event loop, no forbidden work in hooks, behaviour identity and memory bound.
+    # The JSON report is uploaded; the reports of the claimed tuples are committed under
+    # qualification/node-wire/results/. Re-run only when the calibration voided the run
+    # twice; run.mjs already repeats a void run once. linux-arm64-glibc is not claimed
+    # yet: on the hosted arm64 runners the event-loop utilization delta (0.033-0.043, once
+    # above 0.05) and the per-exchange hook time (80-94% of its scaled budget) have too
+    # little margin to call the gate stable (spec 055 rev 3.6; unit 055-t17). 055-t16: the
+    # stalled-recorder step gains a full disk (losses only in the loss ledger) and a
+    # full disk with the ledger's header lock held by another process.
+    name: Wire passivity (Node ${{ matrix.node-version }}, ${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node-version: "24.4.0", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+          - { node-version: "24.22.3", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: Install locked dependencies
+        working-directory: sdk/typescript
+        run: npm ci
+      - name: Run the passivity gate
+        env:
+          FABRIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          node qualification/node-wire/passivity/run.mjs
+          --out passivity-${{ matrix.node-version }}-${{ matrix.platform }}.json
+      - name: Upload the passivity report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: passivity-${{ matrix.node-version }}-${{ matrix.platform }}
+          path: passivity-${{ matrix.node-version }}-${{ matrix.platform }}.json
+          if-no-files-found: error
+
+  ts-wire-parity:
+    # Spec 055 §9.2, §9.5 (unit 055-t13; extended to the claim matrix by 055-t17): the
+    # first verified record of a Node agent. A Node script calling global fetch with
+    # explicit install() of the source-built wire core captures a tool loop and delivers
+    # it with the TypeScript sender to the recording sink; python -m fabric.reconstruct
+    # must report the run complete and terminated (exit 0) and replay the exact request
+    # and response bytes; the same protocol fixture through Python's capture must write
+    # identical spool frames after the spec 055 §7.3 substitution, and both runs, each
+    # delivered to a sink, reconstruct to the same projection; a content record the
+    # Node refuses for good is retired and read as not_captured(store_failed). Also the
+    # sender's own tests and the fixture replayer. 055-t17: runs on every claimed tuple of
+    # the qualification table and writes a JSON report (qualification/node-wire/report.py);
+    # the reports of the claimed tuples are committed under qualification/node-wire/results/.
+    name: Wire parity (Node ${{ matrix.node-version }}, ${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node-version: "24.4.0", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+          - { node-version: "24.22.3", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: Install locked dependencies
+        working-directory: sdk/typescript
+        run: npm ci
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the Python SDK (the reader, Python's capture and the recording sink)
+        # The otlp extra: the sink decodes OTLP protobuf, Python's spool envelope needs
+        # cryptography; the dev group carries pytest.
+        run: |
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+          echo "FABRIC_TEST_PYTHON=$(command -v python)" >> "${GITHUB_ENV}"
+      - name: Sender and fixture replayer tests
+        working-directory: sdk/typescript
+        run: npm test -- test/wire/sender
+      - name: The first verified Node record, and Python/TypeScript frame parity
+        env:
+          FABRIC_REQUIRE_NODE_E2E: "1"
+          FABRIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          FABRIC_TEST_NODE="$(command -v node)" python qualification/node-wire/report.py \
+            --gate parity --node "$(command -v node)" \
+            --out parity-${{ matrix.node-version }}-${{ matrix.platform }}.json \
+            -- scripts/tests/test_node_wire_capture_e2e.py
+      - name: Upload the parity report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: parity-${{ matrix.node-version }}-${{ matrix.platform }}
+          path: parity-${{ matrix.node-version }}-${{ matrix.platform }}.json
+          if-no-files-found: error
+
+  ts-wire-package:
+    # Spec 055 §9.4, §9.5 (unit 055-t14, milestone M2): the npm tarball a customer installs,
+    # with the six digest-checked prebuilds of the typescript-native job, tested as
+    # installed. test/package-artifact.node.mjs: the root import installs no hook; the
+    # --import and --require preloads in ES module and CommonJS apps; preload plus
+    # install() is one runtime; a missing prebuild and malformed configuration are
+    # statuses; autoload_off; no install script. scripts/tests/test_node_wire_zero_code_e2e.py:
+    # unmodified scripts using global fetch, the official openai client and the official
+    # @anthropic-ai/sdk client, started only with NODE_OPTIONS and environment variables,
+    # each produce a run python -m fabric.reconstruct verifies, and behave identically with
+    # the preload on and off. scripts/tests/test_wire_status_schema.py: the TypeScript
+    # status documents of every disabled reason validate. 055-t18 (milestone M4):
+    # scripts/tests/test_fabric_run_node_e2e.py runs `fabric init`, `fabric run -- node
+    # agent.mjs` (the CLI appends the preload only for a qualified package and Node) and
+    # `fabric verify` (complete, decisions complete) with the tarball installed in the
+    # agent's project. The tarball is uploaded for the
+    # privacy job's artifact step. Runs on the minimum qualified Node 24.
+    name: Wire package (Node 24.4.0)
+    needs: typescript-native
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.4.0"
+          cache: npm
+          cache-dependency-path: |
+            sdk/typescript/package-lock.json
+            qualification/node-wire/package-lock.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fabric-wire-prebuilds
+          path: sdk/typescript/prebuilds-build
+      - name: Build and pack the tarball with all six prebuilds
+        working-directory: sdk/typescript
+        run: |
+          npm ci
+          npm run build
+          npm run package:qualified -- --smoke --destination "${RUNNER_TEMP}/npm"
+          echo "FABRIC_TEST_NODE_TARBALL=$(ls "${RUNNER_TEMP}"/npm/singleaxis-fabric-*.tgz)" >> "${GITHUB_ENV}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fabric-npm-tarball
+          path: ${{ runner.temp }}/npm/singleaxis-fabric-*.tgz
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the Python SDK and CLI (the reader, the recording sink, the status schema, fabric run)
+        run: |
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp --extra cli
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - name: The packed tarball as installed
+        working-directory: sdk/typescript
+        env:
+          FABRIC_REQUIRE_NODE_E2E: "1"
+        run: npm run test:package
+      - name: Zero-code capture from the tarball, behaviour identity and status documents
+        env:
+          FABRIC_REQUIRE_NODE_E2E: "1"
+        run: |
+          FABRIC_TEST_NODE="$(command -v node)" python -m pytest -v \
+            scripts/tests/test_node_wire_zero_code_e2e.py scripts/tests/test_wire_status_schema.py
+      - name: fabric run records and verifies an unmodified Node.js agent (spec 055 §13.1)
+        env:
+          FABRIC_REQUIRE_NODE_E2E: "1"
+        run: |
+          FABRIC_TEST_NODE="$(command -v node)" python -m pytest -v \
+            scripts/tests/test_fabric_run_node_e2e.py
+
+  typescript-native:
+    # Spec 055 §4.4, §9.2: the Node-API lock module, built and tested on the six targets
+    # (Linux x64/arm64 on glibc and musl, macOS x64/arm64), with the loader's SHA-256
+    # table checked against the built files and the exported symbols against §4.4.
+    name: TypeScript native lock module
+    uses: ./.github/workflows/typescript-native-prebuilds.yml
+
+  ts-wire-privacy:
+    # Spec 055 §9.2 (unit 055-t8): the canary scan over every byte wire capture wrote
+    # (spool files raw and decrypted, the agent's output) for each privacy mode and with
+    # content capture disabled, and the scanner self-test (a test-only leak into a span
+    # attribute and a spool header must be reported). 055-t12: the network step (hostile
+    # proxy environment and NODE_USE_ENV_PROXY, redirects from the delivery and redaction
+    # endpoints, recording sockets on every other address; openssl makes its test CA) and
+    # its self-test. Runs on the minimum qualified Node 24 build. Later units add the
+    # ledger and artifact steps. 055-t13: each scenario's spool is then delivered by the
+    # SDK's sender to a recording sink and every OTLP request it received is scanned.
+    # 055-t14: the artifact step over the packed tarball of ts-wire-package (file list,
+    # package.json scripts and dependencies, dist/ and prebuilds/ strings, loaded modules,
+    # exported symbols, with its self-test) and the canary scan of the status file and the
+    # exit note a preloaded agent leaves. 055-t16: a full-disk scenario whose losses only
+    # the loss ledger holds; its decoded slots and the spans a drainer exports are scanned.
+    # 055-t17: every step on every claimed tuple; on 24.22.3 the network step also requires
+    # Node's http/https startup proxy mode (24.5+), which 24.4.0 predates, so only that run
+    # proves Fabric's private agents ignore it.
+    name: Wire privacy (Node ${{ matrix.node-version }}, ${{ matrix.platform }})
+    needs: ts-wire-package
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node-version: "24.4.0", platform: linux-x64-glibc, runner: ubuntu-24.04, extra: "" }
+          - { node-version: "24.22.3", platform: linux-x64-glibc, runner: ubuntu-24.04, extra: "--require-startup-proxy-mode" }
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: Install locked dependencies
+        working-directory: sdk/typescript
+        run: npm ci
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fabric-npm-tarball
+          path: npm-tarball
+      - name: Run the privacy gate
+        run: >-
+          node qualification/node-wire/privacy/run.mjs ${{ matrix.extra }}
+          --out privacy-${{ matrix.node-version }}-${{ matrix.platform }}.json
+          --artifact "$(ls npm-tarball/singleaxis-fabric-*.tgz)"
+      - name: Upload the privacy report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: privacy-${{ matrix.node-version }}-${{ matrix.platform }}
+          path: privacy-${{ matrix.node-version }}-${{ matrix.platform }}.json
+          if-no-files-found: error
+
+  ts-wire-matrix:
+    # Spec 055 §9.3, §9.5 (unit 055-t17): the TS-1U and TS-1D client matrix, the negative
+    # rows and the chaos suite, from the packed tarball of ts-wire-package, on every
+    # claimed tuple. scripts/tests/test_node_wire_matrix.py: every row of
+    # qualification/node-wire/matrix.json with the preload off and on, local and production
+    # profiles (one clear identity case), read back by python -m fabric.reconstruct.
+    # scripts/tests/test_node_wire_negative.py: Node 22.23.5 and 24.0.0, Bun and Deno
+    # (qualification/node-wire/runtimes). scripts/tests/test_node_wire_chaos.py: the
+    # real-process chaos cases of qualification/node-wire/chaos/cases.json; the others are
+    # the unit tests it names, run by typescript-sdk. Each writes a JSON report; the reports
+    # of the claimed tuples are committed under qualification/node-wire/results/.
+    name: Wire client matrix and chaos (Node ${{ matrix.node-version }}, ${{ matrix.platform }})
+    needs: ts-wire-package
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node-version: "24.4.0", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+          - { node-version: "24.22.3", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+    env:
+      FABRIC_REQUIRE_NODE_E2E: "1"
+      FABRIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      # The unqualified builds of the negative rows first; the claimed build last (on PATH).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.23.5"
+      - run: echo "NODE_22=$(command -v node)" >> "${GITHUB_ENV}"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.0.0"
+      - run: echo "NODE_24_0=$(command -v node)" >> "${GITHUB_ENV}"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: |
+            qualification/node-wire/package-lock.json
+            qualification/node-wire/runtimes/package-lock.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fabric-npm-tarball
+          path: npm-tarball
+      - name: Install Bun and Deno for the negative rows (pinned, no install scripts)
+        working-directory: qualification/node-wire/runtimes
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          bun="$(find "${PWD}/node_modules/@oven" -path '*linux-x64*/bin/bun' -type f | sort | head -1)"
+          deno="$(find "${PWD}/node_modules/@deno" -path '*linux-x64*/deno' -type f | sort | head -1)"
+          echo "FABRIC_TEST_BUN=${bun}" >> "${GITHUB_ENV}"
+          echo "FABRIC_TEST_DENO=${deno}" >> "${GITHUB_ENV}"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the Python SDK (the reader, the recording sink, the Python writer)
+        run: |
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - name: Locate the claimed Node and the packed tarball
+        run: |
+          echo "FABRIC_TEST_NODE=$(command -v node)" >> "${GITHUB_ENV}"
+          tarball="$(find "${PWD}/npm-tarball" -name 'singleaxis-fabric-*.tgz' | head -1)"
+          echo "FABRIC_TEST_NODE_TARBALL=${tarball}" >> "${GITHUB_ENV}"
+      - name: The client matrix
+        env:
+          FABRIC_NODE_WIRE_MATRIX_REPORT: matrix-${{ matrix.node-version }}-${{ matrix.platform }}.json
+        run: python -m pytest -v scripts/tests/test_node_wire_matrix.py
+      - name: The negative rows (Node 22, Node 24.0, Bun, Deno)
+        run: |
+          export FABRIC_TEST_NODE_UNSUPPORTED="${NODE_22}:${NODE_24_0}"
+          python qualification/node-wire/report.py --gate negative --node "${FABRIC_TEST_NODE}" \
+            --out negative-${{ matrix.node-version }}-${{ matrix.platform }}.json \
+            -- scripts/tests/test_node_wire_negative.py
+      - name: The chaos suite
+        env:
+          FABRIC_NODE_WIRE_CHAOS_REPORT: chaos-${{ matrix.node-version }}-${{ matrix.platform }}.json
+        run: python -m pytest -v scripts/tests/test_node_wire_chaos.py
+      - name: Upload the matrix, negative and chaos reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: matrix-${{ matrix.node-version }}-${{ matrix.platform }}
+          path: |
+            matrix-${{ matrix.node-version }}-${{ matrix.platform }}.json
+            negative-${{ matrix.node-version }}-${{ matrix.platform }}.json
+            chaos-${{ matrix.node-version }}-${{ matrix.platform }}.json
+          if-no-files-found: error
+
+  ts-wire-node-e2e:
+    # Spec 055 §9.5 (unit 055-t17): the production-profile end to end through the real
+    # Fabric Node (the collector image, built here as fabric-node-image builds it, in node
+    # mode with the production and content overlays, TLS and an ingress token): a Node agent
+    # using the official openai client from the packed tarball; every span stamped
+    # authenticated by the Node; the bytes read back from the Node's sealed store; the run
+    # complete and terminated. On every claimed tuple, with a JSON report.
+    name: Wire through the Fabric Node (Node ${{ matrix.node-version }}, ${{ matrix.platform }})
+    needs: ts-wire-package
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node-version: "24.4.0", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+          - { node-version: "24.22.3", platform: linux-x64-glibc, runner: ubuntu-24.04 }
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the exact Fabric Node image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: components/otel-collector-fabric
+          file: components/otel-collector-fabric/Dockerfile
+          push: false
+          load: true
+          tags: fabric/node:wire-capture-e2e
+          cache-from: type=gha,scope=recorder-image
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: qualification/node-wire/package-lock.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fabric-npm-tarball
+          path: npm-tarball
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the Python SDK (the reader, the sink, the TLS material)
+        run: |
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
+          python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - name: Locate the claimed Node and the packed tarball
+        run: |
+          echo "FABRIC_TEST_NODE=$(command -v node)" >> "${GITHUB_ENV}"
+          tarball="$(find "${PWD}/npm-tarball" -name 'singleaxis-fabric-*.tgz' | head -1)"
+          echo "FABRIC_TEST_NODE_TARBALL=${tarball}" >> "${GITHUB_ENV}"
+      - name: A Node agent through the production Node, read back from its store
+        env:
+          FABRIC_REQUIRE_NODE_E2E: "1"
+          FABRIC_NODE_IMAGE: fabric/node:wire-capture-e2e
+          FABRIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python qualification/node-wire/report.py --gate node-e2e --node "${FABRIC_TEST_NODE}" \
+            --out node-e2e-${{ matrix.node-version }}-${{ matrix.platform }}.json \
+            -- scripts/tests/test_node_wire_fabric_node_e2e.py
+      - name: Upload the end-to-end report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: node-e2e-${{ matrix.node-version }}-${{ matrix.platform }}
+          path: node-e2e-${{ matrix.node-version }}-${{ matrix.platform }}.json
+          if-no-files-found: error
 
   fabric-node:
     name: Fabric Node processor

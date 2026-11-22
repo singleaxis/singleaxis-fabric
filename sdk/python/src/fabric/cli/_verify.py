@@ -283,6 +283,29 @@ def _catalogued(message_id: Any) -> bool:
     return isinstance(message_id, str) and message_id in _catalogue.messages()
 
 
+def _judged(record: _runstate.RunRecord) -> bool:
+    """Runs ``verify`` holds to the reader's verdict: a Python run, and a Node.js run
+    ``fabric run`` turned zero-code capture on for (spec 055 §13.1). A Node.js run without
+    it has only reported records, which the coverage report says (never a false pass)."""
+    return record.runtime == "python" or (record.runtime == "node" and record.capture == "on")
+
+
+def with_chains(runs: Sequence[Mapping[str, Any]], reader: Any) -> list[dict[str, Any]]:
+    """Each run with the reader's 056 chains. The reader attaches them to a report entry
+    only when the run's manifests list an effect or security capture point; a Node.js
+    process lists none (its capture points are the model wire), so its chains are taken
+    from the reader's own view of that run (``every_run``), computed the same way."""
+    views = {view.run_id: view for view in getattr(reader, "runs", ())}
+    out: list[dict[str, Any]] = []
+    for entry in runs:
+        view = views.get(entry["run_id"])
+        if "chains" not in entry and view is not None:
+            out.append({**entry, "chains": view.result.chains})
+        else:
+            out.append(dict(entry))
+    return out
+
+
 def _judge(runs: Sequence[Mapping[str, Any]], record: _runstate.RunRecord) -> list[Finding]:
     """The run passes when every process of it is complete in the reader's own verdict
     and has ended, and model decisions were recorded completely."""
@@ -302,7 +325,7 @@ def _judge(runs: Sequence[Mapping[str, Any]], record: _runstate.RunRecord) -> li
     decided = any(
         (run.get("chains") or {}).get("decisions", {}).get("verdict") == "complete" for run in runs
     )
-    if not decided and record.runtime == "python":
+    if not decided and _judged(record):
         problems.append("no model call was recorded in this run (decisions not observed)")
     if problems:
         return [Finding("FC-068", " | ".join(problems)[:4000])]
@@ -403,7 +426,7 @@ def _user_run(
         [*_runstate.load_canaries(project.state_dir), *([canary_label] if canary_label else [])],
         dest.id_key,
     )
-    runs = _read.runs_of(document, record, following, exclude, dest.id_key)
+    runs = with_chains(_read.runs_of(document, record, following, exclude, dest.id_key), reader)
     data["runs"] = [
         {
             "run_id": r["run_id"],
@@ -419,9 +442,9 @@ def _user_run(
             f"  {run['run_id']}  {run['verdict']}  {run['counts']['exchanges']} "
             f"exchange(s)  decisions: {chains.get('decisions', {}).get('verdict', '-')}"
         )
-    if not runs and record.runtime == "python":
+    if _judged(record) and not runs:
         findings.append(_nothing_found(record, status))
-    elif record.runtime == "python":
+    elif _judged(record):
         findings.extend(_judge(runs, record))
     effective = _config.resolve(project.document, {}, environ, project.directory)
     rows = _read.coverage(effective, record, runs, status, _read.http_requests(reader, runs))

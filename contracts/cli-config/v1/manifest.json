@@ -1,6 +1,6 @@
 {
   "contract": "singleaxis.fabric.cli-config",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "digest_scope": "exact_file_bytes",
   "schema": {
     "path": "schema/fabric-config-v1.schema.json",
@@ -58,6 +58,10 @@
     {
       "path": "fixtures/invalid/unknown-top-level.yaml",
       "sha256": "1ebacae21348d060d5655460f74b60230ba97a5f3e97bc631f4a4ab3bd9d22e0"
+    },
+    {
+      "path": "fixtures/print-env/node-v1.json",
+      "sha256": "07c9e4f5c3104783846e02f65bc4ed2a940ca7a6144aca1cc2b7471c5c168a12"
     },
     {
       "path": "fixtures/valid/full-local.yaml",

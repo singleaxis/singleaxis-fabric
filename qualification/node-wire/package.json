@@ -1,0 +1,14 @@
+{
+  "name": "fabric-node-wire-qualification",
+  "private": true,
+  "description": "Spec 055 §9.3: the model clients and the external undici the Node.js wire capture is qualified against, pinned exactly. Never a dependency of @singleaxis/fabric.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.4.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.6.0",
+    "openai": "7.52.0",
+    "undici": "7.16.0"
+  }
+}

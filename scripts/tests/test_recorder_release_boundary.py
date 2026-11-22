@@ -176,7 +176,8 @@ def test_redaction_service_example_is_not_a_release_artifact() -> None:
     package = json.loads(
         (ROOT / "sdk/typescript/package.json").read_text(encoding="utf-8")
     )
-    assert set(package["files"]) <= {"dist", "README.md", "LICENSE"}
+    # prebuilds/: the native lock module of spec 055 §4.4 (unit 055-t14).
+    assert set(package["files"]) <= {"dist", "prebuilds", "README.md", "LICENSE"}
     scanned = [
         *(ROOT / ".github/workflows").glob("release*.yml"),
         *(ROOT / "scripts/release").rglob("*"),

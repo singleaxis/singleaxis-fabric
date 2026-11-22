@@ -126,7 +126,7 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.manifest.source_auth":                             oneOf(toSet("bound", "unbound")),
 	"fabric.manifest.spool_encrypted":                         isBool,
 	"fabric.manifest.spool_key_id":                            matches(keyIDPattern),
-	"fabric.manifest.uncaptured_classes":                      sliceOf(0, 64, true, oneOf(toSet("requests", "urllib3", "boto3", "aiohttp", "grpc", "websocket", "webrtc", "node_http", "axios", "custom_fetch", "node_below_24", "stdio_mcp", "direct_pipe_reads", "provider_batch_files", "non_post_endpoints", "unmatched_endpoints", "other_runtime", "sensor_exec", "sensor_connect", "sensor_file"))),
+	"fabric.manifest.uncaptured_classes":                      sliceOf(0, 64, true, oneOf(toSet("requests", "urllib3", "boto3", "aiohttp", "grpc", "websocket", "webrtc", "node_http", "axios", "custom_fetch", "node_below_24", "node_worker_unattached", "stdio_mcp", "direct_pipe_reads", "provider_batch_files", "non_post_endpoints", "unmatched_endpoints", "other_runtime", "sensor_exec", "sensor_connect", "sensor_file"))),
 	"fabric.manifest.unsealed_prior_epoch_count":              intAtLeast(0),
 	"fabric.manifest.unsealed_prior_epochs":                   sliceOf(0, 64, false, matchesInt64(decimalEpochPattern, "epoch")),
 	"fabric.mcp.direction":                                    oneOf(toSet("client_to_server", "server_to_client")),

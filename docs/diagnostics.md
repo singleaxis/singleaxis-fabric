@@ -320,12 +320,13 @@ names the first one).
 
 ### FC-053
 
-`run_env_only`, info: this command is not a Python program `fabric run` can turn capture on for; it
-was given the run's Fabric settings only.
+`run_env_only`, info: this command is not a Python or Node.js program `fabric run` can turn capture
+on for; it was given the run's Fabric settings only.
 
 Fix: start a Python agent through its interpreter (fabric run -- python app.py) or the project's
-.venv; a launcher script can export `fabric run --print-env` itself; Node.js and compiled agents
-record through the explicit API and the host sensor.
+.venv, and a Node.js agent through node (fabric run -- node app.js); a launcher script can export
+`fabric run --print-env` itself; compiled agents record through the explicit API and the host
+sensor.
 
 ### FC-054
 
@@ -517,6 +518,41 @@ one with the SDK (`fabric doctor` names the one it checked).
 
 Fix: nothing to do.
 
+### FC-098
+
+`run_node_package_missing`, warning: @singleaxis/fabric does not resolve from the agent's working
+directory, so this Node.js run's model calls are not captured; the agent ran unchanged.
+
+Fix: install it in the agent's own project with npm i @singleaxis/fabric (in the directory that
+holds the agent's package.json), then start the agent with `fabric run` again.
+
+### FC-099
+
+`run_node_package_unqualified`, warning: the installed @singleaxis/fabric has no qualified zero-code
+capture (no preload, or gates not passed), so this Node.js run's model calls are not captured; the
+agent ran unchanged.
+
+Fix: upgrade it in the agent's project with npm i @singleaxis/fabric@latest, then start the agent
+with `fabric run` again.
+
+### FC-100
+
+`run_node_unqualified`, warning: this Node.js build is not one the installed @singleaxis/fabric
+qualifies for model-call capture on this platform, so this run's model calls are not captured; the
+agent ran unchanged.
+
+Fix: run the agent with one of the Node.js builds the detail lists (for example nvm install with
+that version), then start it with `fabric run` again.
+
+### FC-101
+
+`run_node_platform_unsupported`, warning: the installed @singleaxis/fabric qualifies no Node.js
+build for this operating system and processor, so this run's model calls are not captured; the agent
+ran unchanged.
+
+Fix: run the agent on a platform the detail lists, for example in a node:24 Linux x64 container; on
+this machine the explicit API still records, reported rather than verified.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001
@@ -686,3 +722,88 @@ Fix: point FABRIC_WIRE_STATUS_FILE at a writable path in a directory that exists
 
 Fix: headers are k=v pairs separated by commas, timeouts are numbers, compression is gzip, deflate
 or none, and a client key and certificate are set together.
+
+### FW-025
+
+`node_capture_not_installed`, error: wire capture is not installed in this Node.js process: the
+configuration is invalid.
+
+Fix: run the status command (node -p with require('@singleaxis/fabric/wire').envStatus()) with the
+agent's environment; it names the setting and the fix.
+
+### FW-026
+
+`node_runtime_unqualified`, warning: model-call capture is off: this Node.js or undici build is not
+in the Fabric compatibility table.
+
+Fix: run the agent on a Node.js 24 build listed in the compatibility table of the release notes,
+then start it again.
+
+### FW-027
+
+`node_platform_unsupported`, warning: model-call capture is off: Fabric has no native lock module
+for this operating system or CPU.
+
+Fix: run the agent on Linux or macOS, x64 or arm64.
+
+### FW-028
+
+`node_native_unusable`, warning: model-call capture is off: Fabric's native lock module could not be
+used.
+
+Fix: reinstall @singleaxis/fabric so its prebuilds directory is complete, and keep the spool
+directory on a local disk; the status names the reason.
+
+### FW-029
+
+`node_hook_disabled`, info: a capture point is switched off by its FABRIC_WIRE_UNDICI or
+FABRIC_WIRE_NODE_HTTP setting.
+
+Fix: set the variable to 1 to record through that capture point.
+
+### FW-030
+
+`node_worker_unattached`, warning: a worker thread records nothing: Fabric was not loaded in the
+main thread before the worker started, or the worker did not inherit the preload.
+
+Fix: load Fabric with NODE_OPTIONS=--import=@singleaxis/fabric/register so every thread inherits it.
+
+### FW-031
+
+`node_autoload_off`, info: @singleaxis/fabric/register was loaded but did nothing:
+FABRIC_WIRE_AUTOLOAD is not 1.
+
+Fix: set FABRIC_WIRE_AUTOLOAD=1 in the agent's environment (`fabric run` sets it for you once it
+ships).
+
+### FW-032
+
+`node_redacted_roles`, warning: the capture policy masks some content roles and no redaction service
+is configured: their content is withheld.
+
+Fix: set FABRIC_REDACTION_ENDPOINT, or give those roles retain_original or metadata_only in the
+capture policy.
+
+### FW-033
+
+`node_spool_backlog`, warning: records wait in the spool and no process is draining it.
+
+Fix: start the agent again, or set FABRIC_WIRE_DRAIN_ON_EXIT_S for batch or serverless workers;
+`python -m fabric.wire drain --until-empty` also drains a Node.js spool.
+
+### FW-034
+
+`node_spool_unusable`, warning: model-call capture is off: the spool directory is not set or cannot
+be used.
+
+Fix: set FABRIC_WIRE_SPOOL_DIR to a directory on a local disk that the agent's user owns and no
+other user can write; the status names the reason.
+
+### FW-035
+
+`node_undici_copy_unqualified`, warning: a model call was sent through an undici copy that is not
+this Node.js build's own: it was not recorded, and the record names the gap as an
+uninstrumented_client loss.
+
+Fix: send model calls through global fetch or a client that uses it (the official openai and
+@anthropic-ai/sdk clients do); calls through the undici package are not recorded by this release.

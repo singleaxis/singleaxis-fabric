@@ -1,0 +1,33 @@
+{
+  "gate": "parity",
+  "result": "passed",
+  "schema": "fabric.node-wire-gate-report/v1",
+  "source_sha": "292b07dacccac6e9671061b8179b757fbb3d6678",
+  "tests": [
+    {
+      "outcome": "passed",
+      "seconds": 2.473,
+      "test": "scripts.tests.test_node_wire_capture_e2e::test_a_node_fetch_run_is_verified_complete_and_replays_its_bytes"
+    },
+    {
+      "outcome": "passed",
+      "seconds": 1.366,
+      "test": "scripts.tests.test_node_wire_capture_e2e::test_a_rejected_content_record_is_retired_and_read_as_not_captured_store_failed"
+    },
+    {
+      "outcome": "passed",
+      "seconds": 8.538,
+      "test": "scripts.tests.test_node_wire_capture_e2e::test_python_and_node_write_the_same_frames_for_the_same_fixture"
+    },
+    {
+      "outcome": "passed",
+      "seconds": 2.886,
+      "test": "scripts.tests.test_node_wire_capture_e2e::test_python_and_node_runs_project_the_same"
+    }
+  ],
+  "tuple": {
+    "node": "24.22.3",
+    "platform": "linux-x64-glibc",
+    "undici": "7.30.2"
+  }
+}

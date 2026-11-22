@@ -1,0 +1,66 @@
+{
+  "capture": "paused",
+  "notice_ids": [
+    "FW-005"
+  ],
+  "phase": "install",
+  "pid": 4242,
+  "schema": "fabric.wire-status/v1",
+  "sdk_version": "0.12.1",
+  "status": {
+    "api_misuse": 0,
+    "capture": "active",
+    "capture_points": {
+      "wire.py.aiohttp": "active",
+      "wire.py.httpx": "active"
+    },
+    "capture_policy": {
+      "encrypted_store_required": false,
+      "policy_digest": "sha256:831906b54670e365e3527a9cf2fd02f1b1f7377c398aeb768156bb1cfe82530a",
+      "policy_id": "fabric.local-default",
+      "policy_version": 1
+    },
+    "content_capture": "enabled",
+    "content_capture_reason": null,
+    "endpoint_set": [
+      "openai",
+      "anthropic",
+      "azure-openai"
+    ],
+    "endpoint_table_version": 1,
+    "internal_errors": 0,
+    "key_id": null,
+    "profile": "local",
+    "pseudonym_mode": "unkeyed",
+    "records_budget_refused": 0,
+    "records_emitted": 0,
+    "records_keys_dropped": 0,
+    "records_not_submitted": 0,
+    "registration": "unregistered_direct",
+    "role_table_version": "fabric.content-role-table/v1@5",
+    "runs": {
+      "declared_branches_dropped": 0,
+      "end_runs": 0,
+      "forced_seals": 0,
+      "fork_branches": 0,
+      "fork_skipped": 0,
+      "internal_errors": 0,
+      "open_runs": 0,
+      "post_terminal_allocations": 0,
+      "predecessors_dropped": 0,
+      "segments_opened": 0,
+      "segments_sealed": 0,
+      "tokens_issued": 0,
+      "tokens_rejected": 0
+    },
+    "spool_encrypted": false,
+    "spool_key_id": null,
+    "store_reason": null,
+    "uninstrumented_clients": [],
+    "unsupported_callable": 0
+  },
+  "warning_ids": [
+    "FW-002"
+  ],
+  "written_at": "2026-11-12T19:32:35.929Z"
+}
