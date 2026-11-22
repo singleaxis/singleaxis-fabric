@@ -535,10 +535,14 @@ const report = {
                   "the status file and the spool's exit note a preloaded agent leaves",
               ]),
     ],
-    not_yet_scanned: {
-        "the Node's persistent queue and the store (e2e with the real Node)": "055-t17",
-        ...(artifact === undefined ? { "the status file, the exit note and the packed tarball": "run with --artifact" } : {}),
+    // Scanned by another gate job of the same tuple (spec 055 §9.2 canary scan): the real
+    // Fabric Node is only in the ts-wire-node-e2e job.
+    scanned_by_other_gates: {
+        "the Node's telemetry queue, content queue and file store at rest, its logs, and the reader's report (production profile, real Fabric Node)":
+            "scripts/tests/test_node_wire_fabric_node_e2e.py (ts-wire-node-e2e)",
     },
+    not_yet_scanned:
+        artifact === undefined ? { "the status file, the exit note and the packed tarball": "run with --artifact" } : {},
     gates: {
         ...(NETWORK_ONLY ? {} : { canary_scan: canaryScanPassed, scanner_self_test: selfTestDetected }),
         ...(artifact === undefined

@@ -196,14 +196,29 @@ def test_a_node_agent_through_the_production_node_reads_back_complete(
         ]
         assert stored == expected, side
 
-    # No content or secret leaves the customer boundary except into the Node's store.
+    # Spec 055 §9.2 canary scan, the Node half (C0A-2): no content or secret leaves the
+    # customer boundary except sealed into the Node's store. Scanned: the decoded sink
+    # output, the delivered OTLP bytes, the Node's logs, the reader's report, the Node's
+    # telemetry queue, and its content queue and file store at rest (sealed with the
+    # Node key, spec 049 §7.8, so neither holds a body or a credential in clear).
     markers = [f"{MARK}_nodeprompt", TOOL_RESULT, API_KEY, INGRESS_TOKEN, ID_KEY]
+    # J1 (pseudonymous by default): no clear label reaches the sink, the logs or a report.
+    labels = [TENANT, "node-e2e-agent", source_of(""), RUN_ID]
     sink_text = stack.records.read_text("utf-8")
-    raw = b"".join(p.read_bytes() for p in (stack.sink.directory / "raw").glob("*"))
+    raw = stack.sink.raw_bytes()
     logs = stack.node_logs()
+    reports = "\n".join(stack.reports)
+    assert sink_text and reports and "fabric-node" in logs, (
+        "a leak scan would be vacuous"
+    )
+    assert b"fabric.wire.exchange_id" in raw  # the raw bytes are the delivered spans
+    for marker in markers + labels:
+        assert marker not in sink_text, f"{marker} reached the decoded sink output"
+        assert marker.encode() not in raw, f"{marker} reached the delivered OTLP bytes"
+        assert marker not in logs, f"{marker} appeared in the Node logs"
+        assert marker not in reports, f"{marker} appeared in the reader's report"
     for marker in markers:
-        assert marker not in sink_text and marker.encode() not in raw, marker
-        assert marker not in logs, marker
-    # The Node's telemetry queue volume holds spans only, never content.
-    for marker in markers:
-        assert volume_grep(f"{stack.project}_fabric-queue", marker) == "", marker
+        for volume in ("fabric-queue", "fabric-content-queue", "fabric-content"):
+            assert volume_grep(f"{stack.project}_{volume}", marker) == "", (
+                f"{marker} persisted in clear in the Node's {volume} volume"
+            )
