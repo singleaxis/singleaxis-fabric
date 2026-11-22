@@ -358,7 +358,11 @@ jobs:
     # @anthropic-ai/sdk client, started only with NODE_OPTIONS and environment variables,
     # each produce a run python -m fabric.reconstruct verifies, and behave identically with
     # the preload on and off. scripts/tests/test_wire_status_schema.py: the TypeScript
-    # status documents of every disabled reason validate. The tarball is uploaded for the
+    # status documents of every disabled reason validate. 055-t18 (milestone M4):
+    # scripts/tests/test_fabric_run_node_e2e.py runs `fabric init`, `fabric run -- node
+    # agent.mjs` (the CLI appends the preload only for a qualified package and Node) and
+    # `fabric verify` (complete, decisions complete) with the tarball installed in the
+    # agent's project. The tarball is uploaded for the
     # privacy job's artifact step. Runs on the minimum qualified Node 24.
     name: Wire package (Node 24.4.0)
     needs: typescript-native
@@ -393,9 +397,9 @@ jobs:
         with:
           python-version: "3.12"
       - uses: ./.github/actions/setup-uv
-      - name: Install the Python SDK (the reader, the recording sink, the status schema)
+      - name: Install the Python SDK and CLI (the reader, the recording sink, the status schema, fabric run)
         run: |
-          scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
+          scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp --extra cli
           python -m pip install --no-deps --no-build-isolation -e ./sdk/python
       - name: The packed tarball as installed
         working-directory: sdk/typescript
@@ -408,6 +412,12 @@ jobs:
         run: |
           FABRIC_TEST_NODE="$(command -v node)" python -m pytest -v \
             scripts/tests/test_node_wire_zero_code_e2e.py scripts/tests/test_wire_status_schema.py
+      - name: fabric run records and verifies an unmodified Node.js agent (spec 055 §13.1)
+        env:
+          FABRIC_REQUIRE_NODE_E2E: "1"
+        run: |
+          FABRIC_TEST_NODE="$(command -v node)" python -m pytest -v \
+            scripts/tests/test_fabric_run_node_e2e.py
 
   typescript-native:
     # Spec 055 §4.4, §9.2: the Node-API lock module, built and tested on the six targets
