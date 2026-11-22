@@ -519,8 +519,10 @@ jobs:
         working-directory: qualification/node-wire/runtimes
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          echo "FABRIC_TEST_BUN=$PWD/$(ls -d node_modules/@oven/bun-linux-x64*/bin/bun | head -1)" >> "${GITHUB_ENV}"
-          echo "FABRIC_TEST_DENO=$PWD/$(ls -d node_modules/@deno/linux-x64*/deno | head -1)" >> "${GITHUB_ENV}"
+          bun="$(find "${PWD}/node_modules/@oven" -path '*linux-x64*/bin/bun' -type f | sort | head -1)"
+          deno="$(find "${PWD}/node_modules/@deno" -path '*linux-x64*/deno' -type f | sort | head -1)"
+          echo "FABRIC_TEST_BUN=${bun}" >> "${GITHUB_ENV}"
+          echo "FABRIC_TEST_DENO=${deno}" >> "${GITHUB_ENV}"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
@@ -529,17 +531,17 @@ jobs:
         run: |
           scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
           python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - name: Locate the claimed Node and the packed tarball
+        run: |
+          echo "FABRIC_TEST_NODE=$(command -v node)" >> "${GITHUB_ENV}"
+          tarball="$(find "${PWD}/npm-tarball" -name 'singleaxis-fabric-*.tgz' | head -1)"
+          echo "FABRIC_TEST_NODE_TARBALL=${tarball}" >> "${GITHUB_ENV}"
       - name: The client matrix
         env:
           FABRIC_NODE_WIRE_MATRIX_REPORT: matrix-${{ matrix.node-version }}-${{ matrix.platform }}.json
-        run: |
-          export FABRIC_TEST_NODE="$(command -v node)"
-          export FABRIC_TEST_NODE_TARBALL="$(ls "${PWD}"/npm-tarball/singleaxis-fabric-*.tgz)"
-          python -m pytest -v scripts/tests/test_node_wire_matrix.py
+        run: python -m pytest -v scripts/tests/test_node_wire_matrix.py
       - name: The negative rows (Node 22, Node 24.0, Bun, Deno)
         run: |
-          export FABRIC_TEST_NODE="$(command -v node)"
-          export FABRIC_TEST_NODE_TARBALL="$(ls "${PWD}"/npm-tarball/singleaxis-fabric-*.tgz)"
           export FABRIC_TEST_NODE_UNSUPPORTED="${NODE_22}:${NODE_24_0}"
           python qualification/node-wire/report.py --gate negative --node "${FABRIC_TEST_NODE}" \
             --out negative-${{ matrix.node-version }}-${{ matrix.platform }}.json \
@@ -547,10 +549,7 @@ jobs:
       - name: The chaos suite
         env:
           FABRIC_NODE_WIRE_CHAOS_REPORT: chaos-${{ matrix.node-version }}-${{ matrix.platform }}.json
-        run: |
-          export FABRIC_TEST_NODE="$(command -v node)"
-          export FABRIC_TEST_NODE_TARBALL="$(ls "${PWD}"/npm-tarball/singleaxis-fabric-*.tgz)"
-          python -m pytest -v scripts/tests/test_node_wire_chaos.py
+        run: python -m pytest -v scripts/tests/test_node_wire_chaos.py
       - name: Upload the matrix, negative and chaos reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -607,14 +606,17 @@ jobs:
         run: |
           scripts/ci/install-python-locked.sh --no-default-groups --group ci --group dev --extra otlp
           python -m pip install --no-deps --no-build-isolation -e ./sdk/python
+      - name: Locate the claimed Node and the packed tarball
+        run: |
+          echo "FABRIC_TEST_NODE=$(command -v node)" >> "${GITHUB_ENV}"
+          tarball="$(find "${PWD}/npm-tarball" -name 'singleaxis-fabric-*.tgz' | head -1)"
+          echo "FABRIC_TEST_NODE_TARBALL=${tarball}" >> "${GITHUB_ENV}"
       - name: A Node agent through the production Node, read back from its store
         env:
           FABRIC_REQUIRE_NODE_E2E: "1"
           FABRIC_NODE_IMAGE: fabric/node:wire-capture-e2e
           FABRIC_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          export FABRIC_TEST_NODE="$(command -v node)"
-          export FABRIC_TEST_NODE_TARBALL="$(ls "${PWD}"/npm-tarball/singleaxis-fabric-*.tgz)"
           python qualification/node-wire/report.py --gate node-e2e --node "${FABRIC_TEST_NODE}" \
             --out node-e2e-${{ matrix.node-version }}-${{ matrix.platform }}.json \
             -- scripts/tests/test_node_wire_fabric_node_e2e.py
