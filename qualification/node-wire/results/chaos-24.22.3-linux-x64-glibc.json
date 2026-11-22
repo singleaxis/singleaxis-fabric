@@ -1,0 +1,98 @@
+{
+  "artifact_sha256": "sha256:c5d7af1f8f73634cb75389c7538babbec2734b90da76f141d0ab4413ac40938b",
+  "cases": {
+    "drainer_takeover": {
+      "exchanges": 12,
+      "result": "passed",
+      "spool_peak_bytes": 356040,
+      "verdicts": {
+        "complete": 3
+      }
+    },
+    "fork_parent_sigkill": {
+      "exchanges": 4,
+      "result": "passed",
+      "spool_peak_bytes": 274461,
+      "verdicts": {
+        "not_complete": 2
+      }
+    },
+    "kill_after_admission": {
+      "exchanges": 1,
+      "result": "passed",
+      "spool_peak_bytes": 270365,
+      "verdicts": {
+        "not_complete": 1
+      }
+    },
+    "kill_before_protection": {
+      "exchanges": 2,
+      "result": "passed",
+      "spool_peak_bytes": 270365,
+      "verdicts": {
+        "complete": 1,
+        "not_complete": 1
+      }
+    },
+    "mixed_typescript_python": {
+      "exchanges": 5,
+      "result": "passed",
+      "spool_peak_bytes": 310730,
+      "verdicts": {
+        "complete": 2
+      }
+    },
+    "node_down_then_return": {
+      "exchanges": 3,
+      "result": "passed",
+      "spool_peak_bytes": 287778,
+      "verdicts": {
+        "complete": 1
+      }
+    },
+    "processes_2": {
+      "exchanges": 6,
+      "result": "passed",
+      "spool_peak_bytes": 266269,
+      "verdicts": {
+        "complete": 2
+      }
+    },
+    "processes_4": {
+      "exchanges": 12,
+      "result": "passed",
+      "spool_peak_bytes": 266269,
+      "verdicts": {
+        "complete": 4
+      }
+    },
+    "randomized": {
+      "clean": 4,
+      "exchanges": 9,
+      "killed": 1,
+      "result": "passed",
+      "seed": 20261122,
+      "spool_peak_bytes": 299956,
+      "verdicts": {
+        "complete": 4,
+        "not_complete": 1
+      }
+    },
+    "writers_128": {
+      "exchanges": 128,
+      "result": "passed",
+      "spool_peak_bytes": 1811901,
+      "verdicts": {
+        "complete": 128
+      }
+    }
+  },
+  "result": "passed",
+  "schema": "fabric.node-wire-chaos-report/v1",
+  "source_sha": "292b07dacccac6e9671061b8179b757fbb3d6678",
+  "tuple": {
+    "node": "24.22.3",
+    "platform": "linux-x64-glibc",
+    "undici": "7.30.2"
+  }
+}

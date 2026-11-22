@@ -1,0 +1,1198 @@
+{
+  "schema": "fabric.node-wire-privacy-report/v1",
+  "spec": "055 §9.2 ts-wire-privacy",
+  "node": "24.22.3",
+  "scanned": [
+    "spool files raw (every file under FABRIC_WIRE_SPOOL_DIR: records, temps, quarantine, locks, ledger, registration files)",
+    "the loss ledger's slots decoded, after a full-disk scenario left its losses there, and the spans a drainer exported from them",
+    "spool records decrypted (headers, descriptors, every body)",
+    "the agent process's output (stdout and stderr)",
+    "the OTLP requests a sink received when the SDK's sender delivered the spool (content logs and spans)",
+    "network: every byte and connection reaching a hostile proxy, a redirect target, the provider or the configured proxy",
+    "the packed npm tarball: file list, package.json scripts and dependencies, dist/ and prebuilds/ strings, loaded modules, exported symbols",
+    "the status file and the spool's exit note a preloaded agent leaves"
+  ],
+  "scanned_by_other_gates": {
+    "the Node's telemetry queue, content queue and file store at rest, its logs, and the reader's report (production profile, real Fabric Node)": "scripts/tests/test_node_wire_fabric_node_e2e.py (ts-wire-node-e2e)"
+  },
+  "not_yet_scanned": {},
+  "gates": {
+    "canary_scan": true,
+    "scanner_self_test": true,
+    "artifact": true,
+    "artifact_self_test": true,
+    "network": true,
+    "network_self_test": true,
+    "startup_proxy_mode": true
+  },
+  "scenarios": [
+    {
+      "mode": "retain_original",
+      "calls": 6,
+      "matched": 6,
+      "drained": true,
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 0,
+        "uninstrumented_client": 0
+      },
+      "files": 9,
+      "records": 6,
+      "exchanges": 6,
+      "retained_objects": 13,
+      "planted_found": [
+        "prompt",
+        "tool_schema",
+        "response",
+        "image"
+      ],
+      "transformed_objects": 0,
+      "descriptor_only_objects": 0,
+      "store_reasons": [],
+      "part_objects": 1,
+      "part_ranges": 1,
+      "ledger_records": 0,
+      "ledger_reasons": [],
+      "mode_did_its_work": true,
+      "delivered": {
+        "left": 0,
+        "trace_requests": 1,
+        "content_requests": 1,
+        "stats": {
+          "delivered": 6,
+          "send_retries": 0,
+          "content_rejected": 0,
+          "traces_rejected": 0,
+          "quarantined": 0,
+          "spool_undecryptable": 0,
+          "spool_oversized": 0,
+          "orphan_heartbeats": 0,
+          "markers_dropped": 0,
+          "beats_exported": 0,
+          "spool_migrated": 0,
+          "ledger_recovered": 0,
+          "spool_undurable": 1,
+          "spool_barrier_failures": 0,
+          "ledger_slots": 0,
+          "ledger_overflows": 0,
+          "ledger_failures": 0,
+          "ledger_corrupt": 0,
+          "manifests_unledgered": 0,
+          "retiring": 0,
+          "backlog": 0
+        }
+      },
+      "violations": [],
+      "passed": true
+    },
+    {
+      "mode": "metadata_only",
+      "calls": 6,
+      "matched": 6,
+      "drained": true,
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 0,
+        "uninstrumented_client": 0
+      },
+      "files": 9,
+      "records": 6,
+      "exchanges": 6,
+      "retained_objects": 0,
+      "planted_found": [],
+      "transformed_objects": 0,
+      "descriptor_only_objects": 12,
+      "store_reasons": [
+        "privacy_policy"
+      ],
+      "part_objects": 0,
+      "part_ranges": 0,
+      "ledger_records": 0,
+      "ledger_reasons": [],
+      "mode_did_its_work": true,
+      "delivered": {
+        "left": 0,
+        "trace_requests": 1,
+        "content_requests": 1,
+        "stats": {
+          "delivered": 6,
+          "send_retries": 0,
+          "content_rejected": 0,
+          "traces_rejected": 0,
+          "quarantined": 0,
+          "spool_undecryptable": 0,
+          "spool_oversized": 0,
+          "orphan_heartbeats": 0,
+          "markers_dropped": 0,
+          "beats_exported": 0,
+          "spool_migrated": 0,
+          "ledger_recovered": 0,
+          "spool_undurable": 1,
+          "spool_barrier_failures": 0,
+          "ledger_slots": 0,
+          "ledger_overflows": 0,
+          "ledger_failures": 0,
+          "ledger_corrupt": 0,
+          "manifests_unledgered": 0,
+          "retiring": 0,
+          "backlog": 0
+        }
+      },
+      "violations": [],
+      "passed": true
+    },
+    {
+      "mode": "omit",
+      "calls": 6,
+      "matched": 6,
+      "drained": true,
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 0,
+        "uninstrumented_client": 0
+      },
+      "files": 9,
+      "records": 6,
+      "exchanges": 6,
+      "retained_objects": 0,
+      "planted_found": [],
+      "transformed_objects": 0,
+      "descriptor_only_objects": 0,
+      "store_reasons": [
+        "privacy_policy"
+      ],
+      "part_objects": 0,
+      "part_ranges": 0,
+      "ledger_records": 0,
+      "ledger_reasons": [],
+      "mode_did_its_work": true,
+      "delivered": {
+        "left": 0,
+        "trace_requests": 1,
+        "content_requests": 0,
+        "stats": {
+          "delivered": 6,
+          "send_retries": 0,
+          "content_rejected": 0,
+          "traces_rejected": 0,
+          "quarantined": 0,
+          "spool_undecryptable": 0,
+          "spool_oversized": 0,
+          "orphan_heartbeats": 0,
+          "markers_dropped": 0,
+          "beats_exported": 0,
+          "spool_migrated": 0,
+          "ledger_recovered": 0,
+          "spool_undurable": 1,
+          "spool_barrier_failures": 0,
+          "ledger_slots": 0,
+          "ledger_overflows": 0,
+          "ledger_failures": 0,
+          "ledger_corrupt": 0,
+          "manifests_unledgered": 0,
+          "retiring": 0,
+          "backlog": 0
+        }
+      },
+      "violations": [],
+      "passed": true
+    },
+    {
+      "mode": "redact",
+      "calls": 6,
+      "matched": 6,
+      "drained": true,
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 0,
+        "uninstrumented_client": 0
+      },
+      "files": 9,
+      "records": 6,
+      "exchanges": 6,
+      "retained_objects": 0,
+      "planted_found": [],
+      "transformed_objects": 13,
+      "descriptor_only_objects": 0,
+      "store_reasons": [],
+      "part_objects": 1,
+      "part_ranges": 0,
+      "ledger_records": 0,
+      "ledger_reasons": [],
+      "mode_did_its_work": true,
+      "delivered": {
+        "left": 0,
+        "trace_requests": 1,
+        "content_requests": 1,
+        "stats": {
+          "delivered": 6,
+          "send_retries": 0,
+          "content_rejected": 0,
+          "traces_rejected": 0,
+          "quarantined": 0,
+          "spool_undecryptable": 0,
+          "spool_oversized": 0,
+          "orphan_heartbeats": 0,
+          "markers_dropped": 0,
+          "beats_exported": 0,
+          "spool_migrated": 0,
+          "ledger_recovered": 0,
+          "spool_undurable": 1,
+          "spool_barrier_failures": 0,
+          "ledger_slots": 0,
+          "ledger_overflows": 0,
+          "ledger_failures": 0,
+          "ledger_corrupt": 0,
+          "manifests_unledgered": 0,
+          "retiring": 0,
+          "backlog": 0
+        }
+      },
+      "violations": [],
+      "passed": true
+    },
+    {
+      "mode": "masked_only",
+      "calls": 6,
+      "matched": 6,
+      "drained": true,
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 0,
+        "uninstrumented_client": 0
+      },
+      "files": 9,
+      "records": 6,
+      "exchanges": 6,
+      "retained_objects": 0,
+      "planted_found": [],
+      "transformed_objects": 13,
+      "descriptor_only_objects": 0,
+      "store_reasons": [],
+      "part_objects": 1,
+      "part_ranges": 0,
+      "ledger_records": 0,
+      "ledger_reasons": [],
+      "mode_did_its_work": true,
+      "delivered": {
+        "left": 0,
+        "trace_requests": 1,
+        "content_requests": 1,
+        "stats": {
+          "delivered": 6,
+          "send_retries": 0,
+          "content_rejected": 0,
+          "traces_rejected": 0,
+          "quarantined": 0,
+          "spool_undecryptable": 0,
+          "spool_oversized": 0,
+          "orphan_heartbeats": 0,
+          "markers_dropped": 0,
+          "beats_exported": 0,
+          "spool_migrated": 0,
+          "ledger_recovered": 0,
+          "spool_undurable": 1,
+          "spool_barrier_failures": 0,
+          "ledger_slots": 0,
+          "ledger_overflows": 0,
+          "ledger_failures": 0,
+          "ledger_corrupt": 0,
+          "manifests_unledgered": 0,
+          "retiring": 0,
+          "backlog": 0
+        }
+      },
+      "violations": [],
+      "passed": true
+    },
+    {
+      "mode": "tokenize",
+      "calls": 6,
+      "matched": 6,
+      "drained": true,
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 0,
+        "uninstrumented_client": 0
+      },
+      "files": 9,
+      "records": 6,
+      "exchanges": 6,
+      "retained_objects": 0,
+      "planted_found": [],
+      "transformed_objects": 13,
+      "descriptor_only_objects": 0,
+      "store_reasons": [],
+      "part_objects": 1,
+      "part_ranges": 0,
+      "ledger_records": 0,
+      "ledger_reasons": [],
+      "mode_did_its_work": true,
+      "delivered": {
+        "left": 0,
+        "trace_requests": 1,
+        "content_requests": 1,
+        "stats": {
+          "delivered": 6,
+          "send_retries": 0,
+          "content_rejected": 0,
+          "traces_rejected": 0,
+          "quarantined": 0,
+          "spool_undecryptable": 0,
+          "spool_oversized": 0,
+          "orphan_heartbeats": 0,
+          "markers_dropped": 0,
+          "beats_exported": 0,
+          "spool_migrated": 0,
+          "ledger_recovered": 0,
+          "spool_undurable": 1,
+          "spool_barrier_failures": 0,
+          "ledger_slots": 0,
+          "ledger_overflows": 0,
+          "ledger_failures": 0,
+          "ledger_corrupt": 0,
+          "manifests_unledgered": 0,
+          "retiring": 0,
+          "backlog": 0
+        }
+      },
+      "violations": [],
+      "passed": true
+    },
+    {
+      "mode": "original_plus_masked",
+      "calls": 6,
+      "matched": 6,
+      "drained": true,
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 0,
+        "uninstrumented_client": 0
+      },
+      "files": 9,
+      "records": 6,
+      "exchanges": 6,
+      "retained_objects": 13,
+      "planted_found": [
+        "prompt",
+        "tool_schema",
+        "response",
+        "image"
+      ],
+      "transformed_objects": 13,
+      "descriptor_only_objects": 0,
+      "store_reasons": [],
+      "part_objects": 2,
+      "part_ranges": 1,
+      "ledger_records": 0,
+      "ledger_reasons": [],
+      "mode_did_its_work": true,
+      "delivered": {
+        "left": 0,
+        "trace_requests": 1,
+        "content_requests": 1,
+        "stats": {
+          "delivered": 6,
+          "send_retries": 0,
+          "content_rejected": 0,
+          "traces_rejected": 0,
+          "quarantined": 0,
+          "spool_undecryptable": 0,
+          "spool_oversized": 0,
+          "orphan_heartbeats": 0,
+          "markers_dropped": 0,
+          "beats_exported": 0,
+          "spool_migrated": 0,
+          "ledger_recovered": 0,
+          "spool_undurable": 1,
+          "spool_barrier_failures": 0,
+          "ledger_slots": 0,
+          "ledger_overflows": 0,
+          "ledger_failures": 0,
+          "ledger_corrupt": 0,
+          "manifests_unledgered": 0,
+          "retiring": 0,
+          "backlog": 0
+        }
+      },
+      "violations": [],
+      "passed": true
+    },
+    {
+      "mode": "original_plus_masked_unreviewed",
+      "calls": 6,
+      "matched": 6,
+      "drained": true,
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 0,
+        "uninstrumented_client": 0
+      },
+      "files": 9,
+      "records": 6,
+      "exchanges": 6,
+      "retained_objects": 0,
+      "planted_found": [],
+      "transformed_objects": 0,
+      "descriptor_only_objects": 24,
+      "store_reasons": [
+        "protection_failed"
+      ],
+      "part_objects": 0,
+      "part_ranges": 0,
+      "ledger_records": 0,
+      "ledger_reasons": [],
+      "mode_did_its_work": true,
+      "delivered": {
+        "left": 0,
+        "trace_requests": 1,
+        "content_requests": 1,
+        "stats": {
+          "delivered": 6,
+          "send_retries": 0,
+          "content_rejected": 0,
+          "traces_rejected": 0,
+          "quarantined": 0,
+          "spool_undecryptable": 0,
+          "spool_oversized": 0,
+          "orphan_heartbeats": 0,
+          "markers_dropped": 0,
+          "beats_exported": 0,
+          "spool_migrated": 0,
+          "ledger_recovered": 0,
+          "spool_undurable": 1,
+          "spool_barrier_failures": 0,
+          "ledger_slots": 0,
+          "ledger_overflows": 0,
+          "ledger_failures": 0,
+          "ledger_corrupt": 0,
+          "manifests_unledgered": 0,
+          "retiring": 0,
+          "backlog": 0
+        }
+      },
+      "violations": [],
+      "passed": true
+    },
+    {
+      "mode": "disabled",
+      "calls": 6,
+      "matched": 6,
+      "drained": true,
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 0,
+        "uninstrumented_client": 0
+      },
+      "files": 9,
+      "records": 6,
+      "exchanges": 6,
+      "retained_objects": 0,
+      "planted_found": [],
+      "transformed_objects": 0,
+      "descriptor_only_objects": 0,
+      "store_reasons": [
+        "missing_id_key"
+      ],
+      "part_objects": 0,
+      "part_ranges": 0,
+      "ledger_records": 0,
+      "ledger_reasons": [],
+      "mode_did_its_work": true,
+      "delivered": {
+        "left": 0,
+        "trace_requests": 1,
+        "content_requests": 0,
+        "stats": {
+          "delivered": 6,
+          "send_retries": 0,
+          "content_rejected": 0,
+          "traces_rejected": 0,
+          "quarantined": 0,
+          "spool_undecryptable": 0,
+          "spool_oversized": 0,
+          "orphan_heartbeats": 0,
+          "markers_dropped": 0,
+          "beats_exported": 0,
+          "spool_migrated": 0,
+          "ledger_recovered": 0,
+          "spool_undurable": 1,
+          "spool_barrier_failures": 0,
+          "ledger_slots": 0,
+          "ledger_overflows": 0,
+          "ledger_failures": 0,
+          "ledger_corrupt": 0,
+          "manifests_unledgered": 0,
+          "retiring": 0,
+          "backlog": 0
+        }
+      },
+      "violations": [],
+      "passed": true
+    },
+    {
+      "mode": "disk_full",
+      "calls": 6,
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 6,
+        "uninstrumented_client": 0
+      },
+      "files": 3,
+      "records": 0,
+      "exchanges": 0,
+      "retained_objects": 0,
+      "planted_found": [],
+      "transformed_objects": 0,
+      "descriptor_only_objects": 0,
+      "store_reasons": [],
+      "part_objects": 0,
+      "part_ranges": 0,
+      "ledger_records": 1,
+      "ledger_reasons": [
+        "disk_full"
+      ],
+      "delivered": {
+        "left": 0,
+        "trace_requests": 1,
+        "content_requests": 0,
+        "stats": {
+          "delivered": 0,
+          "send_retries": 0,
+          "content_rejected": 0,
+          "traces_rejected": 0,
+          "quarantined": 0,
+          "spool_undecryptable": 0,
+          "spool_oversized": 0,
+          "orphan_heartbeats": 0,
+          "markers_dropped": 0,
+          "beats_exported": 0,
+          "spool_migrated": 0,
+          "ledger_recovered": 1,
+          "spool_undurable": 1,
+          "spool_barrier_failures": 0,
+          "ledger_slots": 0,
+          "ledger_overflows": 0,
+          "ledger_failures": 0,
+          "ledger_corrupt": 0,
+          "manifests_unledgered": 0,
+          "retiring": 0,
+          "backlog": 0
+        }
+      },
+      "violations": [],
+      "passed": true
+    }
+  ],
+  "self_test": {
+    "mode": "retain_original",
+    "calls": 6,
+    "matched": 6,
+    "drained": true,
+    "losses": {
+      "queue_full": 0,
+      "internal_error": 0,
+      "shutdown": 0,
+      "disk_full": 0,
+      "uninstrumented_client": 0
+    },
+    "files": 9,
+    "records": 0,
+    "exchanges": 0,
+    "retained_objects": 0,
+    "planted_found": [],
+    "transformed_objects": 0,
+    "descriptor_only_objects": 0,
+    "store_reasons": [],
+    "part_objects": 0,
+    "part_ranges": 0,
+    "ledger_records": 0,
+    "ledger_reasons": [],
+    "mode_did_its_work": false,
+    "delivered": {
+      "left": 0,
+      "trace_requests": 0,
+      "content_requests": 0,
+      "stats": {
+        "delivered": 0,
+        "send_retries": 0,
+        "content_rejected": 0,
+        "traces_rejected": 0,
+        "quarantined": 6,
+        "spool_undecryptable": 0,
+        "spool_oversized": 0,
+        "orphan_heartbeats": 0,
+        "markers_dropped": 0,
+        "beats_exported": 0,
+        "spool_migrated": 0,
+        "ledger_recovered": 0,
+        "spool_undurable": 1,
+        "spool_barrier_failures": 0,
+        "ledger_slots": 0,
+        "ledger_overflows": 0,
+        "ledger_failures": 0,
+        "ledger_corrupt": 0,
+        "manifests_unledgered": 0,
+        "retiring": 0,
+        "backlog": 0
+      }
+    },
+    "violations": [
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000000.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000000.rec (decrypted)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000000.rec",
+        "error": "unreadable record: CorruptRecordError"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000000.rec (decrypted, unparsed)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000000.rec (decrypted, unparsed)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000000.rec (decrypted, unparsed)",
+        "canary": "prompt"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000000.rec (decrypted, unparsed)",
+        "canary": "tool_schema"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000000.rec (decrypted, unparsed)",
+        "canary": "response"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000001.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000001.rec (decrypted)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000001.rec",
+        "error": "unreadable record: CorruptRecordError"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000001.rec (decrypted, unparsed)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000001.rec (decrypted, unparsed)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000001.rec (decrypted, unparsed)",
+        "canary": "prompt"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000001.rec (decrypted, unparsed)",
+        "canary": "response"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000001.rec (decrypted, unparsed)",
+        "canary": "image"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000002.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000002.rec (decrypted)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000002.rec",
+        "error": "unreadable record: CorruptRecordError"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000002.rec (decrypted, unparsed)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000002.rec (decrypted, unparsed)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000002.rec (decrypted, unparsed)",
+        "canary": "prompt"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000002.rec (decrypted, unparsed)",
+        "canary": "tool_schema"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000002.rec (decrypted, unparsed)",
+        "canary": "response"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000003.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000003.rec (decrypted)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000003.rec",
+        "error": "unreadable record: CorruptRecordError"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000003.rec (decrypted, unparsed)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000003.rec (decrypted, unparsed)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000003.rec (decrypted, unparsed)",
+        "canary": "prompt"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000003.rec (decrypted, unparsed)",
+        "canary": "tool_schema"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000004.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000004.rec (decrypted)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000004.rec",
+        "error": "unreadable record: CorruptRecordError"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000004.rec (decrypted, unparsed)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000004.rec (decrypted, unparsed)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000004.rec (decrypted, unparsed)",
+        "canary": "prompt"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000004.rec (decrypted, unparsed)",
+        "canary": "tool_schema"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000005.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000005.rec (decrypted)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000005.rec",
+        "error": "unreadable record: CorruptRecordError"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000005.rec (decrypted, unparsed)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000005.rec (decrypted, unparsed)",
+        "canary": "leak_header"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000005.rec (decrypted, unparsed)",
+        "canary": "prompt"
+      },
+      {
+        "where": "spool/03277945098913945410-0000002423-000000000005.rec (decrypted, unparsed)",
+        "canary": "tool_schema"
+      }
+    ],
+    "passed": false
+  },
+  "self_test_sink": {
+    "mode": "retain_original",
+    "calls": 6,
+    "matched": 6,
+    "drained": true,
+    "losses": {
+      "queue_full": 0,
+      "internal_error": 0,
+      "shutdown": 0,
+      "disk_full": 0,
+      "uninstrumented_client": 0
+    },
+    "files": 9,
+    "records": 6,
+    "exchanges": 6,
+    "retained_objects": 13,
+    "planted_found": [
+      "prompt",
+      "tool_schema",
+      "response",
+      "image"
+    ],
+    "transformed_objects": 0,
+    "descriptor_only_objects": 0,
+    "store_reasons": [],
+    "part_objects": 1,
+    "part_ranges": 1,
+    "ledger_records": 0,
+    "ledger_reasons": [],
+    "mode_did_its_work": true,
+    "delivered": {
+      "left": 0,
+      "trace_requests": 1,
+      "content_requests": 1,
+      "stats": {
+        "delivered": 6,
+        "send_retries": 0,
+        "content_rejected": 0,
+        "traces_rejected": 0,
+        "quarantined": 0,
+        "spool_undecryptable": 0,
+        "spool_oversized": 0,
+        "orphan_heartbeats": 0,
+        "markers_dropped": 0,
+        "beats_exported": 0,
+        "spool_migrated": 0,
+        "ledger_recovered": 0,
+        "spool_undurable": 1,
+        "spool_barrier_failures": 0,
+        "ledger_slots": 0,
+        "ledger_overflows": 0,
+        "ledger_failures": 0,
+        "ledger_corrupt": 0,
+        "manifests_unledgered": 0,
+        "retiring": 0,
+        "backlog": 0
+      }
+    },
+    "violations": [
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000000.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000000.rec header",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000001.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000001.rec header",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000002.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000002.rec header",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000003.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000003.rec header",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000004.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000004.rec header",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000005.rec (decrypted)",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "spool/01195957064558347691-0000002436-000000000005.rec header",
+        "canary": "leak_attribute"
+      },
+      {
+        "where": "sink /v1/traces",
+        "canary": "leak_attribute"
+      }
+    ],
+    "passed": false
+  },
+  "artifact": {
+    "contents": {
+      "files": 28,
+      "prebuilds": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-arm64-glibc",
+        "linux-arm64-musl",
+        "linux-x64-glibc",
+        "linux-x64-musl"
+      ],
+      "violations": []
+    },
+    "canaries": {
+      "exit_code": 0,
+      "status_file": {
+        "phase": "exit",
+        "capture": "closed"
+      },
+      "exit_note_written": true,
+      "matched": 1,
+      "violations": [],
+      "passed": true
+    },
+    "self": {
+      "planted": [
+        "install_script",
+        "dependency",
+        "source_map_content",
+        "module",
+        "boundary_term",
+        "unexpected_file",
+        "prebuild_digest"
+      ],
+      "missed": [],
+      "canary_leak_reported": true,
+      "passed": true
+    }
+  },
+  "network": {
+    "passed": true,
+    "node": "24.22.3",
+    "startup_proxy_mode": "NODE_USE_ENV_PROXY=1 --use-env-proxy",
+    "startup_proxy_mode_active": true,
+    "redirect_statuses": [
+      301,
+      302,
+      303,
+      307,
+      308
+    ],
+    "connections": [
+      "127.0.0.1:44523",
+      "127.0.0.1:44523",
+      "127.0.0.1:44523",
+      "127.0.0.1:44523",
+      "127.0.0.1:44523",
+      "127.0.0.1:44523",
+      "127.0.0.1:44523",
+      "127.0.0.1:44523",
+      "127.0.0.1:44523",
+      "127.0.0.1:44523",
+      "127.0.0.1:40081",
+      "127.0.0.1:40081",
+      "127.0.0.1:40081",
+      "127.0.0.1:40081",
+      "127.0.0.1:40081",
+      "127.0.0.1:44523",
+      "127.0.0.1:44523",
+      "127.0.0.1:42605",
+      "127.0.0.1:42605"
+    ],
+    "proxy_connects": 2,
+    "hostile_listeners": [
+      {
+        "name": "HTTP_PROXY",
+        "connections": 0
+      },
+      {
+        "name": "HTTPS_PROXY",
+        "connections": 0
+      },
+      {
+        "name": "ALL_PROXY",
+        "connections": 0
+      },
+      {
+        "name": "redirect Location",
+        "connections": 0
+      },
+      {
+        "name": "provider base URL",
+        "connections": 0
+      }
+    ],
+    "violations": []
+  },
+  "network_self_test": {
+    "passed": false,
+    "node": "24.22.3",
+    "startup_proxy_mode": "NODE_USE_ENV_PROXY=1 --use-env-proxy",
+    "startup_proxy_mode_active": true,
+    "redirect_statuses": [
+      301,
+      302,
+      303,
+      307,
+      308
+    ],
+    "connections": [
+      "127.0.0.1:33127",
+      "127.0.0.1:33127",
+      "127.0.0.1:33127",
+      "127.0.0.1:33127",
+      "127.0.0.1:33127",
+      "127.0.0.1:33127",
+      "127.0.0.1:33127",
+      "127.0.0.1:33127",
+      "127.0.0.1:33127",
+      "127.0.0.1:33127",
+      "127.0.0.1:39677",
+      "127.0.0.1:39677",
+      "127.0.0.1:39677",
+      "127.0.0.1:39677",
+      "127.0.0.1:39677",
+      "127.0.0.1:33127",
+      "127.0.0.1:33127",
+      "127.0.0.1:43791",
+      "127.0.0.1:43791",
+      "127.0.0.1:34525"
+    ],
+    "proxy_connects": 2,
+    "hostile_listeners": [
+      {
+        "name": "HTTP_PROXY",
+        "connections": 1
+      },
+      {
+        "name": "HTTPS_PROXY",
+        "connections": 0
+      },
+      {
+        "name": "ALL_PROXY",
+        "connections": 0
+      },
+      {
+        "name": "redirect Location",
+        "connections": 0
+      },
+      {
+        "name": "provider base URL",
+        "connections": 0
+      }
+    ],
+    "violations": [
+      {
+        "where": "HTTP_PROXY",
+        "connections": 1,
+        "bytes": 108
+      },
+      {
+        "where": "child connections",
+        "unexpected": [
+          "127.0.0.1:34525"
+        ]
+      }
+    ]
+  },
+  "network_self_test_global_agent": {
+    "passed": false,
+    "node": "24.22.3",
+    "startup_proxy_mode": "NODE_USE_ENV_PROXY=1 --use-env-proxy",
+    "startup_proxy_mode_active": true,
+    "redirect_statuses": [
+      301,
+      302,
+      303,
+      307,
+      308
+    ],
+    "connections": [
+      "127.0.0.1:36417",
+      "127.0.0.1:36417",
+      "127.0.0.1:36417",
+      "127.0.0.1:36417",
+      "127.0.0.1:36417",
+      "127.0.0.1:36417",
+      "127.0.0.1:36417",
+      "127.0.0.1:36417",
+      "127.0.0.1:36417",
+      "127.0.0.1:36417",
+      "127.0.0.1:37951",
+      "127.0.0.1:37951",
+      "127.0.0.1:37951",
+      "127.0.0.1:37951",
+      "127.0.0.1:37951",
+      "127.0.0.1:36417",
+      "127.0.0.1:36417",
+      "127.0.0.1:33331",
+      "127.0.0.1:33331",
+      "127.0.0.1:43105"
+    ],
+    "proxy_connects": 2,
+    "hostile_listeners": [
+      {
+        "name": "HTTP_PROXY",
+        "connections": 1
+      },
+      {
+        "name": "HTTPS_PROXY",
+        "connections": 0
+      },
+      {
+        "name": "ALL_PROXY",
+        "connections": 0
+      },
+      {
+        "name": "redirect Location",
+        "connections": 0
+      },
+      {
+        "name": "provider base URL",
+        "connections": 0
+      }
+    ],
+    "violations": [
+      {
+        "where": "HTTP_PROXY",
+        "connections": 1,
+        "bytes": 227
+      },
+      {
+        "where": "child connections",
+        "unexpected": [
+          "127.0.0.1:43105"
+        ]
+      }
+    ]
+  },
+  "result": "passed"
+}
