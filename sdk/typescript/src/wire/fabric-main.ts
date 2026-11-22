@@ -17,6 +17,7 @@
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
 
 import { FileContentClient } from "./file-content.js";
+import { IsolateWatch } from "./isolate.js";
 import { NodeContentClient } from "./node-content.js";
 import { type DeliveryTarget, TraceClient } from "./delivery.js";
 import { loadNative } from "./native.js";
@@ -78,6 +79,11 @@ export interface FabricMainSnapshot {
    * this worker writes it when it starts and the exit document at the orderly stop.
    */
   readonly status?: { readonly path: string; readonly install: StatusDocument };
+  /**
+   * How long a worker thread an attached isolate created has to attach before it is
+   * counted unattached (default `UNATTACHED_GRACE_MS`, spec 055 §4.5). Tests lower it.
+   */
+  readonly isolateGraceMs?: number;
 }
 
 /** Distinct warnings one worker prints at most (each once). */
@@ -212,6 +218,21 @@ export function runFabricMain(): Promise<void> | undefined {
     writeStatusFile(status.path, { ...status.install, written_at: new Date().toISOString() }, warn);
   }
   const base = pipelineHandlers(pipeline);
+  // Application isolates (spec 055 §4.4, §4.5): torn-down ones are settled on every tick,
+  // and the first unattached thread is declared in a chained manifest.
+  let isolates: IsolateWatch | undefined;
+  const watchIsolates = (context: FabricWorkerContext): void => {
+    try {
+      isolates ??= new IsolateWatch(context.runtime, context.exchanges, native.addon, {
+        ...(snapshot.isolateGraceMs === undefined ? {} : { graceMs: snapshot.isolateGraceMs }),
+        onUnattached: (cut) =>
+          pipeline.classUncaptured(context.runtime.epoch, "node_worker_unattached", cut),
+      });
+      isolates.poll();
+    } catch {
+      // the next tick polls again
+    }
+  };
   const handlers: FabricWorkerHandlers = {
     ...base,
     job: async (job, context) => {
@@ -226,6 +247,7 @@ export function runFabricMain(): Promise<void> | undefined {
     tick: async (context) => {
       runtime = context.runtime;
       sender.start();
+      watchIsolates(context);
       await base.tick!(context);
     },
     flush: async (deadline, context) => {
@@ -240,10 +262,13 @@ export function runFabricMain(): Promise<void> | undefined {
     },
     stop: async (context) => {
       runtime = context.runtime;
+      // The last pass's tick polled the isolates, and its losses were handled before this
+      // handler: a torn-down isolate's positions precede final.
+      isolates?.close();
       uninstalled(pipeline, context);
       await base.stop!(context);
       const result = await stopDelivery(sender, spool, snapshot, context, pipeline.closed === true);
-      const stats = exitStats(pipeline, sender, result, context.stop?.counters);
+      const stats = exitStats(pipeline, sender, result, context.stop?.counters, context.runtime);
       if (status !== undefined) {
         writeStatusFile(
           status.path,
@@ -282,6 +307,7 @@ function exitStats(
   sender: Sender,
   result: StopResult,
   counters: Readonly<Record<string, number>> | undefined,
+  runtime?: WireRuntime,
 ): Record<string, number> {
   const out: Record<string, number> = {};
   const put = (name: string, value: unknown): void => {
@@ -304,6 +330,16 @@ function exitStats(
     put("spool_migrated", sent.spool_migrated);
     put("ledger_recovered", sent.ledger_recovered);
     for (const [name, value] of Object.entries(sender.health())) put(name, value);
+    // Application isolates (spec 055 §4.5, §6.4), when any were seen.
+    const isolates = runtime?.stats().isolates;
+    if (isolates !== undefined && isolates.attached + isolates.unattached > 0n) {
+      put("workers_attached", Number(isolates.attached));
+      put("workers_unattached", Number(isolates.unattached));
+      put("workers_detached", Number(isolates.detached));
+      put("worker_positions_shutdown", Number(isolates.shutdownPositions));
+      put("worker_detach_overflows", Number(isolates.overflows));
+      put("worker_exchanges_abandoned", Number(isolates.abandoned));
+    }
   } catch {
     // the counters gathered so far
   }

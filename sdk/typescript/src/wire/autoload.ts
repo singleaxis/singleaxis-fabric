@@ -20,6 +20,7 @@ import { WireConfigError, configStatus } from "./config.js";
 import { install, type WireHandle } from "./install.js";
 import { currentRuntime } from "./manifest.js";
 import { nativeTarget } from "./native.js";
+import { inheritedRuntime } from "./runtime.js";
 import {
   Reason,
   STATUS_FILE_ENV,
@@ -76,9 +77,15 @@ export function preloadedHandle(): WireHandle | undefined {
  */
 export function autoload(env: Env = process.env): WireHandle | undefined {
   try {
-    // The Fabric worker never loads the preload (env {}, execArgv []); an application
-    // worker thread inherits it and reports itself unattached through `install()`.
+    // The Fabric worker never loads the preload (env {}, execArgv []).
     if (isFabricWorkerThread()) return undefined;
+    // An application worker thread that inherited the process runtime attaches to it
+    // whatever its own environment says (a Worker may be given `env: {}`): the installing
+    // thread already decided (spec 055 §4.5).
+    if (!isMainThread && inheritedRuntime() !== undefined) {
+      preloaded = install();
+      return preloaded;
+    }
     const file = (env[STATUS_FILE_ENV] ?? "").trim() || undefined;
     if (!ON.has(flag(env, "FABRIC_WIRE_AUTOLOAD"))) {
       if (file !== undefined && isMainThread) {

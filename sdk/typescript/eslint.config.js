@@ -53,4 +53,22 @@ export default [
       "no-redeclare": "off",
     },
   },
+  {
+    // The CommonJS host and worker fixtures of the worker-thread tests (spec 055 unit
+    // 055-t19): plain Node.js scripts run by child processes.
+    files: ["test/**/fixtures/**/*.cjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "commonjs",
+      globals: {
+        require: "readonly",
+        module: "writable",
+        __filename: "readonly",
+        process: "readonly",
+        performance: "readonly",
+        setTimeout: "readonly",
+        fetch: "readonly",
+      },
+    },
+  },
 ];

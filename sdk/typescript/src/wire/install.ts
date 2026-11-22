@@ -33,6 +33,13 @@ import type { Transformation } from "../redaction.js";
 import { WireConfigError, resolveConfig, type WireOptions } from "./config.js";
 import { targetOf } from "./delivery.js";
 import { ExchangeTable } from "./exchange.js";
+import {
+  attachIsolate,
+  publishAttach,
+  unpublishRuntime,
+  unwatchWorkerThreads,
+  watchWorkerThreads,
+} from "./isolate.js";
 import type { FabricMainSnapshot, StopResult } from "./fabric-main.js";
 import {
   ManifestChain,
@@ -49,7 +56,7 @@ import { encodeOpaqueId } from "./p1.js";
 import { decideGate } from "./protect.js";
 import { register, unsealedPriorEpochs, type Registration } from "./registration.js";
 import { bindRunTable, captureScope, createRunTable } from "./run-api.js";
-import { STATE_CLOSING, WireRuntime, createRuntimeShared } from "./runtime.js";
+import { STATE_CLOSING, WireRuntime, createRuntimeShared, publishRuntime } from "./runtime.js";
 import { spoolKeyId } from "./spool-codec.js";
 import { secureDir } from "./spool.js";
 import {
@@ -274,11 +281,9 @@ function onlyDefaults(options: InstallOptions): boolean {
 export function install(options: InstallOptions = {}): WireHandle {
   const table = options.qualification ?? packagedTable();
   if (isFabricWorkerThread()) return inert(Reason.fabricWorker, runtimeFacts(table));
-  if (!isMainThread) {
-    // An application worker thread: attaching to the process runtime is spec 055 §4.5's
-    // isolate attach (unit 055-t19). Until then it records nothing and says so (FW-030).
-    return inert(Reason.workerThread, runtimeFacts(table));
-  }
+  // An application worker thread attaches to the process runtime it inherited (spec 055
+  // §4.5); it never creates a second one, and its options are the installing thread's.
+  if (!isMainThread) return installAttached(table);
   const env = options.env ?? process.env;
   if (installed !== undefined && onlyDefaults(options)) return installed.handle;
   const settings = resolveConfig(options, env);
@@ -298,6 +303,54 @@ export function install(options: InstallOptions = {}): WireHandle {
   }
   const handle = installChecked(options, env, settings, table);
   installed = { handle, fingerprint: print, objects: objectsOf(options) };
+  return handle;
+}
+
+/**
+ * `install()` (or the preload) in an application worker thread: attach to the runtime the
+ * installing thread published, or capture nothing and say why (FW-030), counted in the
+ * process's status and declared in its manifest. `flush()` and `close()` belong to the
+ * installing thread: here `flush()` resolves `false`, and `close()` removes this thread's
+ * hook and seals its open run segments, then resolves `false` (durability is decided by
+ * the installing thread's `close()`).
+ */
+function installAttached(table: QualificationTable): WireHandle {
+  if (installed !== undefined) return installed.handle;
+  const outcome = attachIsolate();
+  if (!outcome.ok) {
+    return inert(outcome.reason, { ...runtimeFacts(table), workerThread: true });
+  }
+  const { runtime, hook } = outcome.attached;
+  const counters = (): HookCounters => ({
+    matched: hook.stats.matched,
+    not_captured: hook.stats.notCaptured,
+    unmatched_model_shaped: hook.stats.unmatchedModelShaped,
+    unqualified_publisher: hook.stats.unqualifiedPublisher,
+  });
+  const handle: WireHandle = {
+    capturing: true,
+    reason: undefined,
+    sourceId: outcome.attached.data.sourceId,
+    epoch: runtime.epoch,
+    flush: () => Promise.resolve(false),
+    close: () => {
+      outcome.attached.detach();
+      release(handle);
+      return Promise.resolve(false);
+    },
+    stopResult: undefined,
+    status: () =>
+      printable(
+        installDocument({
+          capture: "installed",
+          ...runtimeFacts(table),
+          counters: counters(),
+          unmatched: hook.unmatchedHosts(),
+          ...workerFacts(runtime),
+        }),
+      ),
+  };
+  installed = { handle, fingerprint: "", objects: [] };
   return handle;
 }
 
@@ -535,6 +588,25 @@ function installWith(
   });
   undo.push(() => hook.uninstall());
   if (!hook.installed) throw new Error("the undici hook subscribed nothing");
+  // Spec 055 §4.5: every Worker created from now on (nested ones included) inherits the
+  // runtime and attaches when the preload or install() runs in it; each Worker created
+  // here is followed until it attaches, or is counted unattached.
+  publishAttach({
+    native: { ...options.native },
+    endpoints,
+    providerRequestId: settings.providerRequestId,
+    sourceId,
+    run: {
+      idKey: settings.secrets.idKey,
+      identityMode: settings.identityMode,
+      labels: settings.labels,
+      production: gate.profile === "production",
+    },
+  });
+  publishRuntime(runtime.shared);
+  undo.push(() => unpublishRuntime());
+  watchWorkerThreads(runtime);
+  undo.push(() => unwatchWorkerThreads());
   const counters = (): HookCounters => ({
     matched: hook.stats.matched,
     not_captured: hook.stats.notCaptured,
@@ -554,6 +626,9 @@ function installWith(
         // can be allocated (050 §3.8: a chained `disabled(shutdown)` manifest).
         const cut = runtime.cut(() => hook.uninstall());
         if (cut !== undefined) off = { points: [UNDICI_POINT], cut };
+        // A Worker created from now on does not attach; attached ones refuse new calls.
+        unpublishRuntime();
+        unwatchWorkerThreads();
         runtime.setState(STATE_CLOSING);
         exchanges.shutdown();
         runs.onFinal();
@@ -637,11 +712,24 @@ function installWith(
           ...statusFacts,
           counters: counters(),
           unmatched: hook.unmatchedHosts(),
+          ...workerFacts(runtime),
         }),
       );
     },
   };
   return handle;
+}
+
+/** The application-isolate counters of the status document (spec 055 §4.5). */
+function workerFacts(
+  runtime: WireRuntime,
+): Pick<StatusFacts, "workersUnattached" | "workersAttached" | "workerPositionsShutdown"> {
+  const isolates = runtime.stats().isolates;
+  return {
+    workersUnattached: Number(isolates.unattached),
+    workersAttached: Number(isolates.attached),
+    workerPositionsShutdown: Number(isolates.shutdownPositions),
+  };
 }
 
 /** Tests only: forget the installed handle after it was closed. */

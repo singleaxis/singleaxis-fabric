@@ -126,6 +126,13 @@ export interface StatusFacts {
   readonly statusFileUnwritable?: boolean | undefined;
   /** `FABRIC_WIRE_AUTOLOAD` is not 1: the preload would do nothing (FW-031). */
   readonly autoloadOff?: boolean | undefined;
+  /** Worker threads counted unattached so far (spec 055 §4.5): FW-030 when above 0. */
+  readonly workersUnattached?: number | undefined;
+  /** Worker threads attached so far, and the positions torn-down ones left as `shutdown`. */
+  readonly workersAttached?: number | undefined;
+  readonly workerPositionsShutdown?: number | undefined;
+  /** This document is an application worker thread's (its own reason names why). */
+  readonly workerThread?: boolean | undefined;
 }
 
 /** Reasons the documents name, beside the point reasons of the registry. */
@@ -135,6 +142,10 @@ export const Reason = Object.freeze({
   noSpool: "no_spool",
   spoolUnusable: "spool_unusable",
   workerThread: "worker_without_process_runtime",
+  /** A worker thread found the runtime closed (spec 055 §4.5): nothing to attach to. */
+  workerRuntimeClosed: "runtime_closed",
+  /** A worker thread could not attach: 1,022 attached threads, or the native env limit. */
+  workerIsolateLimit: "isolate_limit",
   fabricWorker: "fabric_worker",
   internalError: "internal_error",
   noActivePoint: "no_active_point",
@@ -303,7 +314,21 @@ export function describe(facts: StatusFacts): {
   if (facts.nativeReasonId !== undefined) ids.push(facts.nativeReasonId);
   if (facts.reason === Reason.autoloadOff || facts.autoloadOff === true) ids.push("FW-031");
   if (facts.reason === Reason.otelSdkDisabled) ids.push("FW-007");
-  if (facts.reason === Reason.workerThread) ids.push("FW-030");
+  // A worker thread that is not attached records nothing (spec 055 §4.5).
+  if (facts.reason === Reason.workerThread || (facts.workerThread === true && facts.reason)) {
+    ids.push("FW-030");
+  }
+  const unattached = facts.workersUnattached ?? 0;
+  if (Number.isSafeInteger(unattached) && unattached > 0) {
+    status.workers_unattached = unattached;
+    ids.push("FW-030");
+  }
+  for (const [name, value] of [
+    ["workers_attached", facts.workersAttached],
+    ["worker_positions_shutdown", facts.workerPositionsShutdown],
+  ] as const) {
+    if (value !== undefined && Number.isSafeInteger(value) && value > 0) status[name] = value;
+  }
   if (facts.reason === Reason.unsupportedRuntime) ids.push("FW-026");
   if (facts.reason === Reason.noSpool || facts.reason === Reason.spoolUnusable) ids.push("FW-034");
   if (facts.statusFileUnwritable === true) ids.push("FW-023");
@@ -449,6 +474,8 @@ export function exitDocument(
   // An external undici copy published matched calls: they are uninstrumented_client
   // losses: no undici copy but Node's own is qualified (spec 055 §3.1).
   if ((clean.unqualified_publisher ?? 0) > 0) ids.add("FW-035");
+  // Worker threads that recorded nothing were declared node_worker_unattached (§4.5).
+  if ((clean.workers_unattached ?? 0) > 0) ids.add("FW-030");
   const rows = unmatchedRows(unmatched);
   if (rows.length > 0) ids.add("FW-006");
   return {

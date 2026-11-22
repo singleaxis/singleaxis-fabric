@@ -149,6 +149,17 @@ interface FabricWorkerData {
   readonly restarted?: boolean;
 }
 
+/** Set while this isolate constructs the Fabric worker (`FabricWorker.start`). */
+let constructing = false;
+
+/**
+ * True while the Fabric worker is being constructed here: the `worker_threads` channel
+ * subscriber (`isolate.ts`) never counts Fabric's own thread as an application thread.
+ */
+export function creatingFabricWorker(): boolean {
+  return constructing;
+}
+
 function markerData(data: unknown): FabricWorkerData | undefined {
   if (data === null || typeof data !== "object") return undefined;
   return (data as Record<string, unknown>)[FABRIC_WORKER_MARKER] === 1
@@ -214,6 +225,7 @@ export class FabricWorker {
         restarted: this.started,
       };
       this.started = true;
+      constructing = true;
       worker = new Worker(this.options.entry, {
         execArgv: [],
         argv: [],
@@ -229,6 +241,8 @@ export class FabricWorker {
     } catch {
       this.runtime.fail("worker_start_failed");
       return;
+    } finally {
+      constructing = false;
     }
     // An uncaught error in the worker ends it; it is never rethrown on this thread.
     worker.on("error", () => undefined);
