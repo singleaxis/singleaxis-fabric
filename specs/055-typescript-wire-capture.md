@@ -1828,7 +1828,18 @@ the contract between the two specs. Unit `055-t18` builds the switch.
 | G2 and `ttfr-laptop-node` (058 §3.2, §3.3) | After `055-t17`: G1's targets with `node` in place of `python`, measured in a `node:24` container with no Python, with a plain `fetch` tool loop | `055-t18` switches the job to the after-TS-1U form if the TTFR harness is in its base |
 | Reported TS records before capture exists (058 §13.3, WP8-19) | Unchanged by 055. After `055-t20` the same records are also sequenced and sealed when the runtime is installed | 058 WP8-19; `055-t20` |
 
-**Build status (`055-t18`, revision 3.18).** Built in `055-t18`: the `fabric run` Node branch, its `--print-env` (all five formats) with the shared goldens `contracts/cli-config/v1/fixtures/print-env/node-v1.json`, the catalogue entries `FC-098` to `FC-101`, and `verify`'s "model calls" row (`recorded`; `fix` for `FC-098`/`FC-099`; `invisible` with the reason for `FC-100`/`FC-101`) with Node runs judged like Python runs. Not built, because their 058 host code is not in the base; each is that 058 unit's to add from this table: the npm launcher's `run` (WP8-9: no `bin` exists; it must reproduce the shared goldens from `.fabric/compiled.env`), the injector's `"node"` annotation (WP8-13: no injector exists), `plan`'s rows and the `integration-rows-v1.json` entries (WP8-17: `plan` answers `FC-010` and the registry does not exist), and the `ttfr-laptop-node` job in its after-TS-1U form (WP8-10/WP8-19: no TTFR harness exists; until then `scripts/tests/test_fabric_run_node_e2e.py` checks the same path and G1's 300 s budget in the `ts-wire-package` job).
+**Build status (`055-t18`, revision 3.18).** Built in `055-t18`: the `fabric run` Node branch, its
+`--print-env` (all five formats) with the shared goldens
+`contracts/cli-config/v1/fixtures/print-env/node-v1.json`, the catalogue entries `FC-098` to
+`FC-101`, and `verify`'s "model calls" row (`recorded`; `fix` for `FC-098`/`FC-099`; `invisible`
+with the reason for `FC-100`/`FC-101`) with Node runs judged like Python runs. Not built, because
+their 058 host code is not in the base; each is that 058 unit's to add from this table: the npm
+launcher's `run` (WP8-9: no `bin` exists; it must reproduce the shared goldens from
+`.fabric/compiled.env`), the injector's `"node"` annotation (WP8-13: no injector exists), `plan`'s
+rows and the `integration-rows-v1.json` entries (WP8-17: `plan` answers `FC-010` and the registry
+does not exist), and the `ttfr-laptop-node` job in its after-TS-1U form (WP8-10/WP8-19: no TTFR
+harness exists; until then `scripts/tests/test_fabric_run_node_e2e.py` checks the same path and G1's
+300 s budget in the `ts-wire-package` job).
 
 Two points where 058's text needs a one-line follow-up, to be made by
 `055-t18` in a 058 revision note (they do not change 058's interface):

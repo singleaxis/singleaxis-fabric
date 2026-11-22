@@ -43,7 +43,9 @@ import _node_package  # noqa: E402
 
 _MISSING = _node_package.missing()
 _REQUIRED = os.environ.get("FABRIC_REQUIRE_NODE_E2E") == "1"
-pytestmark = pytest.mark.skipif(_MISSING is not None and not _REQUIRED, reason=_MISSING or "")
+pytestmark = pytest.mark.skipif(
+    _MISSING is not None and not _REQUIRED, reason=_MISSING or ""
+)
 PRELOAD = "--import=@singleaxis/fabric/register"
 #: G1's targets with `node` in place of `python` (spec 058 §3.2): one install, at most
 #: three commands (`up` is replaced here by the loopback sink), no hand-made item.
@@ -101,7 +103,9 @@ class FakeModel:
                 return
 
             def do_POST(self) -> None:  # noqa: N802
-                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                payload = json.loads(
+                    self.rfile.read(int(self.headers["Content-Length"]))
+                )
                 model.received += 1
                 answered = any(m.get("role") == "tool" for m in payload["messages"])
                 message: dict[str, Any] = (
@@ -200,11 +204,15 @@ def _verify(lab: dict[str, Any]) -> tuple[int, dict[str, Any], list[str]]:
     from fabric.cli import _verify, build_parser
 
     options = build_parser().parse_args(["verify", "--wait", "30"])
-    report, lines = _verify.run(options, lab["shell"], lab["app"], node_ok=lambda *_: True)
+    report, lines = _verify.run(
+        options, lab["shell"], lab["app"], node_ok=lambda *_: True
+    )
     return report.exit_code, report.to_json(), lines
 
 
-def test_fabric_run_records_and_verifies_an_unmodified_node_agent(lab: dict[str, Any]) -> None:
+def test_fabric_run_records_and_verifies_an_unmodified_node_agent(
+    lab: dict[str, Any],
+) -> None:
     started = time.monotonic()
     init = _fabric(lab, "init", "--quiet", env=lab["env"])
     assert init.returncode == 0, init.stdout + init.stderr
@@ -212,7 +220,11 @@ def test_fabric_run_records_and_verifies_an_unmodified_node_agent(lab: dict[str,
     assert run.returncode == 0, run.stdout + run.stderr
     assert run.stderr == "", run.stderr  # not a terminal: nothing on the agent's stderr
     seen = json.loads(run.stdout.strip().splitlines()[-1])
-    assert seen == {"answer": "It is noon in UTC.", "node_options": PRELOAD, "autoload": "1"}
+    assert seen == {
+        "answer": "It is noon in UTC.",
+        "node_options": PRELOAD,
+        "autoload": "1",
+    }
     assert lab["model"].received == 2
 
     code, report, lines = _verify(lab)
@@ -248,11 +260,19 @@ def test_an_unqualified_node_build_runs_unchanged_and_verify_says_why(
         run = _fabric(lab, "run", "--run", "bare-node", "--", "node", "agent.mjs")
         assert run.returncode == 0 and run.stderr == "", run.stderr
         seen = json.loads(run.stdout.strip().splitlines()[-1])
-        assert seen == {"answer": "It is noon in UTC.", "node_options": None, "autoload": None}
+        assert seen == {
+            "answer": "It is noon in UTC.",
+            "node_options": None,
+            "autoload": None,
+        }
         code, report, _ = _verify(lab)
-        rows = {r["row"]: (r["state"], r["note"]) for r in report["data"]["run"]["coverage"]}
+        rows = {
+            r["row"]: (r["state"], r["note"]) for r in report["data"]["run"]["coverage"]
+        }
         state, note = rows["model calls (requests and responses)"]
-        assert state == "invisible" and note.startswith("unsupported_version: Node "), note
+        assert state == "invisible" and note.startswith("unsupported_version: Node "), (
+            note
+        )
         assert "qualified: Node 24.999.0" in note and "(FC-100)" in note
         # Never a false pass: the run was started without capture (FC-070, an error) and
         # the detail names the recorded reason, which `fabric doctor` shows with its fix.
