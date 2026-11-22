@@ -12,8 +12,10 @@
  *   run is untouched;
  * - a Worker that ran `install()` before the process installed is counted when the Fabric
  *   worker's roll call reaches it, and the manifest declares `node_worker_unattached`;
- * - `takeDetachedEnvs` returning OVERFLOW (the fault build) is counted, and close() still
- *   settles every position;
+ * - `takeDetachedEnvs` returning OVERFLOW (the fault build) is counted, and capture and
+ *   close() go on. The fault sets the flag at load, so the first poll consumes it and no id
+ *   is really dropped: that a dropped isolate's open position settles as `shutdown` at
+ *   close() is proven in `settle.test.ts` (OVERFLOW is counted; ...);
  * - `cluster.fork()` children register their own epochs.
  *
  * The preload-reach cases are in `reach.test.ts`.
@@ -160,7 +162,7 @@ describe.runIf(NODE_24)("application worker threads", { timeout: 120_000 }, () =
     expect(declares(docs)).toBe(true);
   });
 
-  it("OVERFLOW from takeDetachedEnvs is counted, and close() still settles every position", async () => {
+  it("OVERFLOW from takeDetachedEnvs (fault build) is counted, and capture and close() go on", async () => {
     const faults = await buildPackage("faults");
     const root = scratch("overflow");
     const env = captureEnv(root, faults, { FABRIC_WIRE_TEST_FAULT: "ring=overflow" });
