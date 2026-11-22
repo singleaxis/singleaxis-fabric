@@ -346,6 +346,12 @@ export function activeSpanParent(): ParentContext | undefined {
 
 /** Request prototype -> whether this Node.js build's own undici publishes it. */
 const PUBLISHERS = new WeakMap<object, boolean>();
+/**
+ * V8's own `Error.captureStackTrace`, taken when this module loads (before the
+ * application runs, under the preload): an application or library may later replace the
+ * static method, and the hook must never call application code.
+ */
+const captureStackTrace = Error.captureStackTrace.bind(Error);
 /** Where Node.js keeps its bundled undici (`lib/internal/deps/undici/undici.js`). */
 const BUNDLED_FILE = "node:internal/deps/undici/";
 
@@ -361,24 +367,22 @@ const BUNDLED_FILE = "node:internal/deps/undici/";
 export function bundledPublisher(request: object): boolean {
   const proto = Object.getPrototypeOf(request) as object | null;
   if (proto === null) return false;
-  let known = PUBLISHERS.get(proto);
-  if (known === undefined) {
-    known = publisherFileIsBundled();
-    PUBLISHERS.set(proto, known);
-  }
-  return known;
+  const known = PUBLISHERS.get(proto);
+  if (known !== undefined) return known;
+  const decided = publisherFileIsBundled();
+  // Undecidable now (the application made a stack property an accessor or read-only):
+  // not captured this time, and not remembered, so a later call can still be decided.
+  if (decided !== undefined) PUBLISHERS.set(proto, decided);
+  return decided ?? false;
 }
 
-function publisherFileIsBundled(): boolean {
-  const E = Error as unknown as {
-    prepareStackTrace?: unknown;
-    stackTraceLimit: number;
-    captureStackTrace(target: object): void;
-  };
+/** Whether the publisher is Node's bundled undici; `undefined` when it cannot be read. */
+function publisherFileIsBundled(): boolean | undefined {
+  const E = Error as unknown as { prepareStackTrace?: unknown; stackTraceLimit: number };
   for (const name of ["prepareStackTrace", "stackTraceLimit"]) {
     const d = Object.getOwnPropertyDescriptor(Error, name);
     if (d !== undefined && (d.get !== undefined || d.set !== undefined || d.writable !== true)) {
-      return false;
+      return undefined;
     }
   }
   const prepare = E.prepareStackTrace;
@@ -387,9 +391,9 @@ function publisherFileIsBundled(): boolean {
   try {
     E.prepareStackTrace = (_e: unknown, sites: unknown) => sites;
     E.stackTraceLimit = 32;
-    E.captureStackTrace(holder);
+    captureStackTrace(holder);
     const sites = holder.stack;
-    if (!Array.isArray(sites)) return false;
+    if (!Array.isArray(sites)) return undefined;
     let published = false;
     for (const site of sites as { getFileName(): unknown }[]) {
       const file = site.getFileName();

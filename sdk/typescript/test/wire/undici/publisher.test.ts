@@ -131,6 +131,29 @@ describe("publisher qualification", () => {
     },
   );
 
+  it("an application's prepareStackTrace accessor is never run; the class is not captured", () => {
+    class Undecided {}
+    const own = Object.getOwnPropertyDescriptor(Error, "prepareStackTrace");
+    let ran = 0;
+    Object.defineProperty(Error, "prepareStackTrace", {
+      configurable: true,
+      get: () => {
+        ran++;
+        return undefined;
+      },
+      set: () => {
+        ran++;
+      },
+    });
+    try {
+      expect(bundledPublisher(new Undecided())).toBe(false);
+    } finally {
+      if (own === undefined) delete (Error as { prepareStackTrace?: unknown }).prepareStackTrace;
+      else Object.defineProperty(Error, "prepareStackTrace", own);
+    }
+    expect(ran).toBe(0);
+  });
+
   it("the status documents name FW-035 with its fix", () => {
     const exit = exitDocument({ warning_ids: [], notice_ids: [] }, true, {
       unqualified_publisher: 2,
