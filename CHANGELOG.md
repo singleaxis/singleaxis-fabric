@@ -15,6 +15,26 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Model calls made in Node.js worker threads are recorded, and threads that
+  record nothing are declared (spec 055 §4.4, §4.5, §6.4, unit 055-t19).** A
+  worker thread the preload reaches, or that calls `install()`, attaches to the
+  process's capture: its calls share the main thread's epoch, positions,
+  protection, spool and delivery; nothing is set up twice. A thread the preload
+  does not reach (an `eval` Worker under `--import`, a Worker given `env: {}`
+  under `NODE_OPTIONS`, one given `execArgv: []` under a command-line preload),
+  one created before Fabric was installed, or one that calls `install()` without
+  the process's runtime is counted (`status.workers_unattached`), named in the
+  status (`FW-030`) and declared `node_worker_unattached` in the capture
+  manifest, so the record never claims more than it holds. When a worker thread
+  ends or is terminated with a call open, that call becomes a named `shutdown`
+  loss in its run segment within 100 ms, never a missing position or an invented
+  response. `cluster.fork()` children record as processes of their own. Which
+  launch forms reach which Workers was measured on Node.js 24.4.0 and 24.22.3
+  (`qualification/node-wire/worker-reach.json`, table in the Node.js page); the
+  `FW-030` fix now says so (diagnostics 1.5.0). The client matrix gains the
+  worker-pool and `cluster` row, and the chaos suite a Worker terminated
+  mid-call.
+
 - **`fabric run -- node agent.mjs` records a Node.js agent with no code change
   (spec 055 §13.1, unit 055-t18).** `fabric run` now appends
   `--import=@singleaxis/fabric/register` to `NODE_OPTIONS` (never replacing
@@ -913,6 +933,12 @@ it never makes, applies, waits for or returns one.
   may prune the namespace.
 
 ### Fixed
+
+- **A Node.js worker thread terminated at the wrong moment can no longer stop
+  capture for the whole process (unit 055-t19).** A thread ended between
+  claiming a slot in one of the shared hand-off rings and filling it would have
+  left that ring stuck; the Fabric worker now skips such a slot after a second
+  and counts it. A lock a dead thread held is freed the same way.
 
 - **`fabric run` no longer hands the agent a locale variable of its own.**
   Started without `LANG`, the Python that runs `fabric` sets `LC_CTYPE` for

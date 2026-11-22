@@ -347,8 +347,8 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
     "sdk": [
       "typescript"
     ],
-    "text": "a worker thread records nothing: Fabric was not loaded in the main thread before the worker started, or the worker did not inherit the preload",
-    "fix": "load Fabric with NODE_OPTIONS=--import=@singleaxis/fabric/register so every thread inherits it"
+    "text": "a worker thread records nothing: it was created before Fabric was installed, the preload did not reach it, or it loaded Fabric without the process's runtime",
+    "fix": "start the agent with NODE_OPTIONS=--require=@singleaxis/fabric/register (unlike --import it also reaches eval Workers), create worker threads after Fabric is installed, and keep NODE_OPTIONS in the env of a Worker given its own env; status.workers_unattached counts these threads"
   },
   {
     "id": "FW-031",

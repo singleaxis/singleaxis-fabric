@@ -3,7 +3,9 @@
 > **Status:** qualified, undici only (spec 055 unit 055-t17). The gates `TS-1U`
 > (`wire.ts.undici`) and `TS-1D` (protection, spool, sender and readback) passed
 > on the builds listed below, so a release may carry the preload with this claim.
-> Core HTTP (`node:http`, `TS-1H`) and worker threads are not part of it yet.
+> Core HTTP (`node:http`, `TS-1H`) is not part of it yet. Calls made in
+> application worker threads are recorded since unit 055-t19 (see
+> [Worker threads and cluster](#worker-threads-and-cluster)).
 
 Fabric records the model calls a Node.js agent makes, as observed on the wire,
 without changing the agent: the request and response bytes, timing,
@@ -28,7 +30,9 @@ CAPTURE -> PROTECT -> DELIVER
 | A custom `fetch` over `node:http` | no (declared uncaptured, class `node_http`) |
 | `node:http` / `node:https` and libraries built on them | not yet (declared uncaptured, class `node_http`) |
 | The `undici` npm package (`fetch`, `request`, `Client`, `Pool`, its HTTP/2 agent) | no: each matched call is a named `uninstrumented_client` loss (`FW-035`) |
-| Worker threads | not yet (declared, `FW-030`) |
+| Global `fetch` in a worker thread the preload reached (or that calls `install()`) | yes, on the process's one epoch |
+| A worker thread the preload did not reach | no (counted, declared `node_worker_unattached`, `FW-030`) |
+| `cluster.fork()` and `child_process.fork()` children | yes, each a process with its own epoch |
 | Gemini, Bedrock, gRPC, WebSocket and realtime APIs | no |
 | Bun and Deno | no (`unsupported_runtime`, `FW-026`) |
 
@@ -71,6 +75,49 @@ Limits of the claim:
   delivered by the next process on the spool; a position allocated but never
   written makes that process's record incomplete, never falsely complete.
 - The record is a passive copy: nothing here changes, blocks or delays a call.
+
+## Worker threads and cluster
+
+A worker thread created after Fabric is installed inherits the process's
+capture runtime. When the preload (or `install()`) runs in it, the thread
+attaches: its calls get positions from the process's one allocator, in the
+same epoch and source as the main thread's, and are protected, spooled and
+delivered by the same Fabric worker. Nothing is set up twice. Runs do not cross
+threads by themselves (async context does not), so a run continues in a
+worker thread only from a token the application passes to it.
+
+Whether the preload reaches a worker thread is Node.js behaviour, measured as
+launched on the qualified builds (`qualification/node-wire/worker-reach.json`):
+
+| Worker created with | `--import` in `NODE_OPTIONS` | `--require` in `NODE_OPTIONS` | `--import` on the command line | `--require` on the command line |
+|---|---|---|---|---|
+| a file (default), nested ones too | attached | attached | attached | attached |
+| `eval: true` | **not reached** | attached | **not reached** | attached |
+| `execArgv: []` | attached | attached | **not reached** | **not reached** |
+| `env: {}` (no `NODE_OPTIONS`) | **not reached** | **not reached** | attached | attached |
+
+A thread the preload does not reach, one created before Fabric was installed,
+or one that calls `install()` without the process's runtime records nothing.
+It is never guessed about: it is counted (`status.workers_unattached`), the
+status carries `FW-030`, and a chained capture manifest declares the class
+`node_worker_unattached`, so the reader reports the run as complete only for
+its declared scope. A thread is counted once it has not attached within two
+seconds of its creation, or at the orderly stop, whichever comes first.
+
+When a worker thread ends, normally or through `worker.terminate()`, the
+Fabric worker learns it within 100 ms. A call it left open becomes a named
+`shutdown` loss in the run segment it belonged to (the record never invents a
+response), so that run reads back `partial`; everything the thread finished
+is delivered. In a worker thread, `flush()` resolves `false` and `close()`
+only removes that thread's hook: delivery is the installing thread's.
+
+`cluster.fork()` and `child_process.fork()` start new processes. They inherit
+`NODE_OPTIONS` and the environment, install capture themselves, and register
+their own epoch on the shared spool. End a cluster worker with
+`cluster.worker.disconnect()` so its records are delivered before it exits; a
+child that calls `process.exit()` (which an unplanned `process.disconnect()`
+in a cluster worker does) leaves its records in the spool for the next
+process.
 
 ## Turn it on with `fabric run`
 
@@ -179,7 +226,7 @@ unless `FABRIC_WIRE_DIAGNOSTICS=stderr`.
 | `FW-027` | no native lock module for this operating system or CPU | Linux or macOS, x64 or arm64 |
 | `FW-028` | the native lock module could not be used (`native_missing`, ...) | reinstall the package with its `prebuilds/` directory; keep the spool on a local disk |
 | `FW-029` | a capture point is switched off (`FABRIC_WIRE_UNDICI=0`) | set it to `1` |
-| `FW-030` | a worker thread records nothing | record from the main thread for now |
+| `FW-030` | a worker thread records nothing (`status.workers_unattached` counts them) | use `--require=@singleaxis/fabric/register` in `NODE_OPTIONS` (it also reaches `eval` Workers), create worker threads after Fabric is installed, and keep `NODE_OPTIONS` in a Worker's own `env` |
 | `FW-031` | the preload ran but `FABRIC_WIRE_AUTOLOAD` is not `1` | set `FABRIC_WIRE_AUTOLOAD=1` |
 | `FW-032` | the policy masks content and no redaction service is configured | set `FABRIC_REDACTION_ENDPOINT` or change the role's mode |
 | `FW-033` | records wait in the spool with no process draining it | start the agent again, or set `FABRIC_WIRE_DRAIN_ON_EXIT_S` |
