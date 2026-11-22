@@ -407,7 +407,7 @@
       "platform": "linux-x64-glibc",
       "boundary": "pre_decompression",
       "claim": "active",
-      "report_sha256": "sha256:8aa7f3e7e1a1078385fb0ef38d4f9221fcf642e7e008672651eb6ecdf4d4481c"
+      "report_sha256": "sha256:7477fb5181657e82eca5c3e573ee4136c266fda267d670ccb3709f17486ca0a6"
     },
     {
       "point": "wire.ts.undici",
@@ -453,7 +453,7 @@
       "platform": "linux-x64-glibc",
       "boundary": "pre_decompression",
       "claim": "active",
-      "report_sha256": "sha256:312a24a08d96f6aa49d77a085882ef6f0c37cc1530187b92eb52184c0ef41544"
+      "report_sha256": "sha256:8a78ffb75073ef54c3c39096e741bb994ebe7747bbb16f8d9aeb915739168875"
     },
     {
       "point": "wire.ts.undici",

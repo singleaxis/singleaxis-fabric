@@ -1,5 +1,5 @@
 {
-  "artifact_sha256": "sha256:928beb8340367ddc7ae061dbcd7107b0ffba2045fa650753eda2fa9db6a3349c",
+  "artifact_sha256": "sha256:c5d7af1f8f73634cb75389c7538babbec2734b90da76f141d0ab4413ac40938b",
   "clients": {
     "@anthropic-ai/sdk": "1.6.0",
     "openai": "7.52.0",
@@ -393,12 +393,12 @@
         "attempts": 13,
         "exchanges": 13,
         "gaps": {
-          "truncated:stream_closed_early": 1
+          "truncated:stream_closed_early": 2
         },
         "losses": {},
         "states": {
-          "closed_early": 1,
-          "complete": 11,
+          "closed_early": 2,
+          "complete": 10,
           "error": 1
         },
         "verdicts": [
@@ -584,7 +584,7 @@
   ],
   "schema": "fabric.node-wire-matrix-report/v1",
   "sdk": "0.12.1",
-  "source_sha": "79d845a381a67b0580ef1e4eb399db6c86f6babd",
+  "source_sha": "292b07dacccac6e9671061b8179b757fbb3d6678",
   "tuple": {
     "node": "24.4.0",
     "platform": "linux-x64-glibc",
