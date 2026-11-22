@@ -41,6 +41,8 @@ PASSIVITY_GATES = {
     "behaviour_identity",
     "memory_bound",
     "large_shapes",
+    "stalled_recorder",
+    "event_loop_sustained",
 }
 # Spec 055 §9.2: the CI gate jobs whose reports a claimed tuple commits, by report prefix
 # and the job that writes it.

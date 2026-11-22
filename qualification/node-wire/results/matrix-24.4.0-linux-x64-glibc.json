@@ -1,0 +1,542 @@
+{
+  "artifact_sha256": "sha256:ede00f8c9dd43342d509a7cf69e61e7ad92450427b4844d071c53a5421fd4b62",
+  "clients": {
+    "@anthropic-ai/sdk": "1.6.0",
+    "openai": "7.52.0",
+    "undici": "7.16.0"
+  },
+  "result": "passed",
+  "rows": [
+    {
+      "gate": "TS-1U",
+      "profile": "local",
+      "record": {
+        "attempts": 6,
+        "exchanges": 6,
+        "losses": {},
+        "states": {
+          "closed_early": 1,
+          "complete": 4,
+          "error": 1
+        },
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "anthropic",
+      "scenarios": [
+        "cancelled",
+        "error_after_headers",
+        "error_before_headers",
+        "messages_json",
+        "messages_raw_sse",
+        "messages_sse"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "production",
+      "record": {
+        "attempts": 6,
+        "exchanges": 6,
+        "losses": {},
+        "states": {
+          "closed_early": 1,
+          "complete": 4,
+          "error": 1
+        },
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "anthropic",
+      "scenarios": [
+        "cancelled",
+        "error_after_headers",
+        "error_before_headers",
+        "messages_json",
+        "messages_raw_sse",
+        "messages_sse"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "local",
+      "record": {
+        "attempts": 2,
+        "exchanges": 1,
+        "losses": {},
+        "states": {
+          "complete": 1
+        },
+        "verdicts": [
+          "complete_for_declared_scope"
+        ]
+      },
+      "result": "passed",
+      "row": "custom-fetch",
+      "scenarios": [
+        "core_http",
+        "delegated_calls",
+        "delegating"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "production",
+      "record": {
+        "attempts": 2,
+        "exchanges": 1,
+        "losses": {},
+        "states": {
+          "complete": 1
+        },
+        "verdicts": [
+          "complete_for_declared_scope"
+        ]
+      },
+      "result": "passed",
+      "row": "custom-fetch",
+      "scenarios": [
+        "core_http",
+        "delegated_calls",
+        "delegating"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "clear",
+      "record": {
+        "attempts": 14,
+        "exchanges": 14,
+        "losses": {},
+        "states": {
+          "closed_early": 1,
+          "complete": 11,
+          "error": 2
+        },
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "fetch-cjs",
+      "scenarios": [
+        "abort_after_completion",
+        "abort_before_headers",
+        "abort_mid_body",
+        "error_400",
+        "error_after_headers",
+        "format",
+        "gzip_json",
+        "gzip_sse",
+        "json_in_memory",
+        "json_streamed_request_body",
+        "keep_alive_reuse",
+        "non_matching",
+        "paused_consumer",
+        "sse"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "local",
+      "record": {
+        "attempts": 14,
+        "exchanges": 14,
+        "losses": {},
+        "states": {
+          "closed_early": 1,
+          "complete": 11,
+          "error": 2
+        },
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "fetch-cjs",
+      "scenarios": [
+        "abort_after_completion",
+        "abort_before_headers",
+        "abort_mid_body",
+        "error_400",
+        "error_after_headers",
+        "format",
+        "gzip_json",
+        "gzip_sse",
+        "json_in_memory",
+        "json_streamed_request_body",
+        "keep_alive_reuse",
+        "non_matching",
+        "paused_consumer",
+        "sse"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "production",
+      "record": {
+        "attempts": 14,
+        "exchanges": 14,
+        "losses": {},
+        "states": {
+          "closed_early": 1,
+          "complete": 11,
+          "error": 2
+        },
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "fetch-cjs",
+      "scenarios": [
+        "abort_after_completion",
+        "abort_before_headers",
+        "abort_mid_body",
+        "error_400",
+        "error_after_headers",
+        "format",
+        "gzip_json",
+        "gzip_sse",
+        "json_in_memory",
+        "json_streamed_request_body",
+        "keep_alive_reuse",
+        "non_matching",
+        "paused_consumer",
+        "sse"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "local",
+      "record": {
+        "attempts": 14,
+        "exchanges": 14,
+        "losses": {},
+        "states": {
+          "closed_early": 1,
+          "complete": 11,
+          "error": 2
+        },
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "fetch-esm",
+      "scenarios": [
+        "abort_after_completion",
+        "abort_before_headers",
+        "abort_mid_body",
+        "error_400",
+        "error_after_headers",
+        "format",
+        "gzip_json",
+        "gzip_sse",
+        "json_in_memory",
+        "json_streamed_request_body",
+        "keep_alive_reuse",
+        "non_matching",
+        "paused_consumer",
+        "sse"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "production",
+      "record": {
+        "attempts": 14,
+        "exchanges": 14,
+        "losses": {},
+        "states": {
+          "closed_early": 1,
+          "complete": 11,
+          "error": 2
+        },
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "fetch-esm",
+      "scenarios": [
+        "abort_after_completion",
+        "abort_before_headers",
+        "abort_mid_body",
+        "error_400",
+        "error_after_headers",
+        "format",
+        "gzip_json",
+        "gzip_sse",
+        "json_in_memory",
+        "json_streamed_request_body",
+        "keep_alive_reuse",
+        "non_matching",
+        "paused_consumer",
+        "sse"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "local",
+      "record": {
+        "attempts": 13,
+        "exchanges": 13,
+        "losses": {},
+        "states": {
+          "closed_early": 2,
+          "complete": 11
+        },
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "openai",
+      "scenarios": [
+        "cancelled",
+        "chat_json",
+        "chat_sse",
+        "completions_json",
+        "completions_sse",
+        "embeddings",
+        "error_400",
+        "responses_hosted_tool",
+        "responses_previous",
+        "responses_sse",
+        "retried_500",
+        "timed_out"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "production",
+      "record": {
+        "attempts": 13,
+        "exchanges": 13,
+        "losses": {},
+        "states": {
+          "closed_early": 2,
+          "complete": 11
+        },
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "openai",
+      "scenarios": [
+        "cancelled",
+        "chat_json",
+        "chat_sse",
+        "completions_json",
+        "completions_sse",
+        "embeddings",
+        "error_400",
+        "responses_hosted_tool",
+        "responses_previous",
+        "responses_sse",
+        "retried_500",
+        "timed_out"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1D",
+      "profile": "local",
+      "record": {
+        "attempts": 22,
+        "exchanges": 22,
+        "losses": {},
+        "states": {
+          "closed_early": 1,
+          "complete": 20,
+          "error": 1
+        },
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "tool-loop-fan-out",
+      "scenarios": [
+        "cancelled",
+        "fan_out",
+        "retry",
+        "turns"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1D",
+      "profile": "production",
+      "record": {
+        "attempts": 22,
+        "exchanges": 22,
+        "losses": {},
+        "states": {
+          "closed_early": 1,
+          "complete": 20,
+          "error": 1
+        },
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "tool-loop-fan-out",
+      "scenarios": [
+        "cancelled",
+        "fan_out",
+        "retry",
+        "turns"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "local",
+      "record": {
+        "attempts": 7,
+        "exchanges": 0,
+        "losses": {
+          "uninstrumented_client": 7
+        },
+        "states": {},
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "undici-external",
+      "scenarios": [
+        "client_pipelining",
+        "global_fetch",
+        "http2_dispatcher",
+        "pool",
+        "undici_fetch",
+        "undici_request"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029",
+        "FW-035"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "production",
+      "record": {
+        "attempts": 7,
+        "exchanges": 0,
+        "losses": {
+          "uninstrumented_client": 7
+        },
+        "states": {},
+        "verdicts": [
+          "partial"
+        ]
+      },
+      "result": "passed",
+      "row": "undici-external",
+      "scenarios": [
+        "client_pipelining",
+        "global_fetch",
+        "http2_dispatcher",
+        "pool",
+        "undici_fetch",
+        "undici_request"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029",
+        "FW-035"
+      ]
+    },
+    {
+      "gate": "TS-1U",
+      "profile": "local",
+      "record": {
+        "attempts": 0,
+        "exchanges": 0,
+        "losses": {},
+        "states": {},
+        "verdicts": []
+      },
+      "result": "passed",
+      "row": "unsupported-endpoints",
+      "scenarios": [
+        "bedrock",
+        "gemini",
+        "grpc",
+        "realtime",
+        "websocket"
+      ],
+      "status_ids": [
+        "FW-005",
+        "FW-029"
+      ]
+    }
+  ],
+  "schema": "fabric.node-wire-matrix-report/v1",
+  "sdk": "0.12.1",
+  "source_sha": "89325433d197a898393aa02c25e45f31b60d72fe",
+  "tuple": {
+    "node": "24.4.0",
+    "platform": "linux-x64-glibc",
+    "undici": "7.11.0"
+  }
+}
