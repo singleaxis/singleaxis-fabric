@@ -38,21 +38,25 @@ afterEach(async () => {
 });
 
 describe("publisher qualification", () => {
-  it("a matched call another undici copy publishes is an uninstrumented_client loss", async () => {
-    server = await provider();
-    cap = capture(server.port, { publishers: "bundled" });
-    external.publishCreate(server.base, CHAT);
-    external.publishCreate(server.base, CHAT);
-    const out = cap.drained();
-    expect(out.jobs).toEqual([]);
-    expect(out.losses.map((l) => [l.reason, l.sequence])).toEqual([
-      ["uninstrumented_client", 0n],
-      ["uninstrumented_client", 1n],
-    ]);
-    expect(cap.hook.stats.unqualifiedPublisher).toBe(2);
-    expect(cap.hook.stats.notCaptured).toBe(2);
-    expect(cap.runtime.stats().losses.uninstrumented_client).toBe(2n);
-  });
+  // The hook subscribes only where undici publishes body chunks (Node 24.4+, spec 055 §3.1).
+  it.runIf(PUBLISHES_BODIES)(
+    "a matched call another undici copy publishes is an uninstrumented_client loss",
+    async () => {
+      server = await provider();
+      cap = capture(server.port, { publishers: "bundled" });
+      external.publishCreate(server.base, CHAT);
+      external.publishCreate(server.base, CHAT);
+      const out = cap.drained();
+      expect(out.jobs).toEqual([]);
+      expect(out.losses.map((l) => [l.reason, l.sequence])).toEqual([
+        ["uninstrumented_client", 0n],
+        ["uninstrumented_client", 1n],
+      ]);
+      expect(cap.hook.stats.unqualifiedPublisher).toBe(2);
+      expect(cap.hook.stats.notCaptured).toBe(2);
+      expect(cap.runtime.stats().losses.uninstrumented_client).toBe(2n);
+    },
+  );
 
   it("an unmatched call from another copy allocates nothing", async () => {
     server = await provider();
@@ -93,36 +97,39 @@ describe("publisher qualification", () => {
     expect(bundledPublisher(Object.create(null) as object)).toBe(false);
   });
 
-  it("an application's Error.prepareStackTrace is never called and is put back", async () => {
-    const local = await provider();
-    server = local;
-    cap = capture(local.port, { publishers: "bundled" });
-    const calls: unknown[] = [];
-    const mine = (_e: unknown, sites: unknown): unknown => {
-      calls.push(sites);
-      return "mine";
-    };
-    const E = Error as unknown as { prepareStackTrace?: unknown; stackTraceLimit: number };
-    const before = E.prepareStackTrace;
-    E.prepareStackTrace = mine;
-    E.stackTraceLimit = 3;
-    try {
-      class Other {
-        method = "POST";
-        origin = local.base;
-        path = CHAT;
+  it.runIf(PUBLISHES_BODIES)(
+    "an application's Error.prepareStackTrace is never called and is put back",
+    async () => {
+      const local = await provider();
+      server = local;
+      cap = capture(local.port, { publishers: "bundled" });
+      const calls: unknown[] = [];
+      const mine = (_e: unknown, sites: unknown): unknown => {
+        calls.push(sites);
+        return "mine";
+      };
+      const E = Error as unknown as { prepareStackTrace?: unknown; stackTraceLimit: number };
+      const before = E.prepareStackTrace;
+      E.prepareStackTrace = mine;
+      E.stackTraceLimit = 3;
+      try {
+        class Other {
+          method = "POST";
+          origin = local.base;
+          path = CHAT;
+        }
+        const { channel } = await import("node:diagnostics_channel");
+        channel("undici:request:create").publish({ request: new Other() });
+        expect(calls).toEqual([]);
+        expect(E.prepareStackTrace).toBe(mine);
+        expect(E.stackTraceLimit).toBe(3);
+      } finally {
+        E.prepareStackTrace = before;
+        E.stackTraceLimit = 10;
       }
-      const { channel } = await import("node:diagnostics_channel");
-      channel("undici:request:create").publish({ request: new Other() });
-      expect(calls).toEqual([]);
-      expect(E.prepareStackTrace).toBe(mine);
-      expect(E.stackTraceLimit).toBe(3);
-    } finally {
-      E.prepareStackTrace = before;
-      E.stackTraceLimit = 10;
-    }
-    expect(cap.drained().losses.map((l) => l.reason)).toEqual(["uninstrumented_client"]);
-  });
+      expect(cap.drained().losses.map((l) => l.reason)).toEqual(["uninstrumented_client"]);
+    },
+  );
 
   it("the status documents name FW-035 with its fix", () => {
     const exit = exitDocument({ warning_ids: [], notice_ids: [] }, true, {

@@ -53,23 +53,34 @@ function canonicalRoot(root: string): string {
   return path.join(fs.realpathSync(parent), ...suffix);
 }
 
-/** Writes `name` in `directory` once: the same bytes again are fine, other bytes conflict. */
+/** The bytes of `target`, read through one descriptor that never follows a link. */
+function readExisting(target: string): Buffer | undefined {
+  let fd: number;
+  try {
+    fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    if (code === "ENOENT") return undefined;
+    if (code === "ELOOP") throw new Conflict("a symbolic link where an object belongs");
+    throw error;
+  }
+  try {
+    if (!fs.fstatSync(fd).isFile()) throw new Conflict("not a regular file");
+    return fs.readFileSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Writes `name` in `directory` once, create-only: the bytes go to a fresh temp file
+ * (fsync'd), which is then hard-linked to the name, an operation that fails if the name
+ * exists, so nothing is ever replaced and no check races the write. The same bytes
+ * already there are fine; other bytes conflict.
+ */
 function createOnce(directory: string, name: string, data: Uint8Array): void {
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   const target = path.join(directory, name);
-  let existing: Buffer | undefined;
-  try {
-    const stat = fs.lstatSync(target);
-    if (!stat.isFile()) throw new Conflict("not a regular file");
-    existing = fs.readFileSync(target);
-  } catch (error) {
-    if (error instanceof Conflict) throw error;
-    if ((error as { code?: unknown }).code !== "ENOENT") throw error;
-  }
-  if (existing !== undefined) {
-    if (!existing.equals(data)) throw new Conflict("a stored object differs");
-    return;
-  }
   const temp = path.join(directory, `.${name}.${randomUUID()}.tmp`);
   const fd = fs.openSync(temp, "wx", 0o600);
   try {
@@ -80,14 +91,22 @@ function createOnce(directory: string, name: string, data: Uint8Array): void {
     } finally {
       fs.closeSync(fd);
     }
-    fs.renameSync(temp, target);
-  } catch (error) {
+    try {
+      fs.linkSync(temp, target);
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== "EEXIST") throw error;
+      const existing = readExisting(target);
+      if (existing === undefined || !existing.equals(data)) {
+        throw new Conflict("a stored object differs");
+      }
+      return;
+    }
+  } finally {
     try {
       fs.unlinkSync(temp);
     } catch {
-      // best effort
+      // best effort: a leftover temp is never read as an object
     }
-    throw error;
   }
   const dir = fs.openSync(directory, "r");
   try {

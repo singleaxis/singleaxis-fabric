@@ -61,9 +61,12 @@ exports.run = async function run(base) {
             const r = await post("ok", body, { duplex: "half" });
             return { status: r.status, body: await r.text() };
         }),
+        // The text, not the chunk boundaries: where TCP splits a stream depends on timing
+        // (the passivity job compares boundaries against a lockstep server).
         sse: await outcome(async () => {
             const r = await post("ok", chat(true));
-            return { status: r.status, chunks: await chunks(r) };
+            const text = (await chunks(r)).join("");
+            return { status: r.status, text, events: text.split("\n\n").length - 1 };
         }),
         gzip_json: await outcome(async () => {
             const r = await post("gzip", chat(false));
