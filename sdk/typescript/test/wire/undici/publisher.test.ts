@@ -58,6 +58,22 @@ describe("publisher qualification", () => {
     },
   );
 
+  it.runIf(PUBLISHES_BODIES)(
+    "inside a live explicit model call the explicit record owns the call: no loss (049 §5 rule 13)",
+    async () => {
+      server = await provider();
+      const ownership = { ended: false, withheld: false };
+      cap = capture(server.port, { publishers: "bundled", scope: () => ({ ownership }) });
+      external.publishCreate(server.base, CHAT);
+      expect(cap.drained().losses).toEqual([]);
+      expect(cap.hook.stats.unqualifiedPublisher).toBe(1);
+      // Once the explicit scope has ended, the next such call is a named loss again.
+      ownership.ended = true;
+      external.publishCreate(server.base, CHAT);
+      expect(cap.drained().losses.map((l) => l.reason)).toEqual(["uninstrumented_client"]);
+    },
+  );
+
   it("an unmatched call from another copy allocates nothing", async () => {
     server = await provider();
     cap = capture(server.port, { publishers: "bundled" });

@@ -517,10 +517,13 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
       }
       if (bundledOnly && !bundledPublisher(request)) {
         // Another undici copy published this call: its bytes are never taken as
-        // qualified evidence. The position is a named gap instead of a silent miss.
+        // qualified evidence. The position is a named gap instead of a silent miss,
+        // except inside a live explicit model call, which records the call itself (049
+        // §5 rule 13; Python's `_detect` records no loss there either).
         stats.unqualifiedPublisher++;
         stats.notCaptured++;
-        table.uninstrumented(scope?.runSlot);
+        const ownership = scope?.ownership;
+        if (ownership === undefined || ownership.ended) table.uninstrumented(scope?.runSlot);
         return;
       }
       let parent: ParentContext | undefined;
