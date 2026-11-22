@@ -207,6 +207,23 @@ def test_gates_are_passed_with_every_report_of_every_claimed_tuple() -> None:
         assert committed == {_gate_report(prefix, t).name for t in active}, prefix
 
 
+def test_the_claimed_reports_come_from_one_commit() -> None:
+    """The claim describes one build of the code: every committed gate report was measured
+    on the same source commit (a report from an earlier commit says nothing about later
+    fixes), and the privacy report leaves nothing unscanned."""
+    shas = set()
+    for path in sorted(RESULTS.glob("*-[0-9]*.json")):
+        report = json.loads(path.read_text(encoding="utf-8"))
+        if path.name.startswith("privacy-"):
+            assert report.get("not_yet_scanned") == {}, path.name
+            continue  # the privacy report names the Node build, not the commit
+        if path.name.startswith("passivity-"):
+            shas.add(report["source"]["git_sha"])
+        else:
+            shas.add(report["source_sha"])
+    assert len(shas) == 1 and "unknown" not in shas, shas
+
+
 def test_every_gate_job_runs_on_exactly_the_active_tuples() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     active = {(t["node"], t["platform"]) for t in _active()}

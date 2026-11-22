@@ -1,10 +1,10 @@
 {
-  "artifact_sha256": "sha256:ede00f8c9dd43342d509a7cf69e61e7ad92450427b4844d071c53a5421fd4b62",
+  "artifact_sha256": "sha256:928beb8340367ddc7ae061dbcd7107b0ffba2045fa650753eda2fa9db6a3349c",
   "cases": {
     "drainer_takeover": {
       "exchanges": 12,
       "result": "passed",
-      "spool_peak_bytes": 341796,
+      "spool_peak_bytes": 356039,
       "verdicts": {
         "complete": 3
       }
@@ -37,7 +37,7 @@
     "mixed_typescript_python": {
       "exchanges": 5,
       "result": "passed",
-      "spool_peak_bytes": 307169,
+      "spool_peak_bytes": 310730,
       "verdicts": {
         "complete": 2
       }
@@ -45,7 +45,7 @@
     "node_down_then_return": {
       "exchanges": 3,
       "result": "passed",
-      "spool_peak_bytes": 284217,
+      "spool_peak_bytes": 287777,
       "verdicts": {
         "complete": 1
       }
@@ -72,7 +72,7 @@
       "killed": 1,
       "result": "passed",
       "seed": 20261122,
-      "spool_peak_bytes": 296405,
+      "spool_peak_bytes": 299966,
       "verdicts": {
         "complete": 4,
         "not_complete": 1
@@ -81,7 +81,7 @@
     "writers_128": {
       "exchanges": 128,
       "result": "passed",
-      "spool_peak_bytes": 1564315,
+      "spool_peak_bytes": 1841419,
       "verdicts": {
         "complete": 128
       }
@@ -89,7 +89,7 @@
   },
   "result": "passed",
   "schema": "fabric.node-wire-chaos-report/v1",
-  "source_sha": "89325433d197a898393aa02c25e45f31b60d72fe",
+  "source_sha": "79d845a381a67b0580ef1e4eb399db6c86f6babd",
   "tuple": {
     "node": "24.22.3",
     "platform": "linux-x64-glibc",

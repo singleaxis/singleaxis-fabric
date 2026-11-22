@@ -12,9 +12,10 @@
     "the packed npm tarball: file list, package.json scripts and dependencies, dist/ and prebuilds/ strings, loaded modules, exported symbols",
     "the status file and the spool's exit note a preloaded agent leaves"
   ],
-  "not_yet_scanned": {
-    "the Node's persistent queue and the store (e2e with the real Node)": "055-t17"
+  "scanned_by_other_gates": {
+    "the Node's telemetry queue, content queue and file store at rest, its logs, and the reader's report (production profile, real Fabric Node)": "scripts/tests/test_node_wire_fabric_node_e2e.py (ts-wire-node-e2e)"
   },
+  "not_yet_scanned": {},
   "gates": {
     "canary_scan": true,
     "scanner_self_test": true,
@@ -658,183 +659,183 @@
     },
     "violations": [
       {
-        "where": "spool/06495597994790129898-0000002415-000000000000.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000000.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000000.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000000.rec (decrypted)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000000.rec",
+        "where": "spool/03349957935537525137-0000002619-000000000000.rec",
         "error": "unreadable record: CorruptRecordError"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000000.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000000.rec (decrypted, unparsed)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000000.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000000.rec (decrypted, unparsed)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000000.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000000.rec (decrypted, unparsed)",
         "canary": "prompt"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000000.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000000.rec (decrypted, unparsed)",
         "canary": "tool_schema"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000000.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000000.rec (decrypted, unparsed)",
         "canary": "response"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000001.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000001.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000001.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000001.rec (decrypted)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000001.rec",
+        "where": "spool/03349957935537525137-0000002619-000000000001.rec",
         "error": "unreadable record: CorruptRecordError"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000001.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000001.rec (decrypted, unparsed)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000001.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000001.rec (decrypted, unparsed)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000001.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000001.rec (decrypted, unparsed)",
         "canary": "prompt"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000001.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000001.rec (decrypted, unparsed)",
         "canary": "response"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000001.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000001.rec (decrypted, unparsed)",
         "canary": "image"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000002.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000002.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000002.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000002.rec (decrypted)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000002.rec",
+        "where": "spool/03349957935537525137-0000002619-000000000002.rec",
         "error": "unreadable record: CorruptRecordError"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000002.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000002.rec (decrypted, unparsed)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000002.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000002.rec (decrypted, unparsed)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000002.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000002.rec (decrypted, unparsed)",
         "canary": "prompt"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000002.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000002.rec (decrypted, unparsed)",
         "canary": "tool_schema"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000002.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000002.rec (decrypted, unparsed)",
         "canary": "response"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000003.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000003.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000003.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000003.rec (decrypted)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000003.rec",
+        "where": "spool/03349957935537525137-0000002619-000000000003.rec",
         "error": "unreadable record: CorruptRecordError"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000003.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000003.rec (decrypted, unparsed)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000003.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000003.rec (decrypted, unparsed)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000003.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000003.rec (decrypted, unparsed)",
         "canary": "prompt"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000003.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000003.rec (decrypted, unparsed)",
         "canary": "tool_schema"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000004.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000004.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000004.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000004.rec (decrypted)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000004.rec",
+        "where": "spool/03349957935537525137-0000002619-000000000004.rec",
         "error": "unreadable record: CorruptRecordError"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000004.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000004.rec (decrypted, unparsed)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000004.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000004.rec (decrypted, unparsed)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000004.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000004.rec (decrypted, unparsed)",
         "canary": "prompt"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000004.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000004.rec (decrypted, unparsed)",
         "canary": "tool_schema"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000005.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000005.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000005.rec (decrypted)",
+        "where": "spool/03349957935537525137-0000002619-000000000005.rec (decrypted)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000005.rec",
+        "where": "spool/03349957935537525137-0000002619-000000000005.rec",
         "error": "unreadable record: CorruptRecordError"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000005.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000005.rec (decrypted, unparsed)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000005.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000005.rec (decrypted, unparsed)",
         "canary": "leak_header"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000005.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000005.rec (decrypted, unparsed)",
         "canary": "prompt"
       },
       {
-        "where": "spool/06495597994790129898-0000002415-000000000005.rec (decrypted, unparsed)",
+        "where": "spool/03349957935537525137-0000002619-000000000005.rec (decrypted, unparsed)",
         "canary": "tool_schema"
       }
     ],
@@ -900,51 +901,51 @@
     },
     "violations": [
       {
-        "where": "spool/06615152832147077472-0000002428-000000000000.rec (decrypted)",
+        "where": "spool/07755705552745280177-0000002632-000000000000.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06615152832147077472-0000002428-000000000000.rec header",
+        "where": "spool/07755705552745280177-0000002632-000000000000.rec header",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06615152832147077472-0000002428-000000000001.rec (decrypted)",
+        "where": "spool/07755705552745280177-0000002632-000000000001.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06615152832147077472-0000002428-000000000001.rec header",
+        "where": "spool/07755705552745280177-0000002632-000000000001.rec header",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06615152832147077472-0000002428-000000000002.rec (decrypted)",
+        "where": "spool/07755705552745280177-0000002632-000000000002.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06615152832147077472-0000002428-000000000002.rec header",
+        "where": "spool/07755705552745280177-0000002632-000000000002.rec header",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06615152832147077472-0000002428-000000000003.rec (decrypted)",
+        "where": "spool/07755705552745280177-0000002632-000000000003.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06615152832147077472-0000002428-000000000003.rec header",
+        "where": "spool/07755705552745280177-0000002632-000000000003.rec header",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06615152832147077472-0000002428-000000000004.rec (decrypted)",
+        "where": "spool/07755705552745280177-0000002632-000000000004.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06615152832147077472-0000002428-000000000004.rec header",
+        "where": "spool/07755705552745280177-0000002632-000000000004.rec header",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06615152832147077472-0000002428-000000000005.rec (decrypted)",
+        "where": "spool/07755705552745280177-0000002632-000000000005.rec (decrypted)",
         "canary": "leak_attribute"
       },
       {
-        "where": "spool/06615152832147077472-0000002428-000000000005.rec header",
+        "where": "spool/07755705552745280177-0000002632-000000000005.rec header",
         "canary": "leak_attribute"
       },
       {
@@ -1006,25 +1007,25 @@
       308
     ],
     "connections": [
-      "127.0.0.1:39799",
-      "127.0.0.1:39799",
-      "127.0.0.1:39799",
-      "127.0.0.1:39799",
-      "127.0.0.1:39799",
-      "127.0.0.1:39799",
-      "127.0.0.1:39799",
-      "127.0.0.1:39799",
-      "127.0.0.1:39799",
-      "127.0.0.1:39799",
-      "127.0.0.1:44175",
-      "127.0.0.1:44175",
-      "127.0.0.1:44175",
-      "127.0.0.1:44175",
-      "127.0.0.1:44175",
-      "127.0.0.1:39799",
-      "127.0.0.1:39799",
-      "127.0.0.1:39119",
-      "127.0.0.1:39119"
+      "127.0.0.1:43733",
+      "127.0.0.1:43733",
+      "127.0.0.1:43733",
+      "127.0.0.1:43733",
+      "127.0.0.1:43733",
+      "127.0.0.1:43733",
+      "127.0.0.1:43733",
+      "127.0.0.1:43733",
+      "127.0.0.1:43733",
+      "127.0.0.1:43733",
+      "127.0.0.1:46765",
+      "127.0.0.1:46765",
+      "127.0.0.1:46765",
+      "127.0.0.1:46765",
+      "127.0.0.1:46765",
+      "127.0.0.1:43733",
+      "127.0.0.1:43733",
+      "127.0.0.1:42387",
+      "127.0.0.1:42387"
     ],
     "proxy_connects": 2,
     "hostile_listeners": [
@@ -1064,26 +1065,26 @@
       308
     ],
     "connections": [
-      "127.0.0.1:46101",
-      "127.0.0.1:46101",
-      "127.0.0.1:46101",
-      "127.0.0.1:46101",
-      "127.0.0.1:46101",
-      "127.0.0.1:46101",
-      "127.0.0.1:46101",
-      "127.0.0.1:46101",
-      "127.0.0.1:46101",
-      "127.0.0.1:46101",
-      "127.0.0.1:34869",
-      "127.0.0.1:34869",
-      "127.0.0.1:34869",
-      "127.0.0.1:34869",
-      "127.0.0.1:34869",
-      "127.0.0.1:46101",
-      "127.0.0.1:46101",
-      "127.0.0.1:33187",
-      "127.0.0.1:33187",
-      "127.0.0.1:34285"
+      "127.0.0.1:41217",
+      "127.0.0.1:41217",
+      "127.0.0.1:41217",
+      "127.0.0.1:41217",
+      "127.0.0.1:41217",
+      "127.0.0.1:41217",
+      "127.0.0.1:41217",
+      "127.0.0.1:41217",
+      "127.0.0.1:41217",
+      "127.0.0.1:41217",
+      "127.0.0.1:40495",
+      "127.0.0.1:40495",
+      "127.0.0.1:40495",
+      "127.0.0.1:40495",
+      "127.0.0.1:40495",
+      "127.0.0.1:41217",
+      "127.0.0.1:41217",
+      "127.0.0.1:45551",
+      "127.0.0.1:45551",
+      "127.0.0.1:46375"
     ],
     "proxy_connects": 2,
     "hostile_listeners": [
@@ -1117,7 +1118,7 @@
       {
         "where": "child connections",
         "unexpected": [
-          "127.0.0.1:34285"
+          "127.0.0.1:46375"
         ]
       }
     ]
@@ -1135,26 +1136,26 @@
       308
     ],
     "connections": [
-      "127.0.0.1:43761",
-      "127.0.0.1:43761",
-      "127.0.0.1:43761",
-      "127.0.0.1:43761",
-      "127.0.0.1:43761",
-      "127.0.0.1:43761",
-      "127.0.0.1:43761",
-      "127.0.0.1:43761",
-      "127.0.0.1:43761",
-      "127.0.0.1:43761",
-      "127.0.0.1:38387",
-      "127.0.0.1:38387",
-      "127.0.0.1:38387",
-      "127.0.0.1:38387",
-      "127.0.0.1:38387",
-      "127.0.0.1:43761",
-      "127.0.0.1:43761",
-      "127.0.0.1:45423",
-      "127.0.0.1:45423",
-      "127.0.0.1:40241"
+      "127.0.0.1:35041",
+      "127.0.0.1:35041",
+      "127.0.0.1:35041",
+      "127.0.0.1:35041",
+      "127.0.0.1:35041",
+      "127.0.0.1:35041",
+      "127.0.0.1:35041",
+      "127.0.0.1:35041",
+      "127.0.0.1:35041",
+      "127.0.0.1:35041",
+      "127.0.0.1:46125",
+      "127.0.0.1:46125",
+      "127.0.0.1:46125",
+      "127.0.0.1:46125",
+      "127.0.0.1:46125",
+      "127.0.0.1:35041",
+      "127.0.0.1:35041",
+      "127.0.0.1:43093",
+      "127.0.0.1:43093",
+      "127.0.0.1:44049"
     ],
     "proxy_connects": 2,
     "hostile_listeners": [
@@ -1188,7 +1189,7 @@
       {
         "where": "child connections",
         "unexpected": [
-          "127.0.0.1:40241"
+          "127.0.0.1:44049"
         ]
       }
     ]

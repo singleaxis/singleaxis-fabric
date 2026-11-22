@@ -912,6 +912,24 @@ it never makes, applies, waits for or returns one.
   partial for the wrong reason. It is now recorded as `error`, as the Python
   SDK records a call that fails before its response.
 
+- **A Node.js record sometimes lacked the manifest that says capture stopped
+  (spec 055, unit 055-t17 review).** When `close()` ran, Fabric's worker thread
+  could start its orderly stop before the stop request's details arrived, so the
+  chained manifest declaring `wire.ts.undici` `disabled(shutdown)` was missing
+  from some runs. The worker now waits, briefly and with a bound, for those
+  details.
+
+- **A Node.js run read partial for a call an explicit model record already
+  covered (spec 055, unit 055-t17 review).** A call through the `undici` npm
+  package inside a live explicit model call was also recorded as an
+  `uninstrumented_client` loss. As in the Python SDK, the explicit record owns
+  that call and no loss is recorded.
+
+- **Node.js capture never runs application code while checking which undici
+  sent a call (spec 055, unit 055-t17 review).** The check used whatever
+  `Error.captureStackTrace` the application had installed; it now uses the
+  runtime's own.
+
 - **eBPF host emitter: file access and failed execs were missing on Linux
   6.19+ kernels such as Ubuntu's 7.0.** On those kernels, an eBPF program
   attached to the `openat` or `execve` syscall tracepoint was never run, so

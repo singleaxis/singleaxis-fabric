@@ -2,26 +2,26 @@
   "gate": "negative",
   "result": "passed",
   "schema": "fabric.node-wire-gate-report/v1",
-  "source_sha": "89325433d197a898393aa02c25e45f31b60d72fe",
+  "source_sha": "79d845a381a67b0580ef1e4eb399db6c86f6babd",
   "tests": [
     {
       "outcome": "passed",
-      "seconds": 2.054,
+      "seconds": 2.203,
       "test": "scripts.tests.test_node_wire_negative::test_node_22_and_node_24_0_report_unsupported_and_run_unchanged[/opt/hostedtoolcache/node/22.23.5/x64/bin/node]"
     },
     {
       "outcome": "passed",
-      "seconds": 0.726,
+      "seconds": 0.727,
       "test": "scripts.tests.test_node_wire_negative::test_node_22_and_node_24_0_report_unsupported_and_run_unchanged[/opt/hostedtoolcache/node/24.0.0/x64/bin/node]"
     },
     {
       "outcome": "passed",
-      "seconds": 0.689,
+      "seconds": 0.685,
       "test": "scripts.tests.test_node_wire_negative::test_bun_and_deno_never_install_capture[bun]"
     },
     {
       "outcome": "passed",
-      "seconds": 0.709,
+      "seconds": 0.701,
       "test": "scripts.tests.test_node_wire_negative::test_bun_and_deno_never_install_capture[deno]"
     }
   ],

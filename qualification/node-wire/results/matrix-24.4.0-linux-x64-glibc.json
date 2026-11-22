@@ -1,5 +1,5 @@
 {
-  "artifact_sha256": "sha256:ede00f8c9dd43342d509a7cf69e61e7ad92450427b4844d071c53a5421fd4b62",
+  "artifact_sha256": "sha256:928beb8340367ddc7ae061dbcd7107b0ffba2045fa650753eda2fa9db6a3349c",
   "clients": {
     "@anthropic-ai/sdk": "1.6.0",
     "openai": "7.52.0",
@@ -13,6 +13,10 @@
       "record": {
         "attempts": 6,
         "exchanges": 6,
+        "gaps": {
+          "truncated:stream_closed_early": 1,
+          "truncated:transport_incomplete": 1
+        },
         "losses": {},
         "states": {
           "closed_early": 1,
@@ -44,6 +48,10 @@
       "record": {
         "attempts": 6,
         "exchanges": 6,
+        "gaps": {
+          "truncated:stream_closed_early": 1,
+          "truncated:transport_incomplete": 1
+        },
         "losses": {},
         "states": {
           "closed_early": 1,
@@ -75,6 +83,7 @@
       "record": {
         "attempts": 2,
         "exchanges": 1,
+        "gaps": {},
         "losses": {},
         "states": {
           "complete": 1
@@ -101,6 +110,7 @@
       "record": {
         "attempts": 2,
         "exchanges": 1,
+        "gaps": {},
         "losses": {},
         "states": {
           "complete": 1
@@ -127,6 +137,10 @@
       "record": {
         "attempts": 14,
         "exchanges": 14,
+        "gaps": {
+          "truncated:stream_closed_early": 1,
+          "truncated:transport_incomplete": 1
+        },
         "losses": {},
         "states": {
           "closed_early": 1,
@@ -166,6 +180,10 @@
       "record": {
         "attempts": 14,
         "exchanges": 14,
+        "gaps": {
+          "truncated:stream_closed_early": 1,
+          "truncated:transport_incomplete": 1
+        },
         "losses": {},
         "states": {
           "closed_early": 1,
@@ -205,6 +223,10 @@
       "record": {
         "attempts": 14,
         "exchanges": 14,
+        "gaps": {
+          "truncated:stream_closed_early": 1,
+          "truncated:transport_incomplete": 1
+        },
         "losses": {},
         "states": {
           "closed_early": 1,
@@ -244,6 +266,10 @@
       "record": {
         "attempts": 14,
         "exchanges": 14,
+        "gaps": {
+          "truncated:stream_closed_early": 1,
+          "truncated:transport_incomplete": 1
+        },
         "losses": {},
         "states": {
           "closed_early": 1,
@@ -283,6 +309,10 @@
       "record": {
         "attempts": 14,
         "exchanges": 14,
+        "gaps": {
+          "truncated:stream_closed_early": 1,
+          "truncated:transport_incomplete": 1
+        },
         "losses": {},
         "states": {
           "closed_early": 1,
@@ -322,10 +352,14 @@
       "record": {
         "attempts": 13,
         "exchanges": 13,
+        "gaps": {
+          "truncated:stream_closed_early": 1
+        },
         "losses": {},
         "states": {
-          "closed_early": 2,
-          "complete": 11
+          "closed_early": 1,
+          "complete": 11,
+          "error": 1
         },
         "verdicts": [
           "partial"
@@ -358,10 +392,14 @@
       "record": {
         "attempts": 13,
         "exchanges": 13,
+        "gaps": {
+          "truncated:stream_closed_early": 1
+        },
         "losses": {},
         "states": {
-          "closed_early": 2,
-          "complete": 11
+          "closed_early": 1,
+          "complete": 11,
+          "error": 1
         },
         "verdicts": [
           "partial"
@@ -394,6 +432,9 @@
       "record": {
         "attempts": 22,
         "exchanges": 22,
+        "gaps": {
+          "truncated:stream_closed_early": 1
+        },
         "losses": {},
         "states": {
           "closed_early": 1,
@@ -423,6 +464,9 @@
       "record": {
         "attempts": 22,
         "exchanges": 22,
+        "gaps": {
+          "truncated:stream_closed_early": 1
+        },
         "losses": {},
         "states": {
           "closed_early": 1,
@@ -452,6 +496,9 @@
       "record": {
         "attempts": 7,
         "exchanges": 0,
+        "gaps": {
+          "loss:uninstrumented_client": 2
+        },
         "losses": {
           "uninstrumented_client": 7
         },
@@ -482,6 +529,9 @@
       "record": {
         "attempts": 7,
         "exchanges": 0,
+        "gaps": {
+          "loss:uninstrumented_client": 2
+        },
         "losses": {
           "uninstrumented_client": 7
         },
@@ -512,6 +562,7 @@
       "record": {
         "attempts": 0,
         "exchanges": 0,
+        "gaps": {},
         "losses": {},
         "states": {},
         "verdicts": []
@@ -533,7 +584,7 @@
   ],
   "schema": "fabric.node-wire-matrix-report/v1",
   "sdk": "0.12.1",
-  "source_sha": "89325433d197a898393aa02c25e45f31b60d72fe",
+  "source_sha": "79d845a381a67b0580ef1e4eb399db6c86f6babd",
   "tuple": {
     "node": "24.4.0",
     "platform": "linux-x64-glibc",
