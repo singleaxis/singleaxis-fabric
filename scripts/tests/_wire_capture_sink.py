@@ -93,6 +93,9 @@ def _decode_traces(body: bytes) -> list[dict[str, Any]]:
                         "start_ns": span.start_time_unix_nano,
                         "end_ns": span.end_time_unix_nano,
                         "status_code": span.status.code,
+                        # The key `python -m fabric.reconstruct --spans` reads: without it
+                        # an error span reads as unset and its seal recomputes differently.
+                        "status": span.status.code,
                         "status_message": span.status.message,
                         "scope": scope_spans.scope.name,
                         "resource": resource,
