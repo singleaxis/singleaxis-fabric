@@ -1,0 +1,10 @@
+{
+  "name": "fabric-node-wire-negative-runtimes",
+  "private": true,
+  "description": "Spec 055 §9.3 negative rows: the Bun and Deno builds the preload is checked against (capture must never start there). Test tooling only, installed with npm ci --ignore-scripts; never a dependency of @singleaxis/fabric.",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "bun": "1.2.23",
+    "deno": "2.7.14"
+  }
+}
