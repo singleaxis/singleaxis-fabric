@@ -127,7 +127,7 @@ class Chaos:
     def agent(self, calls: int = 1, scenario: str = "ok", **extra: str) -> None:
         """An agent that runs to its orderly exit."""
         process = self.start(scenario, CHAOS_CALLS=str(calls), **extra)
-        out, err = process.communicate(timeout=180)
+        _out, err = process.communicate(timeout=180)
         assert process.returncode == 0, err
         self.account()
 
@@ -164,7 +164,7 @@ class Chaos:
 
     def read(self) -> dict[str, Any]:
         (self.root / "read").mkdir(exist_ok=True)
-        code, report, stderr = reconstruct(self.sink.rows(), self.root / "read")
+        code, report, _stderr = reconstruct(self.sink.rows(), self.root / "read")
         report["_code"] = code
         return report
 
@@ -407,10 +407,13 @@ def test_randomized_operations_keep_accounting_and_never_claim_false_complete(
             admitted += calls
         else:
             before = set(chaos.records())
+            asked = admitted + killed
             process = chaos.start(CHAOS_CALLS="1", CHAOS_HOLD_MS="60000",
                                   FABRIC_WIRE_DRAIN_ON_EXIT_S="0")  # fmt: skip
-            chaos.wait(lambda: len(chaos.provider.received) > admitted + killed)
-            chaos.wait(lambda: len(set(chaos.records()) - before) >= 1 or chaos.up, 10)
+            chaos.wait(lambda n=asked: len(chaos.provider.received) > n)
+            chaos.wait(
+                lambda b=before: len(set(chaos.records()) - b) >= 1 or chaos.up, 10
+            )
             time.sleep(0.3)
             process.send_signal(signal.SIGKILL)
             process.wait(timeout=30)
