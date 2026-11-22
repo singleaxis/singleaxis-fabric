@@ -462,6 +462,51 @@ def join_agent_cgroup(
 
 # ---------------------------------------------------------------- launching
 
+#: PEP 538: a Python started in the C or POSIX locale sets ``LC_CTYPE`` to one of these
+#: before any code of ``fabric`` runs, and ``exec`` would hand it to the agent (I2). A
+#: Python agent coerces its own locale the same way, so only other runtimes would see it.
+_COERCED_CTYPE = ("C.UTF-8", "C.utf8", "UTF-8")
+
+
+def _initial_value(name: str, proc_environ: Path = Path("/proc/self/environ")) -> str | None:
+    """``name`` in the environment block this process was started with (Linux: the
+    kernel's copy, which ``setenv`` never rewrites). Raises ``OSError`` elsewhere."""
+    prefix = name.encode() + b"="
+    for entry in proc_environ.read_bytes().split(b"\0"):
+        if entry.startswith(prefix):
+            return entry[len(prefix) :].decode("utf-8", "surrogateescape")
+    return None
+
+
+def startup_environ(
+    environ: Mapping[str, str] | None = None,
+    *,
+    utf8_mode: int | None = None,
+    xoptions: Mapping[str, Any] | None = None,
+    initial: Callable[[str], str | None] = _initial_value,
+) -> dict[str, str]:
+    """The environment ``fabric`` was started with: ``os.environ`` without the
+    ``LC_CTYPE`` Python's own locale coercion added (PEP 538). Exact where the start-up
+    block can be read (Linux); elsewhere the coercion is inferred from UTF-8 mode, which
+    a C or POSIX start-up locale turns on when nothing else did (PEP 540)."""
+    env = dict(os.environ if environ is None else environ)
+    if env.get("LC_CTYPE") not in _COERCED_CTYPE or env.get("PYTHONCOERCECLOCALE") == "0":
+        return env
+    try:
+        original = initial("LC_CTYPE")
+    except (OSError, ValueError):
+        utf8 = sys.flags.utf8_mode if utf8_mode is None else utf8_mode
+        options = sys._xoptions if xoptions is None else xoptions
+        if not utf8 or env.get("PYTHONUTF8") or "utf8" in options:
+            return env  # nothing shows a coercion: the shell set it
+        # Coerced: LC_CTYPE was unset, or C/POSIX given while LANG names another locale.
+        original = "C" if env.get("LANG") not in (None, "", "C", "POSIX") else None
+    if original is None:
+        env.pop("LC_CTYPE", None)
+    else:
+        env["LC_CTYPE"] = original
+    return env
+
 
 def _say(findings: Sequence[Finding], stream: IO[str], quiet: bool) -> None:
     """Messages reach stderr only when it is a terminal (I2)."""
@@ -534,7 +579,7 @@ def launch(
     """``fabric run -- CMD``: prepare (fail-open), record the run, join the agent cgroup,
     then ``exec``. Returns only with ``--no-exec``, on Windows, or when ``CMD`` cannot be
     started (127, like a shell)."""
-    environ = dict(os.environ if environ is None else environ)
+    environ = startup_environ() if environ is None else dict(environ)
     cwd = cwd or Path.cwd()
     stderr = stderr or sys.stderr
     execvpe = execvpe or os.execvpe
@@ -574,7 +619,7 @@ def launch_unchanged(
     stderr = stderr or sys.stderr
     execvpe = execvpe or os.execvpe
     _say(findings, stderr, False)
-    env = dict(os.environ)
+    env = startup_environ()
     if os.name == "posix":
         try:
             _exec(execvpe, command, env)
