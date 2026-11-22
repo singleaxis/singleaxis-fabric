@@ -19,7 +19,7 @@ from .._sequence import id_key_from_env
 from ..reconstruct._ids import report_run_id
 from ..reconstruct._inputs import SPAN_FILE_SUFFIXES
 from ..reconstruct._select import run_start_ns
-from . import _project, _runstate
+from . import _node, _project, _runstate
 
 #: How far before a run's start a span file may have been written and still hold it
 #: (the sink's clock and this machine's may differ under a VM's file sharing).
@@ -289,6 +289,27 @@ def _chain(runs: Sequence[Mapping[str, Any]], name: str) -> str | None:
     return None
 
 
+def _node_model_calls(record: _runstate.RunRecord) -> Row:
+    """Spec 055 §13.1: a Node.js run whose zero-code capture ``fabric run`` could not turn
+    on. ``fix`` when the package is absent or too old, ``invisible`` (with the qualified
+    builds) when this Node.js build or platform is not qualified."""
+    found = {f["id"]: f.get("detail") or "" for f in record.findings}
+    name = "model calls (requests and responses)"
+    if "FC-098" in found:
+        return Row(name, "fix", f"{_node.INSTALL_LINE} in the agent's project (FC-098)")
+    if "FC-099" in found:
+        return Row(name, "fix", f"{_node.UPGRADE_LINE} in the agent's project (FC-099)")
+    if "FC-100" in found:
+        return Row(name, "invisible", f"unsupported_version: {found['FC-100']} (FC-100)")
+    if "FC-101" in found:
+        return Row(name, "invisible", f"unsupported_runtime: {found['FC-101']} (FC-101)")
+    return Row(
+        name,
+        "invisible",
+        "capture was off for this run; the explicit API's records are reported, not verified",
+    )
+
+
 def coverage(
     resolved: Any,
     record: _runstate.RunRecord,
@@ -302,12 +323,14 @@ def coverage(
     §6.2). ``http``: the non-model HTTP requests the reader found in these runs."""
     exchanges = sum(int(run["counts"]["exchanges"]) for run in runs)
     rows: list[Row] = []
-    if record.runtime != "python":
+    if record.runtime == "node" and record.capture != "on":
+        rows.append(_node_model_calls(record))
+    elif record.runtime not in ("python", "node"):
         rows.append(
             Row(
                 "model calls (requests and responses)",
                 "invisible",
-                "unsupported_runtime: zero-code capture is Python-only in this release; "
+                "unsupported_runtime: zero-code capture covers Python and Node.js agents; "
                 "the explicit API's records are reported, not verified",
             )
         )

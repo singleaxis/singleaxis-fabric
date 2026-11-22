@@ -320,12 +320,13 @@ names the first one).
 
 ### FC-053
 
-`run_env_only`, info: this command is not a Python program `fabric run` can turn capture on for; it
-was given the run's Fabric settings only.
+`run_env_only`, info: this command is not a Python or Node.js program `fabric run` can turn capture
+on for; it was given the run's Fabric settings only.
 
 Fix: start a Python agent through its interpreter (fabric run -- python app.py) or the project's
-.venv; a launcher script can export `fabric run --print-env` itself; Node.js and compiled agents
-record through the explicit API and the host sensor.
+.venv, and a Node.js agent through node (fabric run -- node app.js); a launcher script can export
+`fabric run --print-env` itself; compiled agents record through the explicit API and the host
+sensor.
 
 ### FC-054
 
@@ -516,6 +517,41 @@ one with the SDK (`fabric doctor` names the one it checked).
 `no_problem_found`, info: no problem found.
 
 Fix: nothing to do.
+
+### FC-098
+
+`run_node_package_missing`, warning: @singleaxis/fabric does not resolve from the agent's working
+directory, so this Node.js run's model calls are not captured; the agent ran unchanged.
+
+Fix: install it in the agent's own project with npm i @singleaxis/fabric (in the directory that
+holds the agent's package.json), then start the agent with `fabric run` again.
+
+### FC-099
+
+`run_node_package_unqualified`, warning: the installed @singleaxis/fabric has no qualified zero-code
+capture (no preload, or gates not passed), so this Node.js run's model calls are not captured; the
+agent ran unchanged.
+
+Fix: upgrade it in the agent's project with npm i @singleaxis/fabric@latest, then start the agent
+with `fabric run` again.
+
+### FC-100
+
+`run_node_unqualified`, warning: this Node.js build is not one the installed @singleaxis/fabric
+qualifies for model-call capture on this platform, so this run's model calls are not captured; the
+agent ran unchanged.
+
+Fix: run the agent with one of the Node.js builds the detail lists (for example nvm install with
+that version), then start it with `fabric run` again.
+
+### FC-101
+
+`run_node_platform_unsupported`, warning: the installed @singleaxis/fabric qualifies no Node.js
+build for this operating system and processor, so this run's model calls are not captured; the agent
+ran unchanged.
+
+Fix: run the agent on a platform the detail lists, for example in a node:24 Linux x64 container; on
+this machine the explicit API still records, reported rather than verified.
 
 ## The SDKs (wire capture, status, autoload)
 

@@ -60,6 +60,10 @@
       "sha256": "1ebacae21348d060d5655460f74b60230ba97a5f3e97bc631f4a4ab3bd9d22e0"
     },
     {
+      "path": "fixtures/print-env/node-v1.json",
+      "sha256": "07c9e4f5c3104783846e02f65bc4ed2a940ca7a6144aca1cc2b7471c5c168a12"
+    },
+    {
       "path": "fixtures/valid/full-local.yaml",
       "sha256": "2a450516372c55fd035af07615d08ff2f5759e4fbf8c3a1922b9426f97799b47"
     },

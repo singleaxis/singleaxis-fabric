@@ -50,11 +50,17 @@ def _path_check(which: Callable[[str], str | None], findings: list[Finding]) -> 
 def interpreter_for(
     project: _project.Project | None, environ: Mapping[str, str], which: Callable[..., str | None]
 ) -> Path:
-    """The agent's interpreter: the last run's, the project's ``.venv``, the ``python3``
-    on PATH, else this one."""
+    """The agent's Python interpreter: the last run's (when it was a Python run; a Node.js
+    run records its node binary), the project's ``.venv``, the ``python3`` on PATH, else
+    this one."""
     if project is not None:
         record, _ = _runstate.find_run(project.state_dir, None)
-        if record is not None and record.interpreter and Path(record.interpreter).exists():
+        if (
+            record is not None
+            and record.runtime == "python"
+            and record.interpreter
+            and Path(record.interpreter).exists()
+        ):
             return Path(record.interpreter)
         for candidate in (
             project.directory / ".venv" / "bin" / "python",

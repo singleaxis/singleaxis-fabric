@@ -16,8 +16,10 @@ with its environment unchanged and records why. A capture problem inside the age
 SDK's own fail-open (049 §7.1); with the Node down, records wait in the agent's spool.
 
 Runtimes: a Python command gets the autoload (§5.5 step 3) when its interpreter has the
-SDK; Node.js gets the variables its explicit API reads; other commands get the run label
-only. ``--print-env`` prints the environment for a launcher ``run`` cannot wrap."""
+SDK; a Node.js command gets the zero-code preload appended to ``NODE_OPTIONS`` when the
+installed ``@singleaxis/fabric`` qualifies its Node build (spec 055 §13.1, ``_node``), else
+the variables its explicit API reads; other commands get the run label only.
+``--print-env`` prints the environment for a launcher ``run`` cannot wrap."""
 
 from __future__ import annotations
 
@@ -37,7 +39,7 @@ from pathlib import Path
 from typing import IO, Any
 
 from .._version import __version__
-from . import _config, _project, _providers, _runstate, _sensor, _templates
+from . import _config, _node, _project, _providers, _runstate, _sensor, _templates
 from ._report import EXIT_OK, EXIT_USAGE, CliError, Finding, Report, printable
 
 FORMATS = ("sh", "dotenv", "docker", "systemd", "k8s")
@@ -46,7 +48,8 @@ _PYTHON_RE = re.compile(r"^(python|pypy)([0-9]+(\.[0-9]+)*)?t?(\.exe)?$", re.IGN
 _NODE_NAMES = frozenset({"node", "node.exe", "nodejs", "npx", "tsx", "ts-node"})
 _OTHER_JS = frozenset({"bun", "deno"})
 _RUNNERS = frozenset({"uv", "poetry", "pipenv", "pdm", "hatch"})
-#: The variables the TypeScript SDK's explicit API reads today (before 055 TS-1U).
+#: The variables the TypeScript SDK's explicit API reads: all a Node.js agent gets when
+#: its zero-code capture cannot be turned on (spec 055 §13.1 "otherwise changes nothing").
 NODE_VARIABLES = ("FABRIC_TENANT_ID", "FABRIC_AGENT_ID", "FABRIC_RUN_ID")
 #: What the interpreter probe runs (``-I``: no PYTHONPATH, no user site, no current
 #: directory on sys.path). It imports nothing of Fabric: it finds the package and the
@@ -113,8 +116,8 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 @dataclass(frozen=True)
 class Runtime:
-    """What ``CMD`` runs: ``python`` (with its interpreter when known), ``node`` or
-    ``other``; ``detail`` says why when it is not a Python program ``run`` can serve."""
+    """What ``CMD`` runs: ``python`` or ``node`` (with its interpreter when known) or
+    ``other``; ``detail`` says why when it is not a program ``run`` can serve."""
 
     kind: str
     interpreter: Path | None = None
@@ -161,7 +164,7 @@ def _runner(command: Sequence[str], environ: Mapping[str, str], cwd: Path) -> Ru
     interpreter = _venv_python(venv)
     target = rest[0] if rest else ""
     if target and Path(target).name in _NODE_NAMES:
-        return Runtime("node")
+        return _node_runtime(target, environ, cwd)
     pythonish = (
         not target
         or _PYTHON_RE.match(Path(target).name)
@@ -179,6 +182,13 @@ def _runner(command: Sequence[str], environ: Mapping[str, str], cwd: Path) -> Ru
     return Runtime("python", interpreter)
 
 
+def _node_runtime(name: str, environ: Mapping[str, str], cwd: Path) -> Runtime:
+    """The Node binary a Node command starts: the command itself when it is ``node``, else
+    ``node`` on ``PATH`` (``npx``, ``tsx`` and ``ts-node`` start that one)."""
+    binary = name if Path(name).name in ("node", "node.exe", "nodejs") else "node"
+    return Runtime("node", _which(binary, environ, cwd))
+
+
 def detect(command: Sequence[str], environ: Mapping[str, str], cwd: Path) -> Runtime:  # noqa: PLR0911 - one return per runtime
     """§5.5 step 2 (as ``plan`` detects it): the runtime of ``CMD``. Reads at most the
     first 256 bytes of the command's file; never runs it."""
@@ -189,7 +199,7 @@ def detect(command: Sequence[str], environ: Mapping[str, str], cwd: Path) -> Run
     if name in _RUNNERS and len(command) > 1 and command[1] == "run":
         return _runner(command, environ, cwd)
     if name in _NODE_NAMES:
-        return Runtime("node")
+        return _node_runtime(command[0], environ, cwd)
     if name in _OTHER_JS:
         return Runtime("other", detail=f"{name} is a JavaScript runtime Fabric does not capture")
     path = _which(command[0], environ, cwd)
@@ -200,7 +210,9 @@ def detect(command: Sequence[str], environ: Mapping[str, str], cwd: Path) -> Run
         )
         return Runtime("python", interpreter)
     if words and Path(words[0]).name in _NODE_NAMES:
-        return Runtime("node")
+        if Path(words[0]).is_absolute() and Path(words[0]).name in ("node", "nodejs"):
+            return Runtime("node", Path(words[0]))
+        return _node_runtime(words[0], environ, cwd)
     return Runtime("other", detail=f"{name} is not a Python or Node.js program")
 
 
@@ -281,6 +293,7 @@ class Plan:
     runtime: Runtime = field(default_factory=lambda: Runtime("other"))
     project: _project.Project | None = None
     prepend_pythonpath: str | None = None  # the autoload directory
+    node_preload: str | None = None  # appended to NODE_OPTIONS (spec 055 §13.1)
 
 
 def _load_project(
@@ -375,20 +388,32 @@ def build(
     if runtime.kind == "python":
         plan.added = {**compiled, "FABRIC_WIRE_AUTOLOAD": "1"}
     elif runtime.kind == "node":
-        plan.added = {name: compiled[name] for name in NODE_VARIABLES if name in compiled}
-        plan.findings.append(
-            Finding(
-                "FC-053",
-                "Node.js: zero-code capture is not built yet; "
-                "the explicit API gets the tenant, agent and run label",
-            )
-        )
+        _node_plan(plan, compiled, cwd, project, runner)
     else:
         plan.findings.append(Finding("FC-053", runtime.detail or command[0]))
-    plan.capture = runtime.kind == "python"
+    plan.capture = runtime.kind == "python" or plan.node_preload is not None
     if project.resolved["node.mode"] == "docker" and not _up_state(project).get("node_image"):
         plan.findings.append(Finding("FC-048"))
     return plan
+
+
+def _node_plan(
+    plan: Plan,
+    compiled: Mapping[str, str],
+    cwd: Path,
+    project: _project.Project,
+    runner: Callable[..., Any],
+) -> None:
+    """Spec 055 §13.1: the preload and the settings when the three conditions hold;
+    otherwise nothing changes (the explicit API's variables only) and the reason is said."""
+    decision = _node.decide(plan.runtime.interpreter, cwd, project.state_dir, runner)
+    if decision.preload:
+        plan.added = {**compiled, "FABRIC_WIRE_AUTOLOAD": "1"}
+        plan.node_preload = _node.PRELOAD
+        return
+    plan.added = {name: compiled[name] for name in NODE_VARIABLES if name in compiled}
+    if decision.finding is not None:
+        plan.findings.append(decision.finding)
 
 
 def _up_state(project: _project.Project) -> dict[str, Any]:
@@ -401,9 +426,10 @@ def _up_state(project: _project.Project) -> dict[str, Any]:
 
 
 def child_environment(environ: Mapping[str, str], plan: Plan) -> tuple[dict[str, str], list[str]]:
-    """The agent's environment: ``environ`` plus the plan's variables where unset, and the
-    autoload directory first on ``PYTHONPATH``. Returns it and the names a shell variable
-    kept from fabric.yaml (§6.2: named, never their values)."""
+    """The agent's environment: ``environ`` plus the plan's variables where unset, the
+    autoload directory first on ``PYTHONPATH`` (Python) or the preload appended to
+    ``NODE_OPTIONS`` (Node.js, never replacing what is there). Returns it and the names a
+    shell variable kept from fabric.yaml (§6.2: named, never their values)."""
     env = dict(environ)
     kept: list[str] = []
     for name, value in plan.added.items():
@@ -423,6 +449,8 @@ def child_environment(environ: Mapping[str, str], plan: Plan) -> tuple[dict[str,
     if plan.prepend_pythonpath and autoload:
         existing = env.get("PYTHONPATH")
         env["PYTHONPATH"] = plan.prepend_pythonpath + (os.pathsep + existing if existing else "")
+    if plan.node_preload and autoload:
+        env["NODE_OPTIONS"] = _node.append_preload(env.get("NODE_OPTIONS"))
     return env, kept
 
 
@@ -730,6 +758,10 @@ _AUTOLOAD_NOTE = (
     "PYTHONPATH: put the output of `python -m fabric.wire --print-autoload-path`, "
     "run with the agent's own interpreter, first on PYTHONPATH"
 )
+_PRELOAD_NOTE = (
+    f"NODE_OPTIONS: append {_node.PRELOAD} to any NODE_OPTIONS the launcher already "
+    "sets; never replace it"
+)
 
 
 def render(
@@ -738,34 +770,45 @@ def render(
     project: _project.Project,
     autoload: str | None,
     notes: Sequence[str],
+    *,
+    node_preload: bool = False,
 ) -> str:
-    """``env`` in one launcher format. File paths only, never a secret value."""
+    """``env`` in one launcher format. File paths only, never a secret value. With
+    ``node_preload`` the Node.js preload is appended to ``NODE_OPTIONS`` where the format
+    can append (``sh``) and given with a note to append it everywhere else."""
     notes = list(notes)
+    python = "FABRIC_WIRE_AUTOLOAD" in env and not node_preload
     if fmt == "sh":
         lines = [f"# {note}" for note in notes]
         lines += [f"export {name}={_shell(value)}" for name, value in env.items()]
         source = (
             _shell(autoload) if autoload else '"$(python -m fabric.wire --print-autoload-path)"'
         )
-        if "FABRIC_WIRE_AUTOLOAD" in env:
+        if python:
             lines.append(f'export PYTHONPATH={source}"${{PYTHONPATH:+:$PYTHONPATH}}"')
+        if node_preload:
+            lines.append(f'export NODE_OPTIONS="${{NODE_OPTIONS:+$NODE_OPTIONS }}{_node.PRELOAD}"')
         return "\n".join(lines) + "\n"
     if fmt == "dotenv":
-        if "FABRIC_WIRE_AUTOLOAD" in env:
+        if python:
             notes.append(
                 _AUTOLOAD_NOTE
                 if not autoload
                 else f"PYTHONPATH: prepend {autoload} to any PYTHONPATH the launcher sets"
             )
+        if node_preload:
+            notes.append(_PRELOAD_NOTE)
         lines = [f"# {note}" for note in notes] + [f"{n}={v}" for n, v in env.items()]
-        if autoload and "FABRIC_WIRE_AUTOLOAD" in env:
+        if autoload and python:
             lines.append(f"PYTHONPATH={autoload}")
+        if node_preload:
+            lines.append(f"NODE_OPTIONS={_node.PRELOAD}")
         return "\n".join(lines) + "\n"
     if fmt == "systemd":
-        return _systemd(env, notes, autoload)
+        return _systemd(env, notes, autoload if python else None, python, node_preload)
     if fmt == "docker":
-        return _docker(env, project, notes)
-    return _k8s(env, project, notes)
+        return _docker(env, project, notes, python, node_preload)
+    return _k8s(env, project, notes, python, node_preload)
 
 
 def _shell(value: str) -> str:
@@ -774,13 +817,21 @@ def _shell(value: str) -> str:
     return shlex.quote(value)
 
 
-def _systemd(env: Mapping[str, str], notes: list[str], autoload: str | None) -> str:
+def _systemd(
+    env: Mapping[str, str],
+    notes: list[str],
+    autoload: str | None,
+    python: bool,
+    node_preload: bool,
+) -> str:
     credentials = {
         "FABRIC_OTLP_CERTIFICATE": "fabric-ca.crt",
         "FABRIC_WIRE_ID_KEY_FILE": "fabric-id.key",
     }
-    if "FABRIC_WIRE_AUTOLOAD" in env:
+    if python:
         notes.append(f"PYTHONPATH: prepend {autoload}" if autoload else _AUTOLOAD_NOTE)
+    if node_preload:
+        notes.append(_PRELOAD_NOTE)
     lines = [f"# {note}" for note in notes] + ["[Service]"]
     for name, value in env.items():
         if name in credentials:
@@ -788,12 +839,20 @@ def _systemd(env: Mapping[str, str], notes: list[str], autoload: str | None) -> 
             lines.append(f'Environment="{name}=%d/{credentials[name]}"')
             continue
         lines.append(f'Environment="{name}={_quote_systemd(value)}"')
-    if autoload and "FABRIC_WIRE_AUTOLOAD" in env:
+    if autoload and python:
         lines.append(f'Environment="PYTHONPATH={_quote_systemd(autoload)}"')
+    if node_preload:
+        lines.append(f'Environment="NODE_OPTIONS={_node.PRELOAD}"')
     return "\n".join(lines) + "\n"
 
 
-def _docker(env: Mapping[str, str], project: _project.Project, notes: list[str]) -> str:
+def _docker(
+    env: Mapping[str, str],
+    project: _project.Project,
+    notes: list[str],
+    python: bool,
+    node_preload: bool,
+) -> str:
     """``docker run`` flags, one per line: the agent container joins the Compose network
     of `fabric up` and reaches the Node by its service name (in the Node certificate)."""
     flags: list[str] = []
@@ -811,8 +870,11 @@ def _docker(env: Mapping[str, str], project: _project.Project, notes: list[str])
             flags.append(f"-v {_shell(str(store) + ':/var/lib/fabric/store')}")
             inside = "file:///var/lib/fabric/store"
         flags.append(f"-e {_shell(name + '=' + inside)}")
-    if "FABRIC_WIRE_AUTOLOAD" in env:
+    if python:
         notes.append(_AUTOLOAD_NOTE + " (ENV PYTHONPATH in the image)")
+    if node_preload:
+        flags.append(f"-e {_shell('NODE_OPTIONS=' + _node.PRELOAD)}")
+        notes.append(_PRELOAD_NOTE + " (an image whose ENV sets NODE_OPTIONS: append it there)")
     notes.append(
         "the key file is readable by its owner only: run the container as your "
         'own uid (--user "$(id -u):$(id -g)") or copy it with the right owner'
@@ -820,26 +882,37 @@ def _docker(env: Mapping[str, str], project: _project.Project, notes: list[str])
     return "\n".join([*(f"# {n}" for n in notes), *flags]) + "\n"
 
 
-def _k8s(env: Mapping[str, str], project: _project.Project, notes: list[str]) -> str:
+def _k8s(
+    env: Mapping[str, str],
+    project: _project.Project,
+    notes: list[str],
+    python: bool,
+    node_preload: bool,
+) -> str:
     """A container env and volume patch (YAML). The Secret is created from the files."""
     files = {name: value for name, value in env.items() if name in _IN_CONTAINER}
-    notes.append(
-        "create the Secret from the files: kubectl create secret generic "
-        "fabric-agent "
-        + " ".join(f"--from-file={Path(_IN_CONTAINER[n]).name}={p}" for n, p in files.items())
-    )
+    if files:  # the explicit API's variables alone name no file
+        notes.append(
+            "create the Secret from the files: kubectl create secret generic "
+            "fabric-agent "
+            + " ".join(f"--from-file={Path(_IN_CONTAINER[n]).name}={p}" for n, p in files.items())
+        )
     if project.resolved["node.mode"] == "docker":
         notes.append(
             "FABRIC_OTLP_ENDPOINT: set it to the Node your cluster reaches; the "
             "local Node of `fabric up` listens on this machine only"
         )
-    if "FABRIC_WIRE_AUTOLOAD" in env:
+    if python:
         notes.append(_AUTOLOAD_NOTE + " (the image's own SDK)")
+    if node_preload:
+        notes.append(_PRELOAD_NOTE + " (a container that sets NODE_OPTIONS: append it there)")
     lines = [f"# {note}" for note in notes] + ["env:"]
     for name, value in env.items():
         if name == "FABRIC_WIRE_STORE":
             continue  # a file store on this machine means nothing in a pod
         lines += [f"- name: {name}", f"  value: {json.dumps(_IN_CONTAINER.get(name, value))}"]
+    if node_preload:
+        lines += ["- name: NODE_OPTIONS", f"  value: {json.dumps(_node.PRELOAD)}"]
     if files:
         lines += [
             "volumeMounts:",
@@ -889,10 +962,18 @@ def print_env(
                     f"{runtime.interpreter}; install with: {install_line(runtime.interpreter)}",
                 )
             )
+    node_preload = False
+    notes: list[str] = []
     if runtime.kind == "python":
         env = {**compiled, "FABRIC_WIRE_AUTOLOAD": "1"}
     elif runtime.kind == "node":
-        env = {name: compiled[name] for name in NODE_VARIABLES if name in compiled}
+        node_preload, finding, note = _node_print_env(options.format, runtime, project, cwd, runner)
+        if node_preload:
+            env = {**compiled, "FABRIC_WIRE_AUTOLOAD": "1"}
+            notes += [note] if note else []
+        else:
+            env = {name: compiled[name] for name in NODE_VARIABLES if name in compiled}
+            findings += [finding] if finding else []
     else:
         env = {}
         findings.append(Finding("FC-053", runtime.detail or (command[0] if command else "")))
@@ -900,7 +981,7 @@ def print_env(
         if not _runstate.LABEL_RE.fullmatch(options.run_label):
             raise CliError([Finding("FC-059", "letters, digits and ._-, at most 64")], EXIT_USAGE)
         env["FABRIC_RUN_ID"] = options.run_label
-    notes = [
+    notes += [
         f"{name} is set in this shell and overrides fabric.yaml for `fabric run`"
         for name in env
         if name in environ and environ[name] != env[name]
@@ -915,6 +996,33 @@ def print_env(
         "format": options.format,
         "env": env,
         "pythonpath_prepend": autoload,
+        "node_options_append": _node.PRELOAD if node_preload else None,
         "runtime": runtime.kind,
     }
-    return report, [render(options.format, env, project, autoload, notes).rstrip("\n")]
+    text = render(options.format, env, project, autoload, notes, node_preload=node_preload)
+    return report, [text.rstrip("\n")]
+
+
+#: The formats whose launcher runs on this machine, so this machine's Node build decides
+#: (spec 055 §13.1 condition 3); a container's Node is the image's, named in a note.
+_HOST_FORMATS = ("sh", "dotenv", "systemd")
+
+
+def _node_print_env(
+    fmt: str,
+    runtime: Runtime,
+    project: _project.Project,
+    cwd: Path,
+    runner: Callable[..., Any],
+) -> tuple[bool, Finding | None, str | None]:
+    """``--print-env`` for a Node.js command: the rule of ``run`` (spec 055 §13.1). For
+    ``docker`` and ``k8s`` the agent's Node is the image's, not this machine's: the package
+    must still qualify, and a note lists the Node builds the image must use."""
+    table, finding = _node.package_decision(cwd)
+    if table is None:
+        return False, finding, None
+    if fmt not in _HOST_FORMATS:
+        listed = _node.listed(_node.active_tuples(table))
+        return True, None, f"the image's Node.js must be a qualified build: {listed}"
+    decision = _node.decide(runtime.interpreter, cwd, project.state_dir, runner)
+    return decision.preload, decision.finding, None

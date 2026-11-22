@@ -720,12 +720,13 @@ CATALOGUE: dict[str, Any] = {
             "id": "FC-053",
             "name": "run_env_only",
             "severity": "info",
-            "text": "this command is not a Python program `fabric run` can turn capture on "
-            "for; it was given the run's Fabric settings only",
+            "text": "this command is not a Python or Node.js program `fabric run` can turn "
+            "capture on for; it was given the run's Fabric settings only",
             "fix": "start a Python agent through its interpreter (fabric run -- python "
-            "app.py) or the project's .venv; a launcher script can export `fabric "
-            "run --print-env` itself; Node.js and compiled agents record through the "
-            "explicit API and the host sensor",
+            "app.py) or the project's .venv, and a Node.js agent through node "
+            "(fabric run -- node app.js); a launcher script can export `fabric run "
+            "--print-env` itself; compiled agents record through the explicit API "
+            "and the host sensor",
         },
         {
             "id": "FC-054",
@@ -952,6 +953,49 @@ CATALOGUE: dict[str, Any] = {
             "severity": "info",
             "text": "no problem found",
             "fix": "nothing to do",
+        },
+        {
+            "id": "FC-098",
+            "name": "run_node_package_missing",
+            "severity": "warning",
+            "text": "@singleaxis/fabric does not resolve from the agent's working "
+            "directory, so this Node.js run's model calls are not captured; the "
+            "agent ran unchanged",
+            "fix": "install it in the agent's own project with npm i @singleaxis/fabric (in "
+            "the directory that holds the agent's package.json), then start the "
+            "agent with `fabric run` again",
+        },
+        {
+            "id": "FC-099",
+            "name": "run_node_package_unqualified",
+            "severity": "warning",
+            "text": "the installed @singleaxis/fabric has no qualified zero-code capture "
+            "(no preload, or gates not passed), so this Node.js run's model calls "
+            "are not captured; the agent ran unchanged",
+            "fix": "upgrade it in the agent's project with npm i @singleaxis/fabric@latest, "
+            "then start the agent with `fabric run` again",
+        },
+        {
+            "id": "FC-100",
+            "name": "run_node_unqualified",
+            "severity": "warning",
+            "text": "this Node.js build is not one the installed @singleaxis/fabric "
+            "qualifies for model-call capture on this platform, so this run's model "
+            "calls are not captured; the agent ran unchanged",
+            "fix": "run the agent with one of the Node.js builds the detail lists (for "
+            "example nvm install with that version), then start it with `fabric run` "
+            "again",
+        },
+        {
+            "id": "FC-101",
+            "name": "run_node_platform_unsupported",
+            "severity": "warning",
+            "text": "the installed @singleaxis/fabric qualifies no Node.js build for this "
+            "operating system and processor, so this run's model calls are not "
+            "captured; the agent ran unchanged",
+            "fix": "run the agent on a platform the detail lists, for example in a node:24 "
+            "Linux x64 container; on this machine the explicit API still records, "
+            "reported rather than verified",
         },
     ],
 }
