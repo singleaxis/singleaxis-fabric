@@ -8,7 +8,7 @@
  * kept no bytes (found by the client matrix's local profile).
  */
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,27 +42,40 @@ function descriptor(body: Uint8Array | undefined, extra: Record<string, unknown>
 }
 
 describe("FileContentClient", () => {
-  it("writes a body Python's LocalFilesystemContentStore reads back exactly", async () => {
+  it("writes a body and its descriptor exactly as Python's put_bytes_object does", async () => {
     const root = mkdtempSync(join(tmpdir(), "f055-t17-store-"));
     const client = new FileContentClient(root, TENANT);
     const body = Buffer.from('{"model":"m","messages":[]}');
-    const d = descriptor(body);
+    // An exact int64 beyond 2^53, as source_epoch is.
+    const d = descriptor(body, { source_epoch: 7010869486552484066n, note: "é" });
     expect(await client.send({ descriptor: d, body })).toBe("ok");
     // idempotent: the same object again is still ok
     expect(await client.send({ descriptor: d, body })).toBe("ok");
+    const id = d.object_id as string;
+    const pyRoot = mkdtempSync(join(tmpdir(), "f055-t17-store-py-"));
+    const input = join(pyRoot, "d.json");
+    writeFileSync(input, pythonSortedJson(d));
     const read = runPython(
       [
         "import json, sys",
         "from fabric.content_store import LocalFilesystemContentStore",
-        "s = LocalFilesystemContentStore(root=sys.argv[1], tenant_id=sys.argv[2])",
-        "ref = s.evidence_ref_for(sys.argv[3])",
-        "print(json.dumps({'hex': s.read(ref).hex(), 'meta': s.read_descriptor(ref)}))",
+        "ours = LocalFilesystemContentStore(root=sys.argv[1], tenant_id=sys.argv[2])",
+        "ref = ours.evidence_ref_for(sys.argv[3])",
+        "theirs = LocalFilesystemContentStore(root=sys.argv[4], tenant_id=sys.argv[2])",
+        "d = json.load(open(sys.argv[5]))",
+        "body = ours.read(ref)",
+        "theirs.put_bytes_object({**d, 'encoding': 'binary', 'ref': theirs.evidence_ref_for(sys.argv[3])}, body)",
+        "print(json.dumps({'hex': body.hex(), 'meta': ours.read_descriptor(ref)}))",
       ].join("\n"),
-      [root, TENANT, d.object_id as string],
+      [root, TENANT, id, pyRoot, input],
     ) as { hex: string; meta: Record<string, unknown> };
     expect(Buffer.from(read.hex, "hex")).toEqual(body);
     expect(read.meta.stored_sha256).toBe(d.stored_sha256);
-    expect(read.meta.encoding).toBe("binary");
+    const meta = (r: string): string =>
+      readFileSync(join(r, TENANT, "evidence", "meta", `${id}.json`), "utf8");
+    expect(meta(root).replaceAll(realpathSync(root), "<root>")).toBe(
+      meta(pyRoot).replaceAll(realpathSync(pyRoot), "<root>"),
+    );
   });
 
   it("writes a descriptor-only object as Python's put_descriptor_only does, byte for byte", async () => {
