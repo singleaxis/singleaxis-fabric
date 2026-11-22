@@ -200,6 +200,21 @@ def _settled(chaos: Chaos, report: dict[str, Any], expected: int) -> None:
     assert all(e["objects"]["request"]["verification"] == "verified" for e in exchanges)
 
 
+def _spool_settled(chaos: Chaos, quiet_s: float = 1.0) -> Any:
+    """A predicate: the spool holds committed records that have not changed for
+    ``quiet_s`` (names and sizes)."""
+    last: dict[str, Any] = {"state": None, "since": time.monotonic()}
+
+    def settled() -> bool:
+        state = tuple((p.name, p.stat().st_size) for p in chaos.records())
+        if state != last["state"]:
+            last["state"], last["since"] = state, time.monotonic()
+            return False
+        return bool(state) and time.monotonic() - last["since"] >= quiet_s
+
+    return settled
+
+
 def _record(name: str, chaos: Chaos, report: dict[str, Any], **facts: Any) -> None:
     _RESULTS[name] = {
         "result": "passed", "exchanges": len(_exchanges(report)),
@@ -268,8 +283,14 @@ def test_kill_after_admission_exports_the_admitted_record(chaos: Chaos) -> None:
     """SIGKILL once the record is on disk and before any delivery: the drainer exports it."""
     chaos.down()
     process = chaos.start(CHAOS_CALLS="1", CHAOS_HOLD_MS="60000")
-    chaos.wait(lambda: any(p.stat().st_size > 0 for p in chaos.records()))
-    chaos.wait(lambda: process.stdout is not None and process.poll() is None)
+    # The call has returned to the agent (its line is printed while it holds)...
+    assert process.stdout is not None
+    assert json.loads(process.stdout.readline())["results"] == [200]
+    # ...and its exchange is admitted: the committed records stop changing. Waiting
+    # for the first non-empty record raced (manifest 0 is spooled at the first tick,
+    # so the kill could land before the exchange was admitted).
+    chaos.wait(_spool_settled(chaos))
+    assert process.poll() is None
     process.send_signal(signal.SIGKILL)
     process.wait(timeout=30)
     chaos.back()
