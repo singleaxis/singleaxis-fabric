@@ -14,3 +14,9 @@ Contracts of the `fabric` operator CLI (spec 058).
   spec 058 §11.3). `fabric.yaml` never holds a secret: a path-valued setting whose value has the shape of a
   credential (a PEM block, a bearer or API token, a cloud key, a JWT, a long opaque or hex string) is refused
   with `FC-017` (§7.2).
+- `fixtures/print-env/node-v1.json`: the shared `fabric run --print-env` goldens for a Node.js command (spec 055
+  §13.1, spec 058 §1.4). Each case names the installed `@singleaxis/fabric`'s state, this machine's Node build, the
+  format and the command; its `output` is the exact text from the file's `compiled_env` and `finding_ids` the
+  catalogue findings. `sdk/python/tests/test_cli_print_env_node.py` checks the Python CLI against them; the npm
+  launcher's `run --print-env` (spec 058 WP8-9) must produce the same text. Regenerate with
+  `FABRIC_UPDATE_GOLDENS=1` and re-pin the file's SHA-256 in `manifest.json`.

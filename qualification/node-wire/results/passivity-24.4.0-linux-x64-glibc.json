@@ -1,0 +1,2453 @@
+{
+  "schema": "fabric.node-wire-passivity-report/v1",
+  "spec": "055 §9.2 ts-wire-passivity",
+  "quick": false,
+  "tuple": {
+    "point": "wire.ts.undici",
+    "node": "24.4.0",
+    "undici": "7.11.0",
+    "undici_origin": "bundled",
+    "platform": "linux-x64-glibc"
+  },
+  "source": {
+    "git_sha": "292b07dacccac6e9671061b8179b757fbb3d6678",
+    "build": "sdk/typescript source bundled by qualification/node-wire/passivity/lib/build.mjs"
+  },
+  "voided_runs": 0,
+  "gates": {
+    "calibration": true,
+    "hook_cost": true,
+    "gate_self_test": true,
+    "event_loop": true,
+    "forbidden_work": true,
+    "behaviour_identity": true,
+    "memory_bound": true,
+    "large_shapes": true,
+    "stalled_recorder": true,
+    "event_loop_sustained": true
+  },
+  "result": "passed",
+  "calibration": {
+    "reference_ns": 930000,
+    "before_ns": 1234382,
+    "after_ns": 1237997,
+    "scale": 1.327,
+    "void": false
+  },
+  "hook_cost": {
+    "trials": 30,
+    "budgets_ns": {
+      "matched": 50000,
+      "chunk": 2000,
+      "unmatched": 5000
+    },
+    "scale": 1.327,
+    "enabled": {
+      "fixtures.matched": {
+        "added_ns": 15356.1,
+        "budget_ns": 66364.6,
+        "passed": true
+      },
+      "fixtures.chunk": {
+        "added_ns": 641.7,
+        "budget_ns": 2654.6,
+        "passed": true
+      },
+      "fixtures.unmatched": {
+        "added_ns": 632.4,
+        "budget_ns": 6636.5,
+        "passed": true
+      },
+      "server.matched": {
+        "added_ns": 55140.5,
+        "budget_ns": 66364.6,
+        "passed": true
+      },
+      "server.chunk": {
+        "added_ns": 741,
+        "budget_ns": 2654.6,
+        "passed": true
+      },
+      "server.unmatched": {
+        "added_ns": 4928,
+        "budget_ns": 6636.5,
+        "passed": true
+      }
+    },
+    "disabled": {
+      "fixtures.matched": {
+        "added_ns": 416.8,
+        "budget_ns": 66364.6,
+        "passed": true
+      },
+      "fixtures.chunk": {
+        "added_ns": 2.4,
+        "budget_ns": 2654.6,
+        "passed": true
+      },
+      "fixtures.unmatched": {
+        "added_ns": 622.5,
+        "budget_ns": 6636.5,
+        "passed": true
+      },
+      "server.matched": {
+        "added_ns": 5090,
+        "budget_ns": 66364.6,
+        "passed": true
+      },
+      "server.chunk": {
+        "added_ns": 20,
+        "budget_ns": 2654.6,
+        "passed": true
+      },
+      "server.unmatched": {
+        "added_ns": 4873.5,
+        "budget_ns": 6636.5,
+        "passed": true
+      }
+    },
+    "void_trials_with_refused_chunks": 0,
+    "mean_server_chunk_bytes": 1024,
+    "raw_medians": {
+      "baseline": [
+        {
+          "fixtures": {
+            "matched": 805.51,
+            "chunk": 119.32,
+            "unmatched": 710.875
+          },
+          "server": {
+            "matched": 1156.999999992081,
+            "unmatched": 1031.000000054405,
+            "chunk": 70.99999999127249
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 808.12,
+            "chunk": 124.207,
+            "unmatched": 727.35
+          },
+          "server": {
+            "matched": 1257.0000000096115,
+            "unmatched": 1131.000000029303,
+            "chunk": 79.99999996854967
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 905.67,
+            "chunk": 143.026,
+            "unmatched": 712.225
+          },
+          "server": {
+            "matched": 1081.5000000192754,
+            "unmatched": 980.9999999390584,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 859.4,
+            "chunk": 121.573,
+            "unmatched": 724.59
+          },
+          "server": {
+            "matched": 1231.5000000242549,
+            "unmatched": 1032.5000000079854,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 822.94,
+            "chunk": 125.288,
+            "unmatched": 723.99
+          },
+          "server": {
+            "matched": 1120.9999999834963,
+            "unmatched": 1042.5000000395812,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 805.11,
+            "chunk": 123.156,
+            "unmatched": 710.47
+          },
+          "server": {
+            "matched": 1177.5000000184832,
+            "unmatched": 1050.5000000478049,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 921.49,
+            "chunk": 187.242,
+            "unmatched": 721.635
+          },
+          "server": {
+            "matched": 1191.5000000186637,
+            "unmatched": 973.9999999993643,
+            "chunk": 70.99999999127249
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 735.31,
+            "chunk": 166.781,
+            "unmatched": 729.15
+          },
+          "server": {
+            "matched": 1242.0000000048503,
+            "unmatched": 1081.000000041854,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 744.23,
+            "chunk": 124.889,
+            "unmatched": 1212.63
+          },
+          "server": {
+            "matched": 1122.49999999392,
+            "unmatched": 1011.0000000196351,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 881.13,
+            "chunk": 163.426,
+            "unmatched": 716.43
+          },
+          "server": {
+            "matched": 1106.9999999619995,
+            "unmatched": 942.0000000091022,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 814.03,
+            "chunk": 121.272,
+            "unmatched": 709.065
+          },
+          "server": {
+            "matched": 1197.000000061621,
+            "unmatched": 992.000000010762,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 858.59,
+            "chunk": 143.696,
+            "unmatched": 708.42
+          },
+          "server": {
+            "matched": 1196.9999999905667,
+            "unmatched": 1081.4999999695374,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 717.48,
+            "chunk": 142.805,
+            "unmatched": 694.145
+          },
+          "server": {
+            "matched": 1191.5000000044529,
+            "unmatched": 1042.5000000111595,
+            "chunk": 79.99999996854967
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 888.74,
+            "chunk": 145.339,
+            "unmatched": 719.285
+          },
+          "server": {
+            "matched": 1151.0000000214404,
+            "unmatched": 942.5000000220507,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 874.12,
+            "chunk": 138.459,
+            "unmatched": 680.975
+          },
+          "server": {
+            "matched": 1220.499999980973,
+            "unmatched": 1131.999999955724,
+            "chunk": 80.00000002539309
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 703.36,
+            "chunk": 146.862,
+            "unmatched": 686.985
+          },
+          "server": {
+            "matched": 1162.0000000007735,
+            "unmatched": 1061.000000007084,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 921.69,
+            "chunk": 139.22,
+            "unmatched": 722.14
+          },
+          "server": {
+            "matched": 1181.499999987068,
+            "unmatched": 1020.4999999672282,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 847.47,
+            "chunk": 138.789,
+            "unmatched": 677.025
+          },
+          "server": {
+            "matched": 1050.999999989699,
+            "unmatched": 970.9999999927277,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 780.27,
+            "chunk": 127.462,
+            "unmatched": 681.93
+          },
+          "server": {
+            "matched": 1156.9999999778702,
+            "unmatched": 1037.4999999811507,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 845.07,
+            "chunk": 122.745,
+            "unmatched": 707.715
+          },
+          "server": {
+            "matched": 1111.5000000074815,
+            "unmatched": 1019.9999999827014,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 858.8,
+            "chunk": 117.877,
+            "unmatched": 681.975
+          },
+          "server": {
+            "matched": 1056.9999999887614,
+            "unmatched": 981.0000000243235,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 865.31,
+            "chunk": 142.074,
+            "unmatched": 712.075
+          },
+          "server": {
+            "matched": 1162.5000000208274,
+            "unmatched": 1051.50000004528,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1242.28,
+            "chunk": 173.301,
+            "unmatched": 705.86
+          },
+          "server": {
+            "matched": 1181.000000016752,
+            "unmatched": 961.5000000167129,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 733.3,
+            "chunk": 141.654,
+            "unmatched": 692.34
+          },
+          "server": {
+            "matched": 1142.0000000015307,
+            "unmatched": 1012.5000000584805,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 750.93,
+            "chunk": 122.715,
+            "unmatched": 718.13
+          },
+          "server": {
+            "matched": 1272.0000000143727,
+            "unmatched": 1110.9999999803222,
+            "chunk": 70.00000005064066
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 732.11,
+            "chunk": 123.556,
+            "unmatched": 713.025
+          },
+          "server": {
+            "matched": 1137.4999999986812,
+            "unmatched": 950.9999999863794,
+            "chunk": 70.00000005064066
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 819.93,
+            "chunk": 132.489,
+            "unmatched": 728.9
+          },
+          "server": {
+            "matched": 1140.9999999685283,
+            "unmatched": 1080.4999999720621,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1434.16,
+            "chunk": 167.603,
+            "unmatched": 732.805
+          },
+          "server": {
+            "matched": 1156.4999999791326,
+            "unmatched": 1063.4999999865613,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 708.67,
+            "chunk": 163.637,
+            "unmatched": 689.49
+          },
+          "server": {
+            "matched": 1111.9999999920083,
+            "unmatched": 1016.9999999334323,
+            "chunk": 69.99999999379725
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 939.61,
+            "chunk": 223.187,
+            "unmatched": 899.105
+          },
+          "server": {
+            "matched": 1101.9999999746233,
+            "unmatched": 1010.9999999770025,
+            "chunk": 69.99999999379725
+          }
+        }
+      ],
+      "disabled": [
+        {
+          "fixtures": {
+            "matched": 1233.35,
+            "chunk": 138.459,
+            "unmatched": 1344.675
+          },
+          "server": {
+            "matched": 6085.000000012997,
+            "unmatched": 5973.000000039974,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1251.08,
+            "chunk": 134.893,
+            "unmatched": 1400.355
+          },
+          "server": {
+            "matched": 6350.999999995111,
+            "unmatched": 5933.999999911066,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1326.7,
+            "chunk": 151.649,
+            "unmatched": 1334.615
+          },
+          "server": {
+            "matched": 6248.99999999684,
+            "unmatched": 6068.5000000262335,
+            "chunk": 99.99999997489795
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1330,
+            "chunk": 136.536,
+            "unmatched": 1424.345
+          },
+          "server": {
+            "matched": 6589.999999974339,
+            "unmatched": 6205.000000051086,
+            "chunk": 90.99999999762076
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1266.51,
+            "chunk": 151.558,
+            "unmatched": 1321.14
+          },
+          "server": {
+            "matched": 6322.500000024434,
+            "unmatched": 6018.999999923835,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1236.26,
+            "chunk": 135.224,
+            "unmatched": 1434.26
+          },
+          "server": {
+            "matched": 6323.00000000896,
+            "unmatched": 5883.5000000101445,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1256.3,
+            "chunk": 140.522,
+            "unmatched": 1380.935
+          },
+          "server": {
+            "matched": 6512.000000000739,
+            "unmatched": 6159.999999937327,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1268.31,
+            "chunk": 135.835,
+            "unmatched": 1486.695
+          },
+          "server": {
+            "matched": 6264.999999984866,
+            "unmatched": 5833.499999994274,
+            "chunk": 100.99999997237319
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1251.99,
+            "chunk": 133.521,
+            "unmatched": 1299.86
+          },
+          "server": {
+            "matched": 6208.499999999617,
+            "unmatched": 5747.49999999824,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1250.69,
+            "chunk": 160.963,
+            "unmatched": 1277.175
+          },
+          "server": {
+            "matched": 6359.000000060178,
+            "unmatched": 6154.5000000649,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1204.11,
+            "chunk": 128.824,
+            "unmatched": 1348.83
+          },
+          "server": {
+            "matched": 6349.999999997635,
+            "unmatched": 5958.499999962896,
+            "chunk": 100.00000003174137
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1221.04,
+            "chunk": 130.897,
+            "unmatched": 1386.085
+          },
+          "server": {
+            "matched": 6210.0000000384625,
+            "unmatched": 5659.500000007256,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1195.2,
+            "chunk": 144.237,
+            "unmatched": 1240.515
+          },
+          "server": {
+            "matched": 6685.5000000032305,
+            "unmatched": 6129.500000014332,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1263.4,
+            "chunk": 143.496,
+            "unmatched": 1379.18
+          },
+          "server": {
+            "matched": 6083.500000002573,
+            "unmatched": 5947.50000001909,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1198.51,
+            "chunk": 133.151,
+            "unmatched": 1442.425
+          },
+          "server": {
+            "matched": 6209.499999968671,
+            "unmatched": 5844.49999993808,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1195.41,
+            "chunk": 127.101,
+            "unmatched": 1236.865
+          },
+          "server": {
+            "matched": 6124.999999983061,
+            "unmatched": 5820.499999970252,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1227.45,
+            "chunk": 133.401,
+            "unmatched": 1352.94
+          },
+          "server": {
+            "matched": 5932.500000000118,
+            "unmatched": 5626.999999932991,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1187.79,
+            "chunk": 126.741,
+            "unmatched": 1242.375
+          },
+          "server": {
+            "matched": 6033.999999999651,
+            "unmatched": 5723.000000003253,
+            "chunk": 91.00000005446418
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1192.9,
+            "chunk": 142.274,
+            "unmatched": 1273.015
+          },
+          "server": {
+            "matched": 6208.999999984144,
+            "unmatched": 5823.4999999911,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1191.1,
+            "chunk": 145.339,
+            "unmatched": 1247.98
+          },
+          "server": {
+            "matched": 5974.0000000232385,
+            "unmatched": 5618.999999953189,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1218.84,
+            "chunk": 150.817,
+            "unmatched": 1274.72
+          },
+          "server": {
+            "matched": 6007.9999999658185,
+            "unmatched": 5839.499999979125,
+            "chunk": 100.00000003174137
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1234.66,
+            "chunk": 132.359,
+            "unmatched": 1279.03
+          },
+          "server": {
+            "matched": 6184.50000003179,
+            "unmatched": 6129.49999998591,
+            "chunk": 100.00000003174137
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1261.1,
+            "chunk": 137.157,
+            "unmatched": 1290.895
+          },
+          "server": {
+            "matched": 6388.999999998646,
+            "unmatched": 5835.499999932381,
+            "chunk": 99.99999997489795
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1251.28,
+            "chunk": 154.123,
+            "unmatched": 1314.985
+          },
+          "server": {
+            "matched": 6334.00000000961,
+            "unmatched": 6030.99999992196,
+            "chunk": 99.99999997489795
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1264.4,
+            "chunk": 145.108,
+            "unmatched": 1364.41
+          },
+          "server": {
+            "matched": 6525.9999999938145,
+            "unmatched": 6029.0000000122745,
+            "chunk": 90.99999999762076
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1457.1,
+            "chunk": 149.245,
+            "unmatched": 1490.8
+          },
+          "server": {
+            "matched": 6179.499999973359,
+            "unmatched": 5719.999999996617,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1265.2,
+            "chunk": 135.895,
+            "unmatched": 1309.825
+          },
+          "server": {
+            "matched": 6480.499999995004,
+            "unmatched": 5953.499999947098,
+            "chunk": 99.99999997489795
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1226.55,
+            "chunk": 145.179,
+            "unmatched": 1286.74
+          },
+          "server": {
+            "matched": 6500.999999985879,
+            "unmatched": 5949.000000015303,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1244.57,
+            "chunk": 131.849,
+            "unmatched": 1315.235
+          },
+          "server": {
+            "matched": 6089.500000015846,
+            "unmatched": 5779.499999931659,
+            "chunk": 90.00000000014552
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 1202.21,
+            "chunk": 143.216,
+            "unmatched": 1283.585
+          },
+          "server": {
+            "matched": 6509.500000007051,
+            "unmatched": 6100.500000059128,
+            "chunk": 90.00000000014552
+          }
+        }
+      ],
+      "enabled": [
+        {
+          "fixtures": {
+            "matched": 13269.06,
+            "chunk": 724.97,
+            "unmatched": 1454.89
+          },
+          "server": {
+            "matched": 55648.50000004639,
+            "unmatched": 5949.000000015303,
+            "chunk": 801.0000000240325
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16291.1,
+            "chunk": 708.215,
+            "unmatched": 1304.21
+          },
+          "server": {
+            "matched": 56469.99999993341,
+            "unmatched": 6028.999999927009,
+            "chunk": 820.9999999735373
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 14042.68,
+            "chunk": 1018.566,
+            "unmatched": 1440.225
+          },
+          "server": {
+            "matched": 55173.4999999951,
+            "unmatched": 5864.000000030956,
+            "chunk": 831.0000000619766
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 18938.21,
+            "chunk": 1105.374,
+            "unmatched": 1315.33
+          },
+          "server": {
+            "matched": 57439.99999995709,
+            "unmatched": 5983.499999956621,
+            "chunk": 841.000000036729
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16234.84,
+            "chunk": 803.72,
+            "unmatched": 1330.555
+          },
+          "server": {
+            "matched": 57225.49999995863,
+            "unmatched": 6260.499999910962,
+            "chunk": 811.9999999962602
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 13745.12,
+            "chunk": 767.718,
+            "unmatched": 1376.975
+          },
+          "server": {
+            "matched": 57064.99999996595,
+            "unmatched": 6083.500000016784,
+            "chunk": 840.9999999230422
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 14182.2,
+            "chunk": 715.73,
+            "unmatched": 1322.145
+          },
+          "server": {
+            "matched": 54777.99999999888,
+            "unmatched": 5884.499999979198,
+            "chunk": 801.0000000240325
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 19854.73,
+            "chunk": 1056.012,
+            "unmatched": 1356.945
+          },
+          "server": {
+            "matched": 56299.50000002282,
+            "unmatched": 5848.4999999564025,
+            "chunk": 810.9999999987849
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 14322.69,
+            "chunk": 710.492,
+            "unmatched": 1476.825
+          },
+          "server": {
+            "matched": 58668.00000003991,
+            "unmatched": 5949.000000015303,
+            "chunk": 821.0000000872242
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15073.4,
+            "chunk": 736.53,
+            "unmatched": 1703.515
+          },
+          "server": {
+            "matched": 56163.99999999544,
+            "unmatched": 5932.000000001381,
+            "chunk": 810.9999999987849
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 17835.86,
+            "chunk": 1025.785,
+            "unmatched": 1291.945
+          },
+          "server": {
+            "matched": 58072.000000038315,
+            "unmatched": 5870.000000015807,
+            "chunk": 790.9999999355932
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 14360.23,
+            "chunk": 706.133,
+            "unmatched": 1369.96
+          },
+          "server": {
+            "matched": 58248.4999999906,
+            "unmatched": 6259.99999999749,
+            "chunk": 811.9999999962602
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 17860.72,
+            "chunk": 1032.716,
+            "unmatched": 1389.845
+          },
+          "server": {
+            "matched": 55839.50000007576,
+            "unmatched": 5768.499999987853,
+            "chunk": 791.0000000492801
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 18341.85,
+            "chunk": 824.292,
+            "unmatched": 1338.02
+          },
+          "server": {
+            "matched": 54652.49999991784,
+            "unmatched": 5805.000000009386,
+            "chunk": 811.9999999962602
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 18033.78,
+            "chunk": 969.381,
+            "unmatched": 1409.275
+          },
+          "server": {
+            "matched": 56846.4999999776,
+            "unmatched": 6158.500000026379,
+            "chunk": 770.9999999860884
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 13783.58,
+            "chunk": 693.856,
+            "unmatched": 1472.22
+          },
+          "server": {
+            "matched": 55539.00000003864,
+            "unmatched": 6182.999999992944,
+            "chunk": 801.0000000240325
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 14426.94,
+            "chunk": 740.877,
+            "unmatched": 1352.74
+          },
+          "server": {
+            "matched": 55158.500000032975,
+            "unmatched": 5678.499999987707,
+            "chunk": 771.9999999835636
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 13216.82,
+            "chunk": 721.488,
+            "unmatched": 1655.595
+          },
+          "server": {
+            "matched": 56274.49999997225,
+            "unmatched": 5830.499999973426,
+            "chunk": 761.0000000113359
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 18616.46,
+            "chunk": 766.275,
+            "unmatched": 1316.08
+          },
+          "server": {
+            "matched": 56064.50000001928,
+            "unmatched": 5924.000000021579,
+            "chunk": 771.9999999835636
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 18545.75,
+            "chunk": 751.252,
+            "unmatched": 1277.575
+          },
+          "server": {
+            "matched": 52859.0000000122,
+            "unmatched": 5678.500000016129,
+            "chunk": 821.0000000872242
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15309.57,
+            "chunk": 746.575,
+            "unmatched": 1303.515
+          },
+          "server": {
+            "matched": 55698.49999994858,
+            "unmatched": 5977.999999970507,
+            "chunk": 781.0000000745276
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 15345.53,
+            "chunk": 1040.358,
+            "unmatched": 1404.47
+          },
+          "server": {
+            "matched": 57005.99999994438,
+            "unmatched": 6073.999999955504,
+            "chunk": 811.9999999962602
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 14582.57,
+            "chunk": 725.714,
+            "unmatched": 1320.64
+          },
+          "server": {
+            "matched": 57497.499999954016,
+            "unmatched": 6024.499999995214,
+            "chunk": 810.9999999987849
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 18907.19,
+            "chunk": 1064.184,
+            "unmatched": 1357.745
+          },
+          "server": {
+            "matched": 56209.999999964566,
+            "unmatched": 5616.000000003396,
+            "chunk": 791.0000000492801
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 18554.77,
+            "chunk": 1051.244,
+            "unmatched": 1305.365
+          },
+          "server": {
+            "matched": 56991.49999998099,
+            "unmatched": 5940.500000008342,
+            "chunk": 820.9999999735373
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 16032.36,
+            "chunk": 693.315,
+            "unmatched": 1295.055
+          },
+          "server": {
+            "matched": 58226.99999995962,
+            "unmatched": 6139.500000045928,
+            "chunk": 821.9999999710126
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 18913.71,
+            "chunk": 904.844,
+            "unmatched": 1419.74
+          },
+          "server": {
+            "matched": 58012.49999998959,
+            "unmatched": 6224.499999973432,
+            "chunk": 801.0000000240325
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 13959.94,
+            "chunk": 942.671,
+            "unmatched": 1354.395
+          },
+          "server": {
+            "matched": 59520.49999999076,
+            "unmatched": 6098.999999949228,
+            "chunk": 820.9999999735373
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 18992.92,
+            "chunk": 1004.925,
+            "unmatched": 1573.37
+          },
+          "server": {
+            "matched": 55583.00000004124,
+            "unmatched": 6003.499999962969,
+            "chunk": 781.0000000745276
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 17533.83,
+            "chunk": 781.047,
+            "unmatched": 1557.05
+          },
+          "server": {
+            "matched": 55177.99999998374,
+            "unmatched": 5669.499999982008,
+            "chunk": 810.9999999987849
+          }
+        }
+      ],
+      "stall": [
+        {
+          "fixtures": {
+            "matched": 147998.96,
+            "chunk": 6187.214,
+            "unmatched": 14704.815
+          },
+          "server": {
+            "matched": 190757.00000007602,
+            "unmatched": 19618.00000015046,
+            "chunk": 6210.000000010041
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 147582.78,
+            "chunk": 6144.146,
+            "unmatched": 14707.88
+          },
+          "server": {
+            "matched": 189424.4999998591,
+            "unmatched": 19539.499999837062,
+            "chunk": 6239.00000005051
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 152582.72,
+            "chunk": 6158.798,
+            "unmatched": 14705.73
+          },
+          "server": {
+            "matched": 190315.49999976958,
+            "unmatched": 19610.999999827072,
+            "chunk": 6219.000000101005
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 153027.37,
+            "chunk": 6196.348,
+            "unmatched": 14731.025
+          },
+          "server": {
+            "matched": 193541.99999997945,
+            "unmatched": 19960.499999911008,
+            "chunk": 6239.999999934298
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 149527.15,
+            "chunk": 6113.947,
+            "unmatched": 14705.07
+          },
+          "server": {
+            "matched": 190141.00000015332,
+            "unmatched": 19730.50000026433,
+            "chunk": 6219.999999984793
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 152775.02,
+            "chunk": 6246.507,
+            "unmatched": 14706.545
+          },
+          "server": {
+            "matched": 192244.99999995716,
+            "unmatched": 19800.99999968843,
+            "chunk": 6199.0000001515
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 149762.63,
+            "chunk": 6087.617,
+            "unmatched": 14703.84
+          },
+          "server": {
+            "matched": 188114.50000009697,
+            "unmatched": 19709.499999976288,
+            "chunk": 6219.999999984793
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 150799.69,
+            "chunk": 6133.247,
+            "unmatched": 14704.995
+          },
+          "server": {
+            "matched": 188140.50000014505,
+            "unmatched": 19615.49999964518,
+            "chunk": 6210.000000010041
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 149159.07,
+            "chunk": 6163.864,
+            "unmatched": 14844.405
+          },
+          "server": {
+            "matched": 189705.00000023094,
+            "unmatched": 19705.000000044492,
+            "chunk": 6200.000000035288
+          }
+        },
+        {
+          "fixtures": {
+            "matched": 150037.69,
+            "chunk": 6141.541,
+            "unmatched": 14709.455
+          },
+          "server": {
+            "matched": 190635.99999992677,
+            "unmatched": 19560.49999989773,
+            "chunk": 6210.000000010041
+          }
+        }
+      ]
+    },
+    "passed": true
+  },
+  "self_test_hook": {
+    "injected_stall_ns": {
+      "matched": 132729.24731182796,
+      "chunk": 5309.169892473118,
+      "unmatched": 13272.924731182797
+    },
+    "measured": {
+      "fixtures.matched": {
+        "added_ns": 148998.9,
+        "budget_ns": 66364.6,
+        "passed": false
+      },
+      "fixtures.chunk": {
+        "added_ns": 6017.9,
+        "budget_ns": 2654.6,
+        "passed": false
+      },
+      "fixtures.unmatched": {
+        "added_ns": 13987.6,
+        "budget_ns": 6636.5,
+        "passed": false
+      },
+      "server.matched": {
+        "added_ns": 189127,
+        "budget_ns": 66364.6,
+        "passed": false
+      },
+      "server.chunk": {
+        "added_ns": 6144.5,
+        "budget_ns": 2654.6,
+        "passed": false
+      },
+      "server.unmatched": {
+        "added_ns": 18659,
+        "budget_ns": 6636.5,
+        "passed": false
+      }
+    },
+    "gate_failed_on_stall": true
+  },
+  "event_loop": {
+    "workload": "paced fan-out: 16 clients, JSON after 10 ms, 40 SSE events 5 ms apart",
+    "rounds": 3,
+    "budgets": {
+      "p99_ms": 2,
+      "max_ms": 25,
+      "utilization_delta": 0.05
+    },
+    "scale": 1.327,
+    "p99_delta_ms": 0.466,
+    "max_delta_ms": 0.307,
+    "utilization_delta": 0.018,
+    "passed": true,
+    "enabled_drift_max_ms": 6.336,
+    "samples": {
+      "baseline": [
+        {
+          "arm": "baseline",
+          "workload": "paced",
+          "p99_ms": 1.771519,
+          "max_ms": 4.997119,
+          "mean_ms": 1.1011679494204425,
+          "drift_max_ms": 3.5265890000000013,
+          "utilization": 0.12993524480948074,
+          "requests": 448
+        },
+        {
+          "arm": "baseline",
+          "workload": "paced",
+          "p99_ms": 2.123775,
+          "max_ms": 7.012351,
+          "mean_ms": 1.1171901796237131,
+          "drift_max_ms": 4.396620000000212,
+          "utilization": 0.13474925477659905,
+          "requests": 448
+        },
+        {
+          "arm": "baseline",
+          "workload": "paced",
+          "p99_ms": 1.827839,
+          "max_ms": 6.074367,
+          "mean_ms": 1.105672152866242,
+          "drift_max_ms": 3.2386840000000063,
+          "utilization": 0.12120971379116542,
+          "requests": 448
+        }
+      ],
+      "enabled": [
+        {
+          "arm": "enabled",
+          "workload": "paced",
+          "p99_ms": 1.958911,
+          "max_ms": 8.609791,
+          "mean_ms": 1.104554606741573,
+          "drift_max_ms": 6.335534000000024,
+          "utilization": 0.145102243706451,
+          "requests": 448,
+          "captured": 498,
+          "not_captured": 0
+        },
+        {
+          "arm": "enabled",
+          "workload": "paced",
+          "p99_ms": 2.301951,
+          "max_ms": 6.381567,
+          "mean_ms": 1.1442102593659942,
+          "drift_max_ms": 5.30012099999999,
+          "utilization": 0.1531253966010971,
+          "requests": 448,
+          "captured": 498,
+          "not_captured": 0
+        },
+        {
+          "arm": "enabled",
+          "workload": "paced",
+          "p99_ms": 2.293759,
+          "max_ms": 5.312511,
+          "mean_ms": 1.1254752634560905,
+          "drift_max_ms": 2.7624910000000114,
+          "utilization": 0.14793358771371348,
+          "requests": 448,
+          "captured": 498,
+          "not_captured": 0
+        }
+      ]
+    },
+    "stress_not_gated": {
+      "workload": "unpaced fan-out (about 100x an agent's call rate); reported, not gated",
+      "baseline": {
+        "arm": "baseline",
+        "workload": "stress",
+        "p99_ms": 4.169727,
+        "max_ms": 8.351743,
+        "mean_ms": 1.2522734363256787,
+        "drift_max_ms": 4.541950000000043,
+        "utilization": 0.9943268442355768,
+        "requests": 17864
+      },
+      "enabled": {
+        "arm": "enabled",
+        "workload": "stress",
+        "p99_ms": 7.409663,
+        "max_ms": 13.705215,
+        "mean_ms": 2.22969937342242,
+        "drift_max_ms": 11.282550999999785,
+        "utilization": 0.9996473054876516,
+        "requests": 9816,
+        "captured": 9866,
+        "not_captured": 0
+      },
+      "utilization_delta": 0.0053
+    }
+  },
+  "self_test_event_loop": {
+    "injected_stall_ms": 66.36462365591397,
+    "measured": {
+      "p99_delta_ms": 0.849,
+      "max_delta_ms": 62.738,
+      "utilization_delta": 0.1936,
+      "passed": false
+    },
+    "gate_failed_on_stall": true
+  },
+  "large_shapes": {
+    "shapes": {
+      "0B": {
+        "in_memory": {
+          "kind": "whole",
+          "request_bytes": 0,
+          "publications": 5,
+          "chunks_retained": 1,
+          "chunks_not_retained": 0,
+          "bytes_copied": 1024,
+          "total_hook_ms": 0.09924900000001458,
+          "max_single_ms": 0.04245399999999222
+        },
+        "streamed": {
+          "kind": "whole",
+          "request_bytes": 0,
+          "publications": 5,
+          "chunks_retained": 1,
+          "chunks_not_retained": 0,
+          "bytes_copied": 1024,
+          "total_hook_ms": 0.11219999999997299,
+          "max_single_ms": 0.04995599999998035
+        }
+      },
+      "64KiB": {
+        "in_memory": {
+          "kind": "whole",
+          "request_bytes": 65536,
+          "publications": 6,
+          "chunks_retained": 2,
+          "chunks_not_retained": 0,
+          "bytes_copied": 66560,
+          "total_hook_ms": 0.1449989999999559,
+          "max_single_ms": 0.0438959999999895
+        },
+        "streamed": {
+          "kind": "whole",
+          "request_bytes": 65536,
+          "publications": 6,
+          "chunks_retained": 2,
+          "chunks_not_retained": 0,
+          "bytes_copied": 66560,
+          "total_hook_ms": 0.15669600000003925,
+          "max_single_ms": 0.040000000000020464
+        }
+      },
+      "1MiB": {
+        "in_memory": {
+          "kind": "whole",
+          "request_bytes": 1048576,
+          "publications": 6,
+          "chunks_retained": 2,
+          "chunks_not_retained": 0,
+          "bytes_copied": 1049600,
+          "total_hook_ms": 0.6039410000000487,
+          "max_single_ms": 0.46298799999999574
+        },
+        "streamed": {
+          "kind": "whole",
+          "request_bytes": 1048576,
+          "publications": 21,
+          "chunks_retained": 17,
+          "chunks_not_retained": 0,
+          "bytes_copied": 1049600,
+          "total_hook_ms": 0.31260200000008354,
+          "max_single_ms": 0.08132300000002601
+        }
+      },
+      "32MiB": {
+        "in_memory": {
+          "kind": "whole",
+          "request_bytes": 33554432,
+          "publications": 6,
+          "chunks_retained": 2,
+          "chunks_not_retained": 0,
+          "bytes_copied": 33555456,
+          "total_hook_ms": 13.807701999999892,
+          "max_single_ms": 13.541491999999977
+        },
+        "streamed": {
+          "kind": "whole",
+          "request_bytes": 33554432,
+          "publications": 517,
+          "chunks_retained": 513,
+          "chunks_not_retained": 0,
+          "bytes_copied": 33555456,
+          "total_hook_ms": 3.4604169999994383,
+          "max_single_ms": 0.080791999999974
+        }
+      },
+      "40MiB-inline-media": {
+        "in_memory": {
+          "kind": "whole",
+          "request_bytes": 41943040,
+          "publications": 6,
+          "chunks_retained": 2,
+          "chunks_not_retained": 0,
+          "bytes_copied": 41944064,
+          "total_hook_ms": 6.011570000000006,
+          "max_single_ms": 5.768013999999994
+        },
+        "streamed": {
+          "kind": "whole",
+          "request_bytes": 41943040,
+          "publications": 645,
+          "chunks_retained": 641,
+          "chunks_not_retained": 0,
+          "bytes_copied": 41944064,
+          "total_hook_ms": 3.5816739999997367,
+          "max_single_ms": 0.09534400000001142
+        }
+      },
+      "70MiB-oversize": {
+        "in_memory": {
+          "kind": "oversize",
+          "request_bytes": 73400320,
+          "retained_request_bytes": 0,
+          "max_retain_bytes": 67108864,
+          "publications": 6,
+          "chunks_retained": 1,
+          "chunks_not_retained": 1,
+          "bytes_copied": 1024,
+          "total_hook_ms": 0.4224260000000868,
+          "max_single_ms": 0.17763800000000174
+        },
+        "streamed": {
+          "kind": "oversize",
+          "request_bytes": 73400320,
+          "retained_request_bytes": 67108864,
+          "max_retain_bytes": 67108864,
+          "publications": 1125,
+          "chunks_retained": 1025,
+          "chunks_not_retained": 96,
+          "bytes_copied": 67109888,
+          "total_hook_ms": 13.639108000000988,
+          "max_single_ms": 0.16072199999996428
+        }
+      }
+    },
+    "losses": {
+      "queue_full": 0,
+      "internal_error": 0,
+      "shutdown": 0,
+      "disk_full": 0,
+      "uninstrumented_client": 0
+    },
+    "worst_single_ms": 13.541,
+    "ceiling_ms": 33.182,
+    "not_snapshotted": [],
+    "passed": true
+  },
+  "stalled_recorder": {
+    "workload": "paced fan-out: 8 clients, JSON after 10 ms, 40 SSE events 5 ms apart, every fourth stream cancelled after 5 events",
+    "rounds": 3,
+    "duration_ms": 4000,
+    "stall_ms": 200,
+    "scale": 1.327,
+    "arms": {
+      "enabled": {
+        "requests": 368,
+        "baseline_requests": 376,
+        "throughput_ratio": 0.979,
+        "mismatches": 0,
+        "cancels": [
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 46
+          }
+        ],
+        "escaped": [],
+        "stderr_bytes": 0,
+        "ok": true,
+        "p99_delta_ms": 0.239,
+        "max_delta_ms": 3.209,
+        "utilization_delta": 0.0431,
+        "within": true,
+        "node_requests": [
+          {
+            "/v1/logs": 203,
+            "/v1/traces": 204
+          },
+          {
+            "/v1/logs": 206,
+            "/v1/traces": 207
+          },
+          {
+            "/v1/logs": 283,
+            "/v1/traces": 284
+          }
+        ],
+        "redaction_requests": [
+          null,
+          null,
+          null
+        ],
+        "closed": [
+          true,
+          true,
+          true
+        ],
+        "exit": [
+          {
+            "lost.disk_full": 0,
+            "ledger_slots": 0,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 0
+          },
+          {
+            "lost.disk_full": 0,
+            "ledger_slots": 0,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 0
+          },
+          {
+            "lost.disk_full": 0,
+            "ledger_slots": 0,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 0
+          }
+        ],
+        "close_ms": [
+          34.4,
+          33.3,
+          29.2
+        ],
+        "passed": true
+      },
+      "stall-fsync": {
+        "requests": 368,
+        "baseline_requests": 376,
+        "throughput_ratio": 0.979,
+        "mismatches": 0,
+        "cancels": [
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 44
+          }
+        ],
+        "escaped": [],
+        "stderr_bytes": 0,
+        "ok": true,
+        "p99_delta_ms": 0.162,
+        "max_delta_ms": 1.081,
+        "utilization_delta": 0.0125,
+        "within": true,
+        "node_requests": [
+          {},
+          {},
+          {}
+        ],
+        "redaction_requests": [
+          null,
+          null,
+          null
+        ],
+        "closed": [
+          false,
+          false,
+          false
+        ],
+        "exit": [
+          {
+            "lost.disk_full": null,
+            "ledger_slots": null,
+            "ledger_failures": null,
+            "ledger_overflows": null,
+            "spool_undurable": null
+          },
+          {
+            "lost.disk_full": null,
+            "ledger_slots": null,
+            "ledger_failures": null,
+            "ledger_overflows": null,
+            "spool_undurable": null
+          },
+          {
+            "lost.disk_full": null,
+            "ledger_slots": null,
+            "ledger_failures": null,
+            "ledger_overflows": null,
+            "spool_undurable": null
+          }
+        ],
+        "close_ms": [
+          2003.5,
+          2003.5,
+          2003.6
+        ],
+        "passed": true
+      },
+      "stall-sender": {
+        "requests": 364,
+        "baseline_requests": 376,
+        "throughput_ratio": 0.968,
+        "mismatches": 0,
+        "cancels": [
+          {
+            "AbortError": 44
+          },
+          {
+            "AbortError": 44
+          },
+          {
+            "AbortError": 46
+          }
+        ],
+        "escaped": [],
+        "stderr_bytes": 0,
+        "ok": true,
+        "p99_delta_ms": 0.202,
+        "max_delta_ms": 3.176,
+        "utilization_delta": 0.0306,
+        "within": true,
+        "node_requests": [
+          {
+            "/v1/logs": 1
+          },
+          {
+            "/v1/logs": 1
+          },
+          {
+            "/v1/logs": 1
+          }
+        ],
+        "redaction_requests": [
+          null,
+          null,
+          null
+        ],
+        "closed": [
+          false,
+          false,
+          false
+        ],
+        "exit": [
+          {
+            "lost.disk_full": 0,
+            "ledger_slots": 0,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 0
+          },
+          {
+            "lost.disk_full": 0,
+            "ledger_slots": 0,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 0
+          },
+          {
+            "lost.disk_full": 0,
+            "ledger_slots": 0,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 0
+          }
+        ],
+        "close_ms": [
+          1512.2,
+          1511.1,
+          1528.4
+        ],
+        "passed": true
+      },
+      "stall-redaction": {
+        "requests": 370,
+        "baseline_requests": 376,
+        "throughput_ratio": 0.984,
+        "mismatches": 0,
+        "cancels": [
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 46
+          }
+        ],
+        "escaped": [],
+        "stderr_bytes": 0,
+        "ok": true,
+        "p99_delta_ms": 0.072,
+        "max_delta_ms": 1.354,
+        "utilization_delta": 0.0138,
+        "within": true,
+        "node_requests": [
+          {
+            "/v1/logs": 1,
+            "/v1/traces": 1
+          },
+          {
+            "/v1/logs": 1,
+            "/v1/traces": 1
+          },
+          {
+            "/v1/logs": 1,
+            "/v1/traces": 1
+          }
+        ],
+        "redaction_requests": [
+          2,
+          2,
+          2
+        ],
+        "closed": [
+          false,
+          false,
+          false
+        ],
+        "exit": [
+          {
+            "lost.disk_full": null,
+            "ledger_slots": null,
+            "ledger_failures": null,
+            "ledger_overflows": null,
+            "spool_undurable": null
+          },
+          {
+            "lost.disk_full": null,
+            "ledger_slots": null,
+            "ledger_failures": null,
+            "ledger_overflows": null,
+            "spool_undurable": null
+          },
+          {
+            "lost.disk_full": null,
+            "ledger_slots": null,
+            "ledger_failures": null,
+            "ledger_overflows": null,
+            "spool_undurable": null
+          }
+        ],
+        "close_ms": [
+          2002.8,
+          2003.2,
+          2002.9
+        ],
+        "passed": true
+      },
+      "stall-admission": {
+        "requests": 368,
+        "baseline_requests": 376,
+        "throughput_ratio": 0.979,
+        "mismatches": 0,
+        "cancels": [
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 46
+          }
+        ],
+        "escaped": [],
+        "stderr_bytes": 0,
+        "ok": true,
+        "p99_delta_ms": 0.122,
+        "max_delta_ms": 1.09,
+        "utilization_delta": 0.0174,
+        "within": true,
+        "node_requests": [
+          {
+            "/v1/logs": 26,
+            "/v1/traces": 8
+          },
+          {
+            "/v1/logs": 26,
+            "/v1/traces": 8
+          },
+          {
+            "/v1/logs": 26,
+            "/v1/traces": 8
+          }
+        ],
+        "redaction_requests": [
+          null,
+          null,
+          null
+        ],
+        "closed": [
+          true,
+          true,
+          true
+        ],
+        "exit": [
+          {
+            "lost.disk_full": 0,
+            "ledger_slots": 0,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 0
+          },
+          {
+            "lost.disk_full": 0,
+            "ledger_slots": 0,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 0
+          },
+          {
+            "lost.disk_full": 0,
+            "ledger_slots": 0,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 0
+          }
+        ],
+        "close_ms": [
+          810.5,
+          744.5,
+          924.2
+        ],
+        "passed": true
+      },
+      "saturated": {
+        "requests": 368,
+        "baseline_requests": 376,
+        "throughput_ratio": 0.979,
+        "mismatches": 0,
+        "cancels": [
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 46
+          }
+        ],
+        "escaped": [],
+        "stderr_bytes": 0,
+        "ok": true,
+        "p99_delta_ms": 0.169,
+        "max_delta_ms": 2.148,
+        "utilization_delta": 0.0201,
+        "within": true,
+        "node_requests": [
+          {
+            "/v1/logs": 31,
+            "/v1/traces": 31
+          },
+          {
+            "/v1/logs": 31,
+            "/v1/traces": 31
+          },
+          {
+            "/v1/logs": 31,
+            "/v1/traces": 31
+          }
+        ],
+        "redaction_requests": [
+          null,
+          null,
+          null
+        ],
+        "closed": [
+          false,
+          false,
+          false
+        ],
+        "exit": [
+          {
+            "lost.disk_full": null,
+            "ledger_slots": null,
+            "ledger_failures": null,
+            "ledger_overflows": null,
+            "spool_undurable": null
+          },
+          {
+            "lost.disk_full": null,
+            "ledger_slots": null,
+            "ledger_failures": null,
+            "ledger_overflows": null,
+            "spool_undurable": null
+          },
+          {
+            "lost.disk_full": null,
+            "ledger_slots": null,
+            "ledger_failures": null,
+            "ledger_overflows": null,
+            "spool_undurable": null
+          }
+        ],
+        "close_ms": [
+          2003.3,
+          2003.6,
+          2003
+        ],
+        "passed": true
+      },
+      "disk-full": {
+        "requests": 366,
+        "baseline_requests": 376,
+        "throughput_ratio": 0.973,
+        "mismatches": 0,
+        "cancels": [
+          {
+            "AbortError": 44
+          },
+          {
+            "AbortError": 44
+          },
+          {
+            "AbortError": 46
+          }
+        ],
+        "escaped": [],
+        "stderr_bytes": 0,
+        "ok": true,
+        "p99_delta_ms": 0.172,
+        "max_delta_ms": 3.316,
+        "utilization_delta": 0.0204,
+        "within": true,
+        "node_requests": [
+          {},
+          {},
+          {}
+        ],
+        "redaction_requests": [
+          null,
+          null,
+          null
+        ],
+        "closed": [
+          false,
+          false,
+          false
+        ],
+        "exit": [
+          {
+            "lost.disk_full": 384,
+            "ledger_slots": 2,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 1
+          },
+          {
+            "lost.disk_full": 386,
+            "ledger_slots": 2,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 1
+          },
+          {
+            "lost.disk_full": 388,
+            "ledger_slots": 2,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 1
+          }
+        ],
+        "close_ms": [
+          13.2,
+          9.4,
+          17.4
+        ],
+        "passed": true
+      },
+      "stall-ledger": {
+        "requests": 368,
+        "baseline_requests": 376,
+        "throughput_ratio": 0.979,
+        "mismatches": 0,
+        "cancels": [
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 46
+          },
+          {
+            "AbortError": 46
+          }
+        ],
+        "escaped": [],
+        "stderr_bytes": 0,
+        "ok": true,
+        "p99_delta_ms": 0.121,
+        "max_delta_ms": 1.333,
+        "utilization_delta": 0.0093,
+        "within": true,
+        "node_requests": [
+          {},
+          {},
+          {}
+        ],
+        "redaction_requests": [
+          null,
+          null,
+          null
+        ],
+        "closed": [
+          false,
+          false,
+          false
+        ],
+        "exit": [
+          {
+            "lost.disk_full": 388,
+            "ledger_slots": 2,
+            "ledger_failures": 4,
+            "ledger_overflows": 4,
+            "spool_undurable": 1
+          },
+          {
+            "lost.disk_full": 390,
+            "ledger_slots": 2,
+            "ledger_failures": 4,
+            "ledger_overflows": 4,
+            "spool_undurable": 1
+          },
+          {
+            "lost.disk_full": 388,
+            "ledger_slots": 2,
+            "ledger_failures": 4,
+            "ledger_overflows": 4,
+            "spool_undurable": 1
+          }
+        ],
+        "close_ms": [
+          260.7,
+          265.7,
+          264.4
+        ],
+        "passed": true
+      }
+    },
+    "faults_active": true,
+    "passed": true
+  },
+  "event_loop_sustained": {
+    "workload": "the paced fan-out for the duration, with one 40 MiB request the application mutates once fetch has it",
+    "duration_ms": 60000,
+    "scale": 1.327,
+    "p99_delta_ms": 0.128,
+    "max_delta_ms": -1.761,
+    "utilization_delta": 0.0291,
+    "within": true,
+    "delivered_during_run": true,
+    "big_request_answered": true,
+    "rss_max_bytes": [
+      476913664
+    ],
+    "samples": {
+      "sustained-baseline": [
+        {
+          "arm": "sustained-baseline",
+          "p99_ms": 1.627135,
+          "max_ms": 8.626175,
+          "utilization": 0.07415269287649999,
+          "drift_max_ms": 14.620719000000008,
+          "requests": 5524,
+          "mismatches": 0,
+          "cancels": {
+            "AbortError": 690
+          },
+          "escaped": [],
+          "stderr_bytes": 0,
+          "big_response_bytes": 1023,
+          "rss_max_bytes": 272150528,
+          "closed": null,
+          "close_ms": 0.0008020000022952445,
+          "node_requests": {},
+          "exit": {
+            "lost.disk_full": null,
+            "ledger_slots": null,
+            "ledger_failures": null,
+            "ledger_overflows": null,
+            "spool_undurable": null
+          }
+        }
+      ],
+      "sustained": [
+        {
+          "arm": "sustained",
+          "p99_ms": 1.755135,
+          "max_ms": 6.864895,
+          "utilization": 0.10322262261888238,
+          "drift_max_ms": 32.262879999999996,
+          "requests": 5500,
+          "mismatches": 0,
+          "cancels": {
+            "AbortError": 686
+          },
+          "escaped": [],
+          "stderr_bytes": 0,
+          "big_response_bytes": 1023,
+          "rss_max_bytes": 476913664,
+          "closed": true,
+          "close_ms": 28.073988000003737,
+          "node_requests": {
+            "/v1/logs": 4579,
+            "/v1/traces": 4578
+          },
+          "exit": {
+            "lost.disk_full": 0,
+            "ledger_slots": 0,
+            "ledger_failures": 0,
+            "ledger_overflows": 0,
+            "spool_undurable": 0
+          }
+        }
+      ]
+    },
+    "passed": true
+  },
+  "forbidden_work": {
+    "trips": [],
+    "self_test_trips": [
+      "JSON.stringify",
+      "fetch"
+    ],
+    "exchanges_matched": 56,
+    "passed": true
+  },
+  "behaviour_identity": {
+    "rows": [
+      "global fetch (ESM)",
+      "global fetch (CommonJS)"
+    ],
+    "identity.mjs": {
+      "exit_codes": [
+        7,
+        7
+      ],
+      "differs": [],
+      "captured": 11,
+      "passed": true
+    },
+    "identity.cjs": {
+      "exit_codes": [
+        7,
+        7
+      ],
+      "differs": [],
+      "captured": 11,
+      "passed": true
+    },
+    "passed": true
+  },
+  "memory_bound": {
+    "runtime": {
+      "maxInflightBytes": 16777216,
+      "maxRetainBytes": 1048576,
+      "initialPayloadBytes": 1048576,
+      "queueMaxItems": 512,
+      "maxExchanges": 2048
+    },
+    "batches": 10,
+    "baseline_rss_bytes": [
+      105107456,
+      121622528,
+      123150336,
+      139681792,
+      140599296,
+      140599296,
+      140861440,
+      142041088,
+      156590080,
+      160915456
+    ],
+    "enabled": {
+      "excess_rss_bytes": [
+        20619264,
+        26255360,
+        25907200,
+        36245504,
+        41750528,
+        41750528,
+        41619456,
+        40701952,
+        27725824,
+        42143744
+      ],
+      "bound_bytes": 69641440,
+      "excess_growth_bytes": 393216,
+      "heap_growth_bytes": 223776,
+      "peaks": {
+        "exchanges": 16,
+        "slabs": 32,
+        "vectors": 33,
+        "jobs": 384
+      },
+      "open_after": 0,
+      "hook": {
+        "matched": 10000,
+        "notCaptured": 0,
+        "unmatchedModelShaped": 0,
+        "chunksRetained": 1863800,
+        "chunksNotRetained": 141200,
+        "informational": 0,
+        "collected": 0,
+        "faults": 0,
+        "unqualifiedPublisher": 0
+      },
+      "losses": {
+        "queue_full": 0,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 0,
+        "uninstrumented_client": 0
+      },
+      "passed": true
+    },
+    "saturated": {
+      "excess_rss_bytes": [
+        5070848,
+        4415488,
+        7081984,
+        7720960,
+        6803456,
+        7458816,
+        7196672,
+        6017024,
+        -8531968,
+        -10498048
+      ],
+      "bound_bytes": 69641440,
+      "excess_growth_bytes": -18219008,
+      "heap_growth_bytes": 112472,
+      "peaks": {
+        "exchanges": 16,
+        "slabs": 32,
+        "vectors": 33,
+        "jobs": 512
+      },
+      "open_after": 0,
+      "hook": {
+        "matched": 10000,
+        "notCaptured": 0,
+        "unmatchedModelShaped": 0,
+        "chunksRetained": 12800,
+        "chunksNotRetained": 1992200,
+        "informational": 0,
+        "collected": 0,
+        "faults": 0,
+        "unqualifiedPublisher": 0
+      },
+      "losses": {
+        "queue_full": 9488,
+        "internal_error": 0,
+        "shutdown": 0,
+        "disk_full": 0,
+        "uninstrumented_client": 0
+      },
+      "passed": true
+    },
+    "passed": true
+  }
+}

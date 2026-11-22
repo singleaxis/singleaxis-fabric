@@ -1,0 +1,105 @@
+{
+  "schema": "fabric.node-wire-matrix/v1",
+  "comment": "Spec 055 §9.3: the client matrix of the TypeScript wire capture. Rows are transports and model clients, never agent frameworks: a row says how bytes reach undici or core HTTP. Each TS-1U/TS-1D row names its client script (clients/), the provider dialect its endpoint is configured with, the profiles it runs in (local and production in pseudonymous identity mode; one clear identity case per R8), what the record must show (its reader verdict: a row whose script aborts or cancels a call is `partial`, as Python's reader reports those calls, because a response cut short is a `truncated` gap; the test requires every verdict-lowering gap to be such a cut or a named loss), and the test that runs it. `deferred` rows belong to a later unit and are not claimed.",
+  "rows": [
+    {
+      "id": "fetch-esm", "gate": "TS-1U", "transport": "global fetch (ES module application)",
+      "script": "fetch-matrix.mjs", "dialect": "openai", "profiles": ["local", "production"],
+      "test": "scripts/tests/test_node_wire_matrix.py",
+      "scenarios": ["json_in_memory", "json_streamed_request_body", "sse", "gzip_json", "gzip_sse", "error_400", "error_after_headers", "abort_before_headers", "abort_mid_body", "abort_after_completion", "paused_consumer", "keep_alive_reuse", "non_matching"],
+      "observes": {"abort_before_headers": "error", "abort_mid_body": "error", "error_after_headers": "error"},
+      "expect": {"verdict": "partial"}
+    },
+    {
+      "id": "fetch-cjs", "gate": "TS-1U", "transport": "global fetch (CommonJS application)",
+      "script": "fetch-matrix.cjs", "dialect": "openai", "profiles": ["local", "production", "clear"],
+      "test": "scripts/tests/test_node_wire_matrix.py",
+      "scenarios": ["json_in_memory", "json_streamed_request_body", "sse", "gzip_json", "gzip_sse", "error_400", "error_after_headers", "abort_before_headers", "abort_mid_body", "abort_after_completion", "paused_consumer", "keep_alive_reuse", "non_matching"],
+      "observes": {"abort_before_headers": "error", "abort_mid_body": "error"},
+      "expect": {"verdict": "partial"}
+    },
+    {
+      "id": "undici-external", "gate": "TS-1U", "transport": "external undici package 7.16.0: fetch, request, Client (pipelining), Pool; an HTTP/2-capable dispatcher (negative)",
+      "script": "undici-external.mjs", "dialect": "openai", "profiles": ["local", "production"],
+      "test": "scripts/tests/test_node_wire_matrix.py",
+      "scenarios": ["global_fetch", "undici_fetch", "undici_request", "client_pipelining", "pool", "http2_dispatcher"],
+      "qualified_versions": [],
+      "expect": {"verdict": "partial", "min_complete": 0, "uninstrumented_client": 7, "lost_paths": ["/ok/", "/ext/"], "not_complete": true, "status_ids": ["FW-035"]},
+      "note": "No external undici version is qualified in this release: every call it publishes is an uninstrumented_client loss and the process is not complete. Importing the undici package installs its own Agent as the process-wide dispatcher (undici's lib/global.js), so global fetch then sends through that copy too: the global fetch call of this script is the seventh loss. A process that never loads the undici package is unaffected (every other row)."
+    },
+    {
+      "id": "openai", "gate": "TS-1U", "transport": "official openai client (sends through global fetch)",
+      "script": "openai-surfaces.mjs", "dialect": "openai", "profiles": ["local", "production"],
+      "test": "scripts/tests/test_node_wire_matrix.py",
+      "scenarios": ["chat_json", "chat_sse", "responses_hosted_tool", "responses_previous", "responses_sse", "completions_json", "completions_sse", "embeddings", "error_400", "retried_500", "timed_out", "cancelled"],
+      "observes": {"error_400": "error", "retried_500": "ok", "timed_out": "error"},
+      "expect": {"verdict": "partial"}
+    },
+    {
+      "id": "anthropic", "gate": "TS-1U", "transport": "official @anthropic-ai/sdk client (CommonJS; sends through global fetch)",
+      "script": "anthropic-surfaces.cjs", "dialect": "anthropic", "profiles": ["local", "production"],
+      "test": "scripts/tests/test_node_wire_matrix.py",
+      "scenarios": ["messages_json", "messages_sse", "messages_raw_sse", "error_before_headers", "error_after_headers", "cancelled"],
+      "observes": {"error_before_headers": "error", "error_after_headers": "error"},
+      "expect": {"verdict": "partial"}
+    },
+    {
+      "id": "custom-fetch", "gate": "TS-1U", "transport": "a fetch function passed to the openai client: one delegating to global fetch, one over node:http",
+      "script": "custom-fetch.mjs", "dialect": "openai", "profiles": ["local", "production"],
+      "test": "scripts/tests/test_node_wire_matrix.py",
+      "scenarios": ["delegating", "delegated_calls", "core_http"],
+      "expect": {"verdict": "complete_for_declared_scope", "uncaptured_paths": ["/core/"], "uncaptured_class": "node_http"}
+    },
+    {
+      "id": "tool-loop-fan-out", "gate": "TS-1D", "transport": "a plain script over global fetch inside one run: three-turn tool loop, 16 parallel requests, a stream cancelled mid-turn, a retry after a transport error",
+      "script": "tool-loop.mjs", "dialect": "openai", "profiles": ["local", "production"],
+      "test": "scripts/tests/test_node_wire_matrix.py",
+      "scenarios": ["turns", "fan_out", "cancelled", "retry"],
+      "expect": {"verdict": "partial", "run_state": "terminated"}
+    },
+    {
+      "id": "unsupported-endpoints", "gate": "TS-1U", "negative": true,
+      "transport": "Gemini generateContent and Bedrock Converse over fetch, a gRPC-shaped POST, a realtime GET and a WebSocket handshake",
+      "script": "unsupported-endpoints.mjs", "dialect": "openai", "profiles": ["local"],
+      "test": "scripts/tests/test_node_wire_matrix.py",
+      "scenarios": ["gemini", "bedrock", "grpc", "realtime", "websocket"],
+      "expect": {"no_exchanges": true, "min_complete": 0}
+    },
+    {
+      "id": "node-22", "gate": "TS-1U", "negative": true, "transport": "the preload on Node 22",
+      "test": "scripts/tests/test_node_wire_negative.py::test_node_22_and_node_24_0_report_unsupported_and_run_unchanged",
+      "expect": {"capture_points": {"wire.ts.undici": "unsupported"}, "reason": "unsupported_version"}
+    },
+    {
+      "id": "node-24.0", "gate": "TS-1U", "negative": true, "transport": "the preload on Node 24.0.0 (bundled undici 7.8.0, no body publications)",
+      "test": "scripts/tests/test_node_wire_negative.py::test_node_22_and_node_24_0_report_unsupported_and_run_unchanged",
+      "expect": {"capture_points": {"wire.ts.undici": "unsupported"}, "reason": "unsupported_version"}
+    },
+    {
+      "id": "missing-prebuild", "gate": "TS-1U", "negative": true, "transport": "the packed package without its native prebuild",
+      "test": "sdk/typescript/test/package-artifact.node.mjs (missing prebuild is a status, never a throw)",
+      "expect": {"reason": "unsupported_runtime"}
+    },
+    {
+      "id": "bun-deno", "gate": "TS-1U", "negative": true, "transport": "the preload under Bun and Deno",
+      "test": "scripts/tests/test_node_wire_negative.py::test_bun_and_deno_never_install_capture",
+      "expect": {"capture": "disabled"}
+    },
+    {
+      "id": "core-http", "gate": "TS-1H", "deferred": "055-t22",
+      "transport": "node:http / node:https HTTP/1.x"
+    },
+    {
+      "id": "core-http-library", "gate": "TS-1H", "deferred": "055-t22",
+      "transport": "a pinned HTTP/1 client library over core http (optional)"
+    },
+    {
+      "id": "worker-threads-cluster", "gate": "TS-1D",
+      "transport": "global fetch from a worker_threads pool (4 file Workers, one with execArgv: []), an eval: true Worker and an env: {} Worker the NODE_OPTIONS preload does not reach (worker-reach.json), and two cluster.fork() children",
+      "script": "workers.mjs", "dialect": "openai", "profiles": ["local", "production"],
+      "test": "scripts/tests/test_node_wire_matrix.py",
+      "scenarios": ["pool", "eval", "env_empty", "cluster", "main"],
+      "expect": {"verdict": "complete_for_declared_scope", "uncaptured_paths": ["/unattached-"], "declared_class": "node_worker_unattached", "epochs": 3, "status_ids": ["FW-030"]}
+    }
+  ]
+}

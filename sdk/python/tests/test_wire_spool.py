@@ -332,6 +332,13 @@ def test_node_down_keeps_records_then_delivers_in_order(node: FakeNode, tmp_path
     assert len(pending) == 5 and node.content == []
     names = [p.name for p in records(spool)]
     assert names == sorted(names)
+    # A slow runner may not have attempted a send yet: wait for one refused attempt, so
+    # the records are shown to survive a failed delivery, not only a late first one.
+    deadline = time.monotonic() + 30.0
+    while handle.stats().send_retries < 1 and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert handle.stats().send_retries >= 1, "the sender never attempted the down node"
+    assert node.content == []
     node.mode = "ok"
     assert handle.flush(40.0)
     assert records(spool) == []

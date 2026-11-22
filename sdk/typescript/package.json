@@ -23,14 +23,33 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
-    }
+    },
+    "./wire": {
+      "import": {
+        "types": "./dist/wire.d.ts",
+        "default": "./dist/wire.js"
+      },
+      "require": {
+        "types": "./dist/wire.d.cts",
+        "default": "./dist/wire.cjs"
+      }
+    },
+    "./register": {
+      "import": "./dist/register.js",
+      "require": "./dist/register.cjs"
+    },
+    "./wire-qualification.json": "./dist/wire-qualification.json"
   },
   "files": [
     "dist",
+    "prebuilds",
     "README.md",
     "LICENSE"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/register.js",
+    "./dist/register.cjs"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/singleaxis/singleaxis-fabric.git",
@@ -79,6 +98,7 @@
     "@typescript-eslint/eslint-plugin": "8.72.1",
     "@typescript-eslint/parser": "8.72.1",
     "eslint": "10.14.0",
+    "node-api-headers": "1.9.0",
     "prettier": "3.9.10",
     "tsup": "9.0.0",
     "typescript": "5.7.3",

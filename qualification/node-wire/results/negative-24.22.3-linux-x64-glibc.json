@@ -1,0 +1,33 @@
+{
+  "gate": "negative",
+  "result": "passed",
+  "schema": "fabric.node-wire-gate-report/v1",
+  "source_sha": "292b07dacccac6e9671061b8179b757fbb3d6678",
+  "tests": [
+    {
+      "outcome": "passed",
+      "seconds": 2.303,
+      "test": "scripts.tests.test_node_wire_negative::test_node_22_and_node_24_0_report_unsupported_and_run_unchanged[/opt/hostedtoolcache/node/22.23.5/x64/bin/node]"
+    },
+    {
+      "outcome": "passed",
+      "seconds": 0.727,
+      "test": "scripts.tests.test_node_wire_negative::test_node_22_and_node_24_0_report_unsupported_and_run_unchanged[/opt/hostedtoolcache/node/24.0.0/x64/bin/node]"
+    },
+    {
+      "outcome": "passed",
+      "seconds": 0.687,
+      "test": "scripts.tests.test_node_wire_negative::test_bun_and_deno_never_install_capture[bun]"
+    },
+    {
+      "outcome": "passed",
+      "seconds": 0.7,
+      "test": "scripts.tests.test_node_wire_negative::test_bun_and_deno_never_install_capture[deno]"
+    }
+  ],
+  "tuple": {
+    "node": "24.22.3",
+    "platform": "linux-x64-glibc",
+    "undici": "7.30.2"
+  }
+}

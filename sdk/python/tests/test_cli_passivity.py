@@ -173,3 +173,75 @@ def test_fabric_run_opens_no_socket_and_resolves_no_name(tmp_path: Path) -> None
         )
         assert result.returncode == 0 and result.stdout == "agent ran\n", result.stderr
     assert not log.exists() or log.read_text() == ""
+
+
+@pytest.mark.parametrize(
+    "locale_env",
+    [{}, {"LC_CTYPE": "UTF-8"}, {"LANG": "C"}, {"LC_ALL": "C.UTF-8"}],
+    ids=["no-locale", "ctype-set", "lang-c", "lc-all"],
+)
+def test_the_agent_gets_no_locale_variable_python_added_for_itself(
+    tmp_path: Path, locale_env: dict[str, str]
+) -> None:
+    """I2: a Python started in the C locale sets LC_CTYPE for itself (PEP 538) before
+    `fabric` runs; exec must not hand that to the agent. A Python agent coerces its own
+    locale and hides it, so the agent here is `env`, as any non-Python program is."""
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": str(tmp_path / "home"),
+        **locale_env,
+    }
+    agent = ["env"]
+    bare = subprocess.run(  # noqa: S603
+        agent, cwd=tmp_path, env=env, capture_output=True, timeout=60, check=True
+    )
+    run = subprocess.run(  # noqa: S603
+        [sys.executable, "-m", "fabric.cli", "run", "--", *agent],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        timeout=120,
+        check=True,
+    )
+    # macOS CoreFoundation writes __CF_USER_TEXT_ENCODING into any process that loads it
+    # (every login session already has it); it is the system's, not Fabric's.
+    system = (b"__CF_USER_TEXT_ENCODING=",)
+    seen = sorted(line for line in run.stdout.splitlines() if not line.startswith(system))
+    assert seen == sorted(line for line in bare.stdout.splitlines() if not line.startswith(system))
+
+
+def test_startup_environ_undoes_only_pythons_own_coercion() -> None:
+    from fabric.cli._run import startup_environ  # noqa: PLC0415
+
+    def nothing(_: str) -> str | None:
+        return None
+
+    def unreadable(_: str) -> str | None:
+        raise OSError("no /proc here")
+
+    coerced = {"PATH": "/bin", "LC_CTYPE": "C.UTF-8"}
+    # Linux: the start-up block decides exactly.
+    assert startup_environ(coerced, initial=nothing) == {"PATH": "/bin"}
+    assert startup_environ(coerced, initial=lambda _: "C") == {"PATH": "/bin", "LC_CTYPE": "C"}
+    assert startup_environ(coerced, initial=lambda _: "C.UTF-8") == coerced
+    # Elsewhere: UTF-8 mode that nothing else turned on shows the C start-up locale.
+    assert startup_environ(coerced, utf8_mode=1, xoptions={}, initial=unreadable) == {
+        "PATH": "/bin"
+    }
+    assert startup_environ(
+        {**coerced, "LANG": "en_US.UTF-8"}, utf8_mode=1, xoptions={}, initial=unreadable
+    ) == {"PATH": "/bin", "LANG": "en_US.UTF-8", "LC_CTYPE": "C"}
+    for kept in (
+        startup_environ(coerced, utf8_mode=0, xoptions={}, initial=unreadable),
+        startup_environ({**coerced, "PYTHONUTF8": "1"}, utf8_mode=1, xoptions={},
+                        initial=unreadable),
+        startup_environ(coerced, utf8_mode=1, xoptions={"utf8": True}, initial=unreadable),
+        startup_environ({**coerced, "PYTHONCOERCECLOCALE": "0"}, initial=nothing),
+        # PEP 538: a non-empty LC_ALL turns the coercion off, while its C locale still
+        # turns UTF-8 mode on (PEP 540): the LC_CTYPE is the shell's own.
+        startup_environ({**coerced, "LC_ALL": "C"}, utf8_mode=1, xoptions={},
+                        initial=unreadable),
+    ):  # fmt: skip
+        assert kept["LC_CTYPE"] == "C.UTF-8"
+    other = {"PATH": "/bin", "LC_CTYPE": "en_US.UTF-8"}
+    assert startup_environ(other, initial=nothing) == other

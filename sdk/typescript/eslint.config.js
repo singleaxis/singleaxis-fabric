@@ -31,6 +31,14 @@ export default [
         URL: "readonly",
         setTimeout: "readonly",
         clearTimeout: "readonly",
+        // The fetch family and timers the wire capture tests drive (spec 055 §9.5).
+        setImmediate: "readonly",
+        fetch: "readonly",
+        Response: "readonly",
+        RequestInit: "readonly",
+        AbortController: "readonly",
+        ReadableStream: "readonly",
+        DOMException: "readonly",
       },
     },
     plugins: {
@@ -43,6 +51,24 @@ export default [
       // a type sharing one name is the enum-shaped pattern used for the
       // closed vocabularies); the base rule does not understand it.
       "no-redeclare": "off",
+    },
+  },
+  {
+    // The CommonJS host and worker fixtures of the worker-thread tests (spec 055 unit
+    // 055-t19): plain Node.js scripts run by child processes.
+    files: ["test/**/fixtures/**/*.cjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "commonjs",
+      globals: {
+        require: "readonly",
+        module: "writable",
+        __filename: "readonly",
+        process: "readonly",
+        performance: "readonly",
+        setTimeout: "readonly",
+        fetch: "readonly",
+      },
     },
   },
 ];

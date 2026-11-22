@@ -1,0 +1,80 @@
+{
+  "schema": "fabric.node-wire-worker-reach/v1",
+  "comment": "Spec 055 \u00a74.5, \u00a79.4 (unit 055-t19): whether the @singleaxis/fabric/register preload runs in, and so attaches, each kind of worker thread, for each way of giving Node the preload, as actually launched on the claimed Node builds (the minimum, 24.4.0, and the newest, 24.22.3). Observed by sdk/typescript/test/wire/isolate/reach.test.ts (FABRIC_WORKER_REACH_OUT); the test fails on a listed build that behaves differently, so a Node change is a reviewed diff. Kinds: default (a file Worker), nested (a file Worker created by one), nested_child (the Worker it creates), eval (eval: true), execargv_empty (execArgv: []), env_empty (env: {}). A thread the preload does not reach records nothing and is counted and declared node_worker_unattached (FW-030). Preload reach does not depend on the platform; these rows were observed on darwin-arm64 and are re-checked on linux-x64-glibc by the ts-wire-parity job.",
+  "builds": [
+    {
+      "node": "24.4.0",
+      "reach": {
+        "node_options_import": {
+          "default": true,
+          "nested": true,
+          "nested_child": true,
+          "eval": false,
+          "execargv_empty": true,
+          "env_empty": false
+        },
+        "node_options_require": {
+          "default": true,
+          "nested": true,
+          "nested_child": true,
+          "eval": true,
+          "execargv_empty": true,
+          "env_empty": false
+        },
+        "cli_import": {
+          "default": true,
+          "nested": true,
+          "nested_child": true,
+          "eval": false,
+          "execargv_empty": false,
+          "env_empty": true
+        },
+        "cli_require": {
+          "default": true,
+          "nested": true,
+          "nested_child": true,
+          "eval": true,
+          "execargv_empty": false,
+          "env_empty": true
+        }
+      }
+    },
+    {
+      "node": "24.22.3",
+      "reach": {
+        "node_options_import": {
+          "default": true,
+          "nested": true,
+          "nested_child": true,
+          "eval": false,
+          "execargv_empty": true,
+          "env_empty": false
+        },
+        "node_options_require": {
+          "default": true,
+          "nested": true,
+          "nested_child": true,
+          "eval": true,
+          "execargv_empty": true,
+          "env_empty": false
+        },
+        "cli_import": {
+          "default": true,
+          "nested": true,
+          "nested_child": true,
+          "eval": false,
+          "execargv_empty": false,
+          "env_empty": true
+        },
+        "cli_require": {
+          "default": true,
+          "nested": true,
+          "nested_child": true,
+          "eval": true,
+          "execargv_empty": false,
+          "env_empty": true
+        }
+      }
+    }
+  ]
+}
