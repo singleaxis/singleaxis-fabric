@@ -266,6 +266,40 @@ describe("the Fabric worker's isolate poll", () => {
       watch.close();
     }
   });
+
+  it("a thread counted after its grace period is not counted again by a late report", async () => {
+    const { runtime: installer, table: main } = isolate();
+    const { time, now } = clock();
+    const watch = new IsolateWatch(installer, main, fakeAddon([]), { graceMs: 10, now });
+    const thread = new BroadcastChannel(ISOLATE_CHANNEL);
+    try {
+      expect(installer.notePendingThread(4242)).toBe(true);
+      watch.poll();
+      time.now += 10;
+      watch.poll();
+      expect(installer.stats().isolates.unattached).toBe(1n);
+      // Its own report arrives late (it ran Fabric without the runtime): one thread.
+      thread.postMessage({ unattached: 4242 });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(installer.stats().isolates.unattached).toBe(1n);
+    } finally {
+      thread.close();
+      watch.close();
+    }
+  });
+
+  it("a row claimed by an attach that failed is freed and never counted attached", () => {
+    const { runtime: installer } = isolate();
+    const row = installer.claimIsolateRow(131, 13);
+    // The claim alone is not an attach: counted only once the hook is installed.
+    expect(installer.stats().isolates.attached).toBe(0n);
+    expect(installer.threadAttached(13)).toBe(true);
+    installer.freeIsolateRow(row);
+    expect(installer.threadAttached(13)).toBe(false);
+    expect(installer.rowOfEnv(131)).toBe(-1);
+    expect(installer.stats().isolates.detached).toBe(0n);
+    expect(installer.claimIsolateRow(132, 14)).toBe(row);
+  });
 });
 
 /** The first steps of `Ring.push` by a producer that is torn down before it publishes. */

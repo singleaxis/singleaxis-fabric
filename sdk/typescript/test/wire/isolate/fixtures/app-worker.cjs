@@ -5,6 +5,7 @@
 // knows the wire core only through workerData.core and does what workerData.mode says:
 //   install     install() (attach), then `count` chat completions; reports the handle
 //   hang        install(), then inside run(): one completion and one stream it holds open
+//   reinstall   as hang, after install(), close() and install() again
 //   report      no install(): reports whether the preload attached this thread
 //   nested      as report, then starts a nested `report` Worker and relays its answer
 //   preinstall  install() at once (before the process installs), then waits to be told
@@ -35,8 +36,13 @@ async function main() {
         parentPort.postMessage(report);
         return;
     }
-    if (mode === "hang") {
-        const handle = wire.install();
+    if (mode === "hang" || mode === "reinstall") {
+        let handle = wire.install();
+        if (mode === "reinstall") {
+            // Attach, close this thread's handle, and attach again: still one row.
+            await handle.close({ timeoutMs: 1000 });
+            handle = wire.install();
+        }
         await wire.run({ runId: "worker-run" }, async () => {
             await chat(base, "ok", "before the hang");
             const response = await fetch(`${base}/hang/v1/chat/completions`, {

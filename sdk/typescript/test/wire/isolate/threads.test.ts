@@ -123,6 +123,26 @@ describe.runIf(NODE_24)("application worker threads", { timeout: 120_000 }, () =
     });
   });
 
+  it("a Worker that closed its handle and installed again keeps one row, and still settles", async () => {
+    const root = scratch("reinstall");
+    const done = await runHost("host.cjs", captureEnv(root, pkg), ["reinstall"]);
+    expect(done.code, done.stderr).toBe(0);
+    const { open, settled, elapsedMs, status } = done.report;
+    expect(open).toMatchObject({ open: true, capturing: true });
+    // A second row under the same environment id was never settled before this fix.
+    expect(settled).toBe(true);
+    expect(elapsedMs).toBeLessThan(200);
+    expect(status.status.workers_attached).toBe(1);
+    expect(status.status.worker_positions_shutdown).toBe(1);
+    const ranges = losses(spoolDocs(join(root, "spool")));
+    expect(ranges.map((r) => r.reason)).toEqual(["shutdown"]);
+    expect(done.report.exit.stats).toMatchObject({
+      workers_attached: 1,
+      workers_detached: 1,
+      worker_positions_shutdown: 1,
+    });
+  });
+
   it("a Worker that ran install() before the process installed is counted and declared", async () => {
     const root = scratch("preinstall");
     const done = await runHost("host.cjs", captureEnv(root, pkg), ["preinstall"]);

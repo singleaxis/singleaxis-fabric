@@ -534,7 +534,6 @@ export class WireRuntime {
       Atomics.store(i32, at + 1, envId);
       Atomics.store(i32, at + 2, ROLE_SLOT.application + 1);
       Atomics.store(i32, at + 3, threadId);
-      Atomics.add(this.i64, C_ISOLATES_ATTACHED, 1n);
       // This thread is no longer pending: resolved here, not by the Fabric worker's next
       // scan, which a thread that attaches and exits at once could otherwise miss (it
       // would be counted unattached after the grace period). Thread ids are never reused.
@@ -546,7 +545,27 @@ export class WireRuntime {
     return -1;
   }
 
-  /** The attached application row of `envId`, or -1. Fabric worker only. */
+  /**
+   * Counts one application isolate as attached: called once its hook is installed, so a
+   * thread whose attach failed after claiming its row is never counted attached.
+   */
+  countAttached(): void {
+    Atomics.add(this.i64, C_ISOLATES_ATTACHED, 1n);
+  }
+
+  /**
+   * Frees a row claimed by an attach that then failed (nothing was allocated under its
+   * tag: no exchange, lock or run slot). Not a teardown: not counted as detached.
+   */
+  freeIsolateRow(row: number): void {
+    if (row < FIRST_APPLICATION_ROW || row >= MAX_ISOLATES) return;
+    const at = ISOLATE_BASE + row * 4;
+    Atomics.store(this.i32, at + 3, 0);
+    Atomics.store(this.i32, at + 1, 0);
+    Atomics.store(this.i32, at, ROW_FREE);
+  }
+
+  /** The attached application row of `envId`, or -1 (ids are never reused, §4.4). */
   rowOfEnv(envId: number): number {
     const i32 = this.i32;
     for (let row = FIRST_APPLICATION_ROW; row < MAX_ISOLATES; row++) {

@@ -7,6 +7,7 @@
 //   pool       explicit install(); 8 Workers attach with install() and send 4 calls each
 //   terminate  explicit install(); a Worker holds a stream open inside a run and is
 //              terminated; how long until its position is a settled `shutdown` loss
+//   reinstall  as terminate, but the Worker attaches, closes its handle and attaches again
 //   reach      the preload (as the test launched it) installs; Workers of every kind
 //              report whether the preload attached them; the status counts the others
 //   preinstall a Worker runs install() before the process installs; explicit install()
@@ -23,6 +24,12 @@ const core = process.env.FABRIC_TEST_CORE;
 const wire = require(core);
 const WORKER = require.resolve("./app-worker.cjs");
 const mode = process.argv[2];
+
+// close() keeps retrying delivery to the OTLP endpoint nobody listens on until its
+// budget's delivery share is spent (the records stay in the spool, where the tests read
+// them). At 3 s a loaded machine (three test files at once, 10 threads per host) ran out
+// before the stop wrote its exit stats and last records; 6 s leaves the stop room.
+const CLOSE_MS = 6_000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -69,7 +76,7 @@ async function pool(provider) {
     await Promise.all(workers.map((w) => w.exited));
     await chat(provider.base, "ok", "main 1");
     const installed = handle.status();
-    await handle.close({ timeoutMs: 3000 });
+    await handle.close({ timeoutMs: CLOSE_MS });
     return {
         main: { epoch: String(handle.epoch), source: handle.sourceId },
         workers: reports,
@@ -78,9 +85,9 @@ async function pool(provider) {
     };
 }
 
-async function terminate(provider) {
+async function terminate(provider, workerMode = "hang") {
     const handle = wire.install();
-    const w = worker({ mode: "hang", base: provider.base });
+    const w = worker({ mode: workerMode, base: provider.base });
     const open = await w.first;
     await wire.run({ runId: "main-run" }, () => chat(provider.base, "ok", "main"));
     const shutdown = () => Number(handle.status().status.worker_positions_shutdown ?? 0);
@@ -91,7 +98,7 @@ async function terminate(provider) {
     const settled = await until(() => shutdown() > before, 5000);
     const elapsed = performance.now() - started;
     const installed = handle.status();
-    await handle.close({ timeoutMs: 3000 });
+    await handle.close({ timeoutMs: CLOSE_MS });
     return {
         open,
         settled,
@@ -119,7 +126,7 @@ async function reach(provider) {
     await until(() => counted() >= created, 6000);
     await chat(provider.base, "ok", "main");
     const installed = handle?.status();
-    if (handle !== undefined) await handle.close({ timeoutMs: 3000 });
+    if (handle !== undefined) await handle.close({ timeoutMs: CLOSE_MS });
     return {
         capturing: handle?.capturing === true,
         kinds,
@@ -139,7 +146,7 @@ async function preinstall(provider) {
     await chat(provider.base, "ok", "main");
     const installed = handle.status();
     w.thread.postMessage("exit");
-    await handle.close({ timeoutMs: 3000 });
+    await handle.close({ timeoutMs: CLOSE_MS });
     return { before, counted, status: installed, exit: handle.status() };
 }
 
@@ -149,7 +156,7 @@ async function overflow(provider) {
     const report = await w.first;
     await w.exited;
     await sleep(300); // a few Fabric worker ticks: the poll meets the overflow
-    await handle.close({ timeoutMs: 3000 });
+    await handle.close({ timeoutMs: CLOSE_MS });
     return { worker: report, exit: handle.status() };
 }
 
@@ -172,7 +179,7 @@ async function clustered(provider) {
         );
         await Promise.all(exits);
         const epoch = handle === undefined ? null : String(handle.epoch);
-        if (handle !== undefined) await handle.close({ timeoutMs: 3000 });
+        if (handle !== undefined) await handle.close({ timeoutMs: CLOSE_MS });
         return { primary: { epoch }, children: answers };
     }
     return undefined;
@@ -182,7 +189,7 @@ async function child() {
     const handle = wire.preloadedHandle();
     await chat(process.env.BASE, "ok", "cluster child");
     const epoch = handle === undefined ? null : String(handle.epoch);
-    if (handle !== undefined) await handle.close({ timeoutMs: 3000 });
+    if (handle !== undefined) await handle.close({ timeoutMs: CLOSE_MS });
     process.send({ epoch, capturing: handle?.capturing === true });
     process.disconnect();
 }
@@ -191,7 +198,15 @@ async function run() {
     if (mode === "cluster" && !cluster.isPrimary) return child();
     const provider = await startProvider();
     try {
-        const modes = { pool, terminate, reach, preinstall, overflow, cluster: clustered };
+        const modes = {
+            pool,
+            terminate,
+            reinstall: (p) => terminate(p, "reinstall"),
+            reach,
+            preinstall,
+            overflow,
+            cluster: clustered,
+        };
         print(await modes[mode](provider));
     } finally {
         await provider.close();

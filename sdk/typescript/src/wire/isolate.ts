@@ -237,13 +237,26 @@ export function attachIsolate(): AttachOutcome {
       return { ok: false, reason: "native_load_failed" };
     }
     const envId = native.addon.envAttach();
-    const row = envId > 0 ? probe.claimIsolateRow(envId, threadId) : -1;
+    // `envAttach` returns this environment's one id on every call. A thread that attached,
+    // closed its handle and installs again keeps its row: a second row under the same id
+    // would never be settled at teardown (the poll settles the first) and would leak.
+    const own = envId > 0 ? probe.rowOfEnv(envId) : -1;
+    const row = own >= 0 ? own : envId > 0 ? probe.claimIsolateRow(envId, threadId) : -1;
     if (row < 0) {
       probe.countUnattached();
       const full = envId === NativeCode.LIMIT || envId > 0;
       return { ok: false, reason: full ? "isolate_limit" : "internal_error" };
     }
-    current = bind(shared, data, native.addon, row);
+    try {
+      current = bind(shared, data, native.addon, row);
+    } catch {
+      // Nothing was allocated under the row's tag: free it, so the thread is neither
+      // listed as attached nor holds a row; it is counted unattached once, here.
+      if (own < 0) probe.freeIsolateRow(row);
+      probe.countUnattached();
+      return { ok: false, reason: "internal_error" };
+    }
+    if (own < 0) probe.countAttached();
     return { ok: true, attached: current };
   } catch {
     probe.countUnattached();
@@ -277,7 +290,7 @@ function bind(shared: RuntimeShared, data: AttachData, addon: NativeAddon, row: 
   if (!hook.installed) {
     hook.uninstall();
     bindRunTable(undefined);
-    runtime.countUnattached();
+    // Counted unattached by the caller, once.
     throw new Error("the undici hook subscribed nothing");
   }
   watchWorkerThreads(runtime);
@@ -338,8 +351,12 @@ export class IsolateWatch {
   readonly #ids = new Uint32Array(64);
   /** Pending entries first seen, by entry: thread id and time. */
   readonly #pending = new Map<number, { threadId: number; since: number }>();
-  /** Threads that reported themselves unattached (deduplicated, bounded). */
-  readonly #reported = new Set<number>();
+  /**
+   * Threads already counted unattached, whichever way: their own report or the grace
+   * period (deduplicated, bounded). A report that arrives after the grace period counted
+   * the thread, or the reverse, never counts it twice. Thread ids are never reused.
+   */
+  readonly #counted = new Set<number>();
   readonly #stuck = new Map<string, { head: number; since: number }>();
   #lock: { tag: number; since: number } | undefined;
   #declared = false;
@@ -371,8 +388,13 @@ export class IsolateWatch {
 
   #heard(event: unknown): void {
     const id = (event as { data?: { unattached?: unknown } } | null)?.data?.unattached;
-    if (typeof id !== "number" || this.#reported.has(id) || this.#reported.size >= 4096) return;
-    this.#reported.add(id);
+    if (typeof id === "number") this.#countOnce(id);
+  }
+
+  /** Counts thread `id` unattached unless it already was. */
+  #countOnce(id: number): void {
+    if (this.#counted.has(id)) return;
+    if (this.#counted.size < 4096) this.#counted.add(id);
     this.#runtime.countUnattached();
   }
 
@@ -455,7 +477,7 @@ export class IsolateWatch {
         runtime.clearPendingThread(entry, id);
         this.#pending.delete(entry);
         // A thread that ran Fabric without the runtime may have said so already.
-        if (!this.#reported.has(id)) runtime.countUnattached();
+        this.#countOnce(id);
       }
     }
   }

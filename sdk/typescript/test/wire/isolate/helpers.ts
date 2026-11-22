@@ -135,7 +135,8 @@ export function captureEnv(
     FABRIC_WIRE_ENDPOINTS: JSON.stringify([
       { endpoint_id: "isolate-test", dialect: "openai", hosts: ["127.0.0.1"], schemes: ["http"] },
     ]),
-    FABRIC_WIRE_SHUTDOWN_TIMEOUT: "3",
+    // As the hosts' close() budget (CLOSE_MS): a loaded machine still finishes the stop.
+    FABRIC_WIRE_SHUTDOWN_TIMEOUT: "6",
     ...extra,
   };
 }
