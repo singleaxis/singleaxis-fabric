@@ -15,6 +15,21 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **`fabric run -- node agent.mjs` records a Node.js agent with no code change
+  (spec 055 §13.1, unit 055-t18).** `fabric run` now appends
+  `--import=@singleaxis/fabric/register` to `NODE_OPTIONS` (never replacing
+  what is there) and sets `FABRIC_WIRE_AUTOLOAD=1` with the project's settings,
+  but only when `@singleaxis/fabric` is installed in the agent's project with
+  its qualification gates passed and this Node.js build and platform are listed
+  as qualified. Otherwise the agent starts unchanged and `fabric run` says why
+  and what to do: `FC-098` (install the package), `FC-099` (upgrade it),
+  `FC-100` (use one of the listed Node.js builds) or `FC-101` (unsupported
+  platform). `fabric verify` judges a captured Node.js run like a Python one and
+  reports model calls `recorded`, or the same reason. `fabric run --print-env`
+  prints the Node.js environment in every format; shared goldens
+  (`contracts/cli-config/v1/fixtures/print-env/node-v1.json`) fix its output
+  for the npm launcher to come.
+
 - **Node.js model-call capture is qualified, undici only (spec 055, unit
   055-t17).** The gates `TS-1U` (`wire.ts.undici`) and `TS-1D` (protection,
   spool, sender and readback) passed, so a release may carry the
@@ -898,6 +913,16 @@ it never makes, applies, waits for or returns one.
   may prune the namespace.
 
 ### Fixed
+
+- **`fabric run` no longer hands the agent a locale variable of its own.**
+  Started without `LANG`, the Python that runs `fabric` sets `LC_CTYPE` for
+  itself (PEP 538) before any Fabric code runs, and `exec` passed it on, so a
+  non-Python agent saw a variable a bare run would not. The agent now gets the
+  environment `fabric run` was started with.
+- `fabric doctor` no longer asks a Node.js binary for the Python SDK when the
+  last run was a Node.js run.
+- `fabric run --print-env --format k8s` no longer prints an empty
+  `kubectl create secret` line when no key file is in the environment.
 
 - **A Node.js agent with a local file store kept no request or response bytes
   (spec 055, unit 055-t17).** With `FABRIC_WIRE_STORE=file:///dir` and no Fabric

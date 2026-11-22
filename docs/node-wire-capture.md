@@ -72,7 +72,37 @@ Limits of the claim:
   written makes that process's record incomplete, never falsely complete.
 - The record is a passive copy: nothing here changes, blocks or delays a call.
 
-## Turn it on: no code change
+## Turn it on with `fabric run`
+
+With the operator CLI (`pip install "singleaxis-fabric[cli]"`, or its container
+image), install the package in the agent's own project and start the agent
+through `fabric run`:
+
+```sh
+npm install @singleaxis/fabric
+fabric init && fabric up
+fabric run -- node agent.mjs      # also npx, tsx, ts-node and `#!` node scripts
+fabric verify
+```
+
+`fabric run` appends `--import=@singleaxis/fabric/register` to `NODE_OPTIONS`
+(it never replaces what is there, and never adds it twice) and sets
+`FABRIC_WIRE_AUTOLOAD=1` with the project's settings, only when all three hold:
+the command runs Node.js; `@singleaxis/fabric` resolves from the agent's
+working directory with its qualification gates passed; and this Node.js build
+and platform are listed `active` in the package's
+`@singleaxis/fabric/wire-qualification.json`. Otherwise it starts the agent
+unchanged (only the explicit API's tenant, agent and run label are added) and
+names the reason and its fix: `FC-098` (package not installed: `npm i
+@singleaxis/fabric`), `FC-099` (an installed copy without qualified capture:
+`npm i @singleaxis/fabric@latest`), `FC-100` (this Node.js build is not
+qualified; the message lists the ones that are) or `FC-101` (no qualified
+build for this platform). `fabric verify` then reports model calls `recorded`,
+or the same reason. `fabric run --print-env -- node agent.mjs` prints the same
+environment for a launcher `fabric run` cannot wrap; its `docker` and `k8s`
+formats describe a container, whose Node.js must be one of the listed builds.
+
+## Turn it on by hand: no code change
 
 Install the package next to the agent, then start the agent with the preload
 and the gate variable. Append the flag to `NODE_OPTIONS`; never replace it.
