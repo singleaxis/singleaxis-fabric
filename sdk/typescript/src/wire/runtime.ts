@@ -22,7 +22,7 @@ import { getEnvironmentData, setEnvironmentData } from "node:worker_threads";
 
 import { MAX_VECTOR_SLOTS, SLAB_BYTES, createPayload, createPool } from "./arena.js";
 import type { PayloadShared, PoolShared } from "./arena.js";
-import { Ring, createRing, type RingShared } from "./queue.js";
+import { RING_VOID, Ring, createRing, type RingShared } from "./queue.js";
 
 /** The `setEnvironmentData` key (spec 055 §4.5) and the per-isolate global slot (§4.1). */
 export const RUNTIME_KEY = "fabric.wire.runtime/1";
@@ -63,6 +63,15 @@ const C_UNATTRIBUTED = 16;
 const C_LOCK_TIMEOUTS = 17;
 const C_REFUSED = 18;
 const C_UNPROCESSED = 19;
+// Application isolates (spec 055 §4.5, unit 055-t19): counters, content-free.
+const C_ISOLATES_ATTACHED = 20;
+const C_ISOLATES_UNATTACHED = 21;
+const C_ISOLATES_DETACHED = 22;
+const C_DETACHED_SHUTDOWN = 23; // positions settled as `shutdown` for a torn-down isolate
+const C_DETACHED_OVERFLOW = 24; // `takeDetachedEnvs` returned OVERFLOW
+const C_SLOTS_ABANDONED = 25; // a torn-down isolate died inside finish (position a gap)
+const C_LOCKS_BROKEN = 26;
+const C_RING_VOIDED = 27; // ring cells a torn-down isolate claimed and never published
 // Int32 words (bytes 256..511).
 const W_STATE = 64;
 const W_LOCK = 65;
@@ -74,7 +83,8 @@ const W_FAILURE = 69;
 const RUN_BASE = 64;
 /** Run-slot flag: the run is resumable (a forced seal written by the worker says so). */
 export const RUN_FLAG_RESUMABLE = 1n;
-// Isolate table: 4 Int32 words per isolate (state, environment id, role, reserved).
+// Isolate table: 4 Int32 words per isolate (state, environment id, role, thread id). Row 0
+// is the installing thread, row 1 the Fabric worker, rows 2.. attached application isolates.
 const ISOLATE_BASE = (512 + MAX_RUNS * 32) / 4;
 // The manifest in force (bytes 25088..25159), written by the Fabric worker only, under a
 // version word (odd while it writes): version (Int32), epoch, manifest_seq (BigInt64),
@@ -85,6 +95,19 @@ const M_EPOCH = M_BYTE / 8 + 1;
 const M_SEQ = M_BYTE / 8 + 2;
 const M_ID = M_BYTE + 24;
 const M_DIGEST = M_BYTE + 40;
+// Run-slot claims (bytes 25600..26623): one Int32 word per run slot, the claiming isolate's
+// row + 1, so the run tables of every attached isolate share the 256 slots (unit 055-t19).
+const RUN_CLAIM_BASE = 25600 / 4;
+// Worker threads created by an attached isolate and not yet seen attached (bytes
+// 26624..28671): one Int32 thread id per entry, 0 when free (unit 055-t19).
+const PENDING_BASE = 26624 / 4;
+export const MAX_PENDING_THREADS = 512;
+
+/** Isolate-table row states. A detached row is free again once settled. */
+const ROW_FREE = 0;
+const ROW_ATTACHED = 1;
+/** The first isolate-table row an application isolate can claim (0: installer, 1: worker). */
+export const FIRST_APPLICATION_ROW = 2;
 
 export const STATE_RUNNING = 1;
 export const STATE_CLOSING = 2;
@@ -275,6 +298,27 @@ export interface RuntimeStats {
   readonly workerGeneration: number;
   readonly workerRestarts: number;
   readonly queuedJobs: number;
+  /** Application isolates (spec 055 §4.5, §6.4): content-free counters. */
+  readonly isolates: IsolateStats;
+}
+
+export interface IsolateStats {
+  /** Application isolates that attached (ever). */
+  readonly attached: bigint;
+  /** Worker threads that did not attach, or could not be followed: declared uncaptured. */
+  readonly unattached: bigint;
+  /** Attached isolates torn down and settled. */
+  readonly detached: bigint;
+  /** Positions of torn-down isolates settled as `shutdown` losses. */
+  readonly shutdownPositions: bigint;
+  /** Times the detached ring overflowed: those positions settle at `close()`. */
+  readonly overflows: bigint;
+  /** Exchanges a torn-down isolate left inside `finish`: their positions stay gaps. */
+  readonly abandoned: bigint;
+  /** The control-block lock freed after its holder was torn down. */
+  readonly locksBroken: bigint;
+  /** Ring cells a torn-down isolate claimed and never filled, skipped. */
+  readonly ringVoided: bigint;
 }
 
 export class WireRuntime {
@@ -294,19 +338,37 @@ export class WireRuntime {
    */
   mirror: ((next: bigint) => void) | undefined;
 
+  /**
+   * `row`: an application isolate's own isolate-table row, claimed with
+   * {@link claimIsolateRow} (`isolate.ts`). Without one, an application isolate uses the
+   * first application row (the simulated isolates of the runtime tests). Row `-1` is a
+   * view that writes no row and must not take the lock (an isolate before it attaches).
+   */
   constructor(
     readonly shared: RuntimeShared,
     readonly role: IsolateRole,
+    row?: number,
   ) {
     this.i64 = new BigInt64Array(shared.control);
     this.i32 = new Int32Array(shared.control);
     this.jobs = new Ring(shared.jobs);
     this.lossRing = new Ring(shared.losses);
     this.runRing = shared.runs === undefined ? undefined : new Ring(shared.runs);
-    this.owner = ROLE_SLOT[role] + 1;
-    const row = ISOLATE_BASE + ROLE_SLOT[role] * 4;
-    Atomics.store(this.i32, row + 2, this.owner);
-    Atomics.store(this.i32, row, 1);
+    const slot = role === "application" && row !== undefined ? row : ROLE_SLOT[role];
+    this.owner = slot + 1;
+    if (slot < 0) return;
+    const at = ISOLATE_BASE + slot * 4;
+    Atomics.store(this.i32, at + 2, ROLE_SLOT[role] + 1);
+    Atomics.store(this.i32, at, ROW_ATTACHED);
+  }
+
+  /**
+   * This isolate's tag (its isolate-table row + 1): the lock owner value, and the owner
+   * written into each exchange slot and run-slot claim it takes, so the Fabric worker can
+   * settle what a torn-down isolate left behind.
+   */
+  get ownerTag(): number {
+    return this.owner;
   }
 
   get state(): number {
@@ -436,6 +498,160 @@ export class WireRuntime {
   /** Releases a lock left by a dead Fabric worker. Called before its replacement starts. */
   breakWorkerLock(): void {
     Atomics.compareExchange(this.i32, W_LOCK, ROLE_SLOT.worker + 1, 0);
+  }
+
+  /**
+   * The lock's holder tag (0: free). The Fabric worker reads it on every isolate poll: a
+   * holder that keeps it across a whole second is a torn-down isolate the detached ring
+   * could not name ({@link breakLock}); a live one holds it for microseconds.
+   */
+  get lockHolder(): number {
+    return Atomics.load(this.i32, W_LOCK);
+  }
+  /** Frees the lock if `tag` still holds it. Fabric worker only. `true` when it did. */
+  breakLock(tag: number): boolean {
+    if (tag === 0 || Atomics.compareExchange(this.i32, W_LOCK, tag, 0) !== tag) return false;
+    Atomics.add(this.i64, C_LOCKS_BROKEN, 1n);
+    Atomics.notify(this.i32, W_LOCK, 1);
+    return true;
+  }
+
+  // -------------------------------------------------------------- application isolates
+
+  /**
+   * Claims a free isolate-table row for an attaching application isolate (spec 055
+   * §4.5), recording its environment id (`envAttach`) and thread id. `-1` when all 1,022
+   * application rows are live. Never waits.
+   */
+  claimIsolateRow(envId: number, threadId: number): number {
+    const i32 = this.i32;
+    for (let row = FIRST_APPLICATION_ROW; row < MAX_ISOLATES; row++) {
+      const at = ISOLATE_BASE + row * 4;
+      if (Atomics.load(i32, at) !== ROW_FREE) continue;
+      // The state word is the only one two isolates race on; the ids follow the claim
+      // (a reader that sees the row before them matches nothing yet).
+      if (Atomics.compareExchange(i32, at, ROW_FREE, ROW_ATTACHED) !== ROW_FREE) continue;
+      Atomics.store(i32, at + 1, envId);
+      Atomics.store(i32, at + 2, ROLE_SLOT.application + 1);
+      Atomics.store(i32, at + 3, threadId);
+      Atomics.add(this.i64, C_ISOLATES_ATTACHED, 1n);
+      // This thread is no longer pending: resolved here, not by the Fabric worker's next
+      // scan, which a thread that attaches and exits at once could otherwise miss (it
+      // would be counted unattached after the grace period). Thread ids are never reused.
+      for (let n = 0; n < MAX_PENDING_THREADS; n++) {
+        Atomics.compareExchange(i32, PENDING_BASE + n, threadId, 0);
+      }
+      return row;
+    }
+    return -1;
+  }
+
+  /** The attached application row of `envId`, or -1. Fabric worker only. */
+  rowOfEnv(envId: number): number {
+    const i32 = this.i32;
+    for (let row = FIRST_APPLICATION_ROW; row < MAX_ISOLATES; row++) {
+      const at = ISOLATE_BASE + row * 4;
+      if (Atomics.load(i32, at) === ROW_ATTACHED && Atomics.load(i32, at + 1) === envId) {
+        return row;
+      }
+    }
+    return -1;
+  }
+
+  /** Whether an attached application row holds `threadId`. */
+  threadAttached(threadId: number): boolean {
+    const i32 = this.i32;
+    for (let row = FIRST_APPLICATION_ROW; row < MAX_ISOLATES; row++) {
+      const at = ISOLATE_BASE + row * 4;
+      if (Atomics.load(i32, at) === ROW_ATTACHED && Atomics.load(i32, at + 3) === threadId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Releases what a torn-down isolate held in the control block (Fabric worker only,
+   * after its exchanges were settled): the lock, if it died holding it, and its run-slot
+   * claims, whose open segments are left unsealed (never sealed with a wrong count). The
+   * row becomes free for a later isolate. Returns the run slots it released.
+   */
+  detachIsolate(row: number): number {
+    const tag = row + 1;
+    this.breakLock(tag);
+    let released = 0;
+    for (let slot = 0; slot < MAX_RUNS; slot++) {
+      if (Atomics.load(this.i32, RUN_CLAIM_BASE + slot) !== tag) continue;
+      this.setRunSegment(slot, 0n, 0n);
+      this.setRunFlags(slot, 0n);
+      Atomics.compareExchange(this.i32, RUN_CLAIM_BASE + slot, tag, 0);
+      released++;
+    }
+    const at = ISOLATE_BASE + row * 4;
+    Atomics.store(this.i32, at + 3, 0);
+    Atomics.store(this.i32, at + 1, 0);
+    Atomics.store(this.i32, at, ROW_FREE);
+    Atomics.add(this.i64, C_ISOLATES_DETACHED, 1n);
+    return released;
+  }
+
+  /** Counts a torn-down isolate's positions settled as `shutdown`, and slots it abandoned. */
+  countDetached(shutdown: number, abandoned: number): void {
+    if (shutdown > 0) Atomics.add(this.i64, C_DETACHED_SHUTDOWN, BigInt(shutdown));
+    if (abandoned > 0) Atomics.add(this.i64, C_SLOTS_ABANDONED, BigInt(abandoned));
+  }
+  countDetachOverflow(): void {
+    Atomics.add(this.i64, C_DETACHED_OVERFLOW, 1n);
+  }
+  countRingVoided(): void {
+    Atomics.add(this.i64, C_RING_VOIDED, 1n);
+  }
+  /** One worker thread that did not attach (or could not be followed). */
+  countUnattached(delta = 1n): void {
+    Atomics.add(this.i64, C_ISOLATES_UNATTACHED, delta);
+  }
+
+  /**
+   * A worker thread an attached isolate just created (the `worker_threads` diagnostics
+   * channel): the Fabric worker decides later whether it attached. `false` when the
+   * table is full; the caller then counts it unattached, never silently.
+   */
+  notePendingThread(threadId: number): boolean {
+    if (!(threadId > 0)) return false;
+    // It already attached (the creating thread was slower than the new one's preload).
+    if (this.threadAttached(threadId)) return true;
+    const i32 = this.i32;
+    for (let n = 0; n < MAX_PENDING_THREADS; n++) {
+      if (Atomics.compareExchange(i32, PENDING_BASE + n, 0, threadId) === 0) return true;
+    }
+    return false;
+  }
+  /** The pending thread ids, by entry (0: free). Fabric worker only. */
+  pendingThread(entry: number): number {
+    return Atomics.load(this.i32, PENDING_BASE + entry);
+  }
+  clearPendingThread(entry: number, threadId: number): void {
+    Atomics.compareExchange(this.i32, PENDING_BASE + entry, threadId, 0);
+  }
+
+  // ------------------------------------------------------------------ run-slot claims
+
+  /**
+   * Claims a free run slot for this isolate's run table: one compare-exchange per slot,
+   * lowest first, never a wait. `-1` when all 256 are live.
+   */
+  claimRunSlot(): number {
+    const i32 = this.i32;
+    for (let slot = 0; slot < MAX_RUNS; slot++) {
+      if (Atomics.load(i32, RUN_CLAIM_BASE + slot) !== 0) continue;
+      if (Atomics.compareExchange(i32, RUN_CLAIM_BASE + slot, 0, this.owner) === 0) return slot;
+    }
+    return -1;
+  }
+  /** Returns a run slot this isolate claimed. */
+  releaseRunSlot(slot: number): void {
+    if (slot < 0 || slot >= MAX_RUNS) return;
+    Atomics.compareExchange(this.i32, RUN_CLAIM_BASE + slot, this.owner, 0);
   }
 
   // -------------------------------------------------------------------- the allocator
@@ -607,7 +823,14 @@ export class WireRuntime {
 
   /** The oldest loss record, or `undefined`. Fabric worker only; `commitLoss` removes it. */
   peekLoss(): RuntimeLoss | undefined {
-    const record = this.lossRing.peek();
+    let record = this.lossRing.peek();
+    // A cell a torn-down isolate claimed and never filled names no position: its loss is
+    // a gap without a reason (counted), and the ring moves on.
+    while (record !== undefined && record.kind === RING_VOID) {
+      this.lossRing.commit();
+      this.countUnattributed();
+      record = this.lossRing.peek();
+    }
     if (record === undefined) return undefined;
     const words = new BigInt64Array(this.shared.losses.buffer, record.byteOffset, 3);
     return {
@@ -673,6 +896,16 @@ export class WireRuntime {
       workerGeneration: this.workerGeneration,
       workerRestarts: Atomics.load(this.i32, W_WORKER_RESTARTS),
       queuedJobs: this.jobs.count,
+      isolates: {
+        attached: Atomics.load(i64, C_ISOLATES_ATTACHED),
+        unattached: Atomics.load(i64, C_ISOLATES_UNATTACHED),
+        detached: Atomics.load(i64, C_ISOLATES_DETACHED),
+        shutdownPositions: Atomics.load(i64, C_DETACHED_SHUTDOWN),
+        overflows: Atomics.load(i64, C_DETACHED_OVERFLOW),
+        abandoned: Atomics.load(i64, C_SLOTS_ABANDONED),
+        locksBroken: Atomics.load(i64, C_LOCKS_BROKEN),
+        ringVoided: Atomics.load(i64, C_RING_VOIDED),
+      },
     };
   }
 }

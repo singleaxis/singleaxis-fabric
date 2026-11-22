@@ -40,6 +40,8 @@ const OPEN = 2;
 const WRITING = 3;
 const WRITING_PROVISIONAL = 4;
 const FINISHING = 5;
+/** `begin` holds the slot; its sequence word is -1 until a position is allocated. */
+const BEGINNING = 6;
 
 const SLOT_WORDS = 512;
 const SLOT_I64 = 256;
@@ -52,6 +54,8 @@ const X_END_NS = 5;
 const X_FLAGS = 12;
 const X_RESPONSE_STATE = 13;
 const X_RUN = 14;
+/** The owning isolate's tag (`WireRuntime.ownerTag`), for teardown settlement (§4.4). */
+const X_OWNER = 15;
 const X_SIDE = 16; // request; response is 8 words later
 const SIDE_WORDS = 8;
 const SIDE_STATE = 4;
@@ -214,10 +218,16 @@ export class ExchangeTable {
     if (this.pool.low) runtime.jobs.wake();
     const { i32, i64, bytes } = this.pool;
     const word = index * SLOT_WORDS;
+    const generation = Atomics.load(i32, word) >>> 3;
     try {
       // The whole slot, hook-defined bytes included: nothing of the slot's previous
       // exchange can appear in this one's record.
       bytes.fill(0, index * 2048 + 8, index * 2048 + 2048);
+      // Owned and held from here: an isolate torn down inside `begin` leaves a slot the
+      // Fabric worker can settle (a position it allocated is a `shutdown` loss).
+      i64[index * SLOT_I64 + X_SEQUENCE] = -1n;
+      i32[word + X_OWNER] = runtime.ownerTag;
+      Atomics.store(i32, word, (generation << 3) | BEGINNING);
       i32[word + X_RUN] = runSlot;
       i32[word + X_SIDE + SIDE_STATE] = 1; // a request with no body is an exact empty body
       i64[index * SLOT_I64 + X_START_NS] = options.startNs ?? now();
@@ -246,7 +256,6 @@ export class ExchangeTable {
       }
       return NO_EXCHANGE;
     }
-    const generation = Atomics.load(i32, word) >>> 3;
     Atomics.store(i32, word, (generation << 3) | (provisional ? PROVISIONAL : OPEN));
     const handle = generation * 65536 + index;
     if (provisional) this.owned.set(handle, ownership);
@@ -529,6 +538,52 @@ export class ExchangeTable {
   }
 
   /**
+   * Settles the exchanges a torn-down application isolate left open (spec 055 §4.4,
+   * §6.4; Fabric worker only, after `takeDetachedEnvs` named the isolate). Each slot whose
+   * owner is `ownerTag`:
+   * - open, or cut off inside `admit`: its position becomes a `shutdown` loss in the
+   *   segment it was allocated in (R3), and its bytes are released;
+   * - provisional: no position was allocated, so only its bytes are released;
+   * - cut off inside `begin`: a position it allocated is a `shutdown` loss;
+   * - cut off inside `finish`: whether its job reached the ring cannot be told, so the
+   *   slot is left as it is (`abandoned`): its position stays a gap and its segment never
+   *   seals complete.
+   * No slot is waited on: the isolate is gone, nothing else writes them.
+   */
+  settleDetached(ownerTag: number): { shutdown: number; released: number; abandoned: number } {
+    const { i32, i64 } = this.pool;
+    const out = { shutdown: 0, released: 0, abandoned: 0 };
+    for (let index = 0; index < this.pool.committed; index++) {
+      const word = index * SLOT_WORDS;
+      const state = Atomics.load(i32, word);
+      const live = state & 7;
+      if (live === FREE || i32[word + X_OWNER] !== ownerTag) continue;
+      if (live === FINISHING) {
+        out.abandoned++;
+        continue;
+      }
+      if (Atomics.compareExchange(i32, word, state, (state & ~7) | FINISHING) !== state) continue;
+      try {
+        const positioned =
+          live === OPEN ||
+          live === WRITING ||
+          (live === BEGINNING && i64[index * SLOT_I64 + X_SEQUENCE]! >= 0n);
+        if (positioned) {
+          this.loseSlot(index, "shutdown");
+          out.shutdown++;
+        } else {
+          this.releaseSides(index);
+          out.released++;
+        }
+      } catch {
+        // That slot's position stays a gap; the sweep goes on.
+      }
+      this.recycle(index);
+    }
+    return out;
+  }
+
+  /**
    * A provisional exchange swept by shutdown. If this isolate knows its explicit scope
    * has already ended, `finish` would have adopted it and allocated a position, so
    * shutdown does the same and loses that position as `shutdown` (§4.6): the call is a
@@ -606,7 +661,9 @@ export class ExchangeTable {
   private position(index: number, runSlot: number): boolean {
     const allocation = this.runtime.allocate(runSlot);
     const i64 = this.pool.i64;
-    i64[index * SLOT_I64 + X_SEQUENCE] = allocation.sequence;
+    // A position lost to a lock timeout is already a loss: the slot does not name it, so
+    // a teardown settlement never loses it twice.
+    i64[index * SLOT_I64 + X_SEQUENCE] = allocation.lost ? -1n : allocation.sequence;
     i64[index * SLOT_I64 + X_SEGMENT] = allocation.segmentHi;
     i64[index * SLOT_I64 + X_SEGMENT + 1] = allocation.segmentLo;
     return !allocation.lost;

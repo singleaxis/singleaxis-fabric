@@ -34,9 +34,12 @@
  * - The Fabric worker rolls a segment that reached the forced bound itself, under the
  *   same lock (`worker.ts`), and writes the continuation `run_start`: the open segment of
  *   a run is always read from its slot, never cached here.
- * - At most 256 runs are live at once (the run table's slots). A block of a 257th run
- *   runs uncaptured and is counted (`run_slots_exhausted`): its calls are recorded outside
- *   any run rather than in a run whose seal would miss them.
+ * - At most 256 runs are live at once (the run table's slots), shared by the run tables
+ *   of every attached isolate of the process: each claims a slot in the control block
+ *   (unit 055-t19). A block of a 257th run runs uncaptured and is counted
+ *   (`run_slots_exhausted`): its calls are recorded outside any run rather than in a run
+ *   whose seal would miss them. A worker thread's run table is its own (ALS does not
+ *   cross threads, §6.4): a run continues there only from a token the application passes.
  * - Node has no fork of a live process: `child_process` and `cluster` start fresh
  *   processes with their own epoch (§6.4), so the fork trigger has no hook here. A child
  *   continues a run only from a token or `FABRIC_RUN_ID` the application passes.
@@ -73,7 +76,7 @@ import {
   type ScopeStatus,
   type StopReason,
 } from "./p1-types.js";
-import { MAX_RUNS, RUN_FLAG_RESUMABLE, RUN_RECORD_BYTES, type WireRuntime } from "./runtime.js";
+import { RUN_FLAG_RESUMABLE, RUN_RECORD_BYTES, type WireRuntime } from "./runtime.js";
 import { segmentIdOf } from "./seal.js";
 import { newScope, type RunRef, type RunScope } from "./scope.js";
 
@@ -526,7 +529,6 @@ export class SegmentTable {
   readonly #runtime: WireRuntime;
   readonly #runs = new Map<string, Run>();
   readonly #retired = new Map<string, Run>();
-  readonly #freeSlots: number[] = [];
   readonly #correlationOk: (id: string) => boolean;
   readonly #manifest: () => { readonly manifestId: string; readonly digest: string } | undefined;
   readonly #send: (message: RunMessage) => boolean;
@@ -550,7 +552,6 @@ export class SegmentTable {
       production: options.production,
       fallback: () => encodeOpaqueId(`source:${this.sourceId}:${runtime.epoch}`),
     });
-    for (let slot = MAX_RUNS - 1; slot >= 0; slot--) this.#freeSlots.push(slot);
     // R8: a token's correlation id becomes this process's run id, so it must be one this
     // process may emit as fabric.run.id in its effective identity mode.
     const check = recordChecks().get("fabric.run.id");
@@ -639,7 +640,7 @@ export class SegmentTable {
     this.#runs.delete(run.runId);
     if (run.ref.slot >= 0) {
       this.#runtime.setRunFlags(run.ref.slot, 0n);
-      this.#freeSlots.push(run.ref.slot);
+      this.#runtime.releaseRunSlot(run.ref.slot);
       run.ref.slot = -1;
     }
     this.#retired.delete(run.runId);
@@ -655,8 +656,8 @@ export class SegmentTable {
     if (live !== undefined) return live;
     const run = this.#retired.get(runId);
     if (run === undefined) return undefined;
-    const slot = this.#freeSlots.pop();
-    if (slot === undefined) return null;
+    const slot = this.#runtime.claimRunSlot();
+    if (slot < 0) return null;
     this.#retired.delete(runId);
     run.ref.slot = slot;
     this.#runs.set(runId, run);
@@ -970,8 +971,8 @@ export class SegmentTable {
       }
       const isNew = run === undefined;
       if (run === undefined) {
-        const slot = this.#freeSlots.pop();
-        if (slot === undefined) {
+        const slot = this.#runtime.claimRunSlot();
+        if (slot < 0) {
           this.#stats.run_slots_exhausted++;
           return undefined;
         }

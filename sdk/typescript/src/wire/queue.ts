@@ -27,6 +27,13 @@ const Q_WAKE = 3;
 const Q_PEAK = 4;
 /** Bytes of each record the ring owns: the cell's sequence word and the record kind. */
 export const RECORD_PREFIX_BYTES = 8;
+/**
+ * The kind {@link Ring.peek} reports for a cell the consumer voided ({@link Ring.voidStuck}):
+ * no record, only a slot to commit. No producer pushes this kind.
+ */
+export const RING_VOID = -1;
+/** A voided cell's sequence word, relative to its unpublished value (far from any lap). */
+const VOID_OFFSET = 1 << 30;
 
 export interface RingShared {
   readonly buffer: SharedArrayBuffer;
@@ -104,10 +111,52 @@ export class Ring {
       }
       words[cell + 1] = kind;
       this.bytes.set(body, cell * 4 + RECORD_PREFIX_BYTES);
-      Atomics.store(words, cell, (tail + 1 - index) | 0);
+      // Published with a compare-exchange: the consumer may have voided this cell
+      // ({@link voidStuck}) while this producer stalled past a teardown. Then the record
+      // is not delivered and the caller reports its loss; `count` stays with the voided
+      // cell, which the consumer commits.
+      const unpublished = (tail - index) | 0;
+      if (
+        Atomics.compareExchange(words, cell, unpublished, (tail + 1 - index) | 0) !== unpublished
+      ) {
+        return false;
+      }
       this.wake();
       return true;
     }
+  }
+
+  /**
+   * The head position and whether its cell was claimed by a producer that has not
+   * published it yet (the tail is past the head). Consumer only.
+   */
+  stuckHead(): number | undefined {
+    const words = this.words;
+    const head = Atomics.load(words, Q_HEAD);
+    if (Atomics.load(words, Q_TAIL) === head) return undefined;
+    const index = head & this.mask;
+    const cell = HEADER_BYTES / 4 + index * this.recordWords;
+    return Atomics.load(words, cell) === ((head - index) | 0) ? head : undefined;
+  }
+
+  /**
+   * Skips the head cell a producer claimed and never published (spec 055 §4.4: an
+   * application Worker terminated between its claim and its publish would otherwise stop
+   * the ring for the whole process). Consumer only, and only for `head` as
+   * {@link stuckHead} returned it a while ago: the cell becomes a {@link RING_VOID} record
+   * that {@link peek} returns and the consumer commits. `true` when it voided the cell; a
+   * producer that publishes first wins and nothing changes.
+   */
+  voidStuck(head: number): boolean {
+    const words = this.words;
+    if (Atomics.load(words, Q_HEAD) !== head) return false;
+    const index = head & this.mask;
+    const cell = HEADER_BYTES / 4 + index * this.recordWords;
+    const unpublished = (head - index) | 0;
+    return (
+      Atomics.compareExchange(words, cell, unpublished, (head - index + VOID_OFFSET) | 0) ===
+      unpublished
+    );
   }
 
   /** Wakes the consumer without waiting for it. */
@@ -127,8 +176,12 @@ export class Ring {
     const head = Atomics.load(words, Q_HEAD);
     const index = head & this.mask;
     const cell = HEADER_BYTES / 4 + index * this.recordWords;
-    if (((Atomics.load(words, cell) + index - (head + 1)) | 0) !== 0) return undefined;
+    const turn = (Atomics.load(words, cell) + index - head) | 0;
     const byteOffset = cell * 4 + RECORD_PREFIX_BYTES;
+    if (turn === VOID_OFFSET) {
+      return { kind: RING_VOID, body: this.bytes.subarray(byteOffset, byteOffset), byteOffset };
+    }
+    if (turn !== 1) return undefined;
     return {
       kind: words[cell + 1]!,
       body: this.bytes.subarray(byteOffset, cell * 4 + this.shared.recordBytes),
@@ -171,7 +224,8 @@ export class Ring {
     // 1: a record waits at the head; 0: none yet. A cell released for the next lap (and
     // perhaps refilled by a producer since) is a commit that did not finish.
     const ahead = (Atomics.load(words, cell) + index - head) | 0;
-    if (ahead < this.shared.cells) return false;
+    // A voided cell is a record still to commit, not a commit cut short.
+    if (ahead < this.shared.cells || ahead === VOID_OFFSET) return false;
     Atomics.store(words, Q_HEAD, (head + 1) | 0);
     Atomics.sub(words, Q_COUNT, 1);
     return true;
