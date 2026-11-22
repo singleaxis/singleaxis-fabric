@@ -218,7 +218,7 @@ describe.skipIf(!PUBLISHES_BODIES)("byte fixtures", () => {
   });
 
   describe("abort at three points", () => {
-    it("before headers: no response side, closed_early, the app's reason rejects as itself", async () => {
+    it("before headers, the app's own reason: no response side, error, the reason rejects as itself", async () => {
       server.route(CHAT, () => undefined); // never answers
       const controller = new AbortController();
       const reason = { why: "user" };
@@ -233,6 +233,23 @@ describe.skipIf(!PUBLISHES_BODIES)("byte fixtures", () => {
       expect(job!.responseState).toBe("error");
       // A non-error abort reason is never named: `Error`, not its class or content.
       expect(job!.undici.errorType).toBe("Error");
+      expect(job!.undici.statusCode).toBeUndefined();
+    });
+
+    it("before headers, a plain abort() (an SDK timeout or cancel): error, never closed_early", async () => {
+      // closed_early says a response was received (047 G2): the reader would report a
+      // response that never existed as missing_object(response_not_recorded). Python
+      // records an exception raised before the response as `error` (Exchange.fail).
+      server.route(CHAT, () => undefined); // never answers
+      const controller = new AbortController();
+      const pending = post(CHAT, { signal: controller.signal });
+      await settle(30);
+      controller.abort();
+      await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      await settle();
+      const [job] = cap.jobs();
+      expect(job!.response.state).toBe("absent");
+      expect([job!.responseState, job!.undici.errorType]).toEqual(["error", "AbortError"]);
       expect(job!.undici.statusCode).toBeUndefined();
     });
 

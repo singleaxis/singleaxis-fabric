@@ -654,8 +654,13 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
       if (entry === undefined || entry.done) return;
       const error = errorType((message as { error?: unknown }).error);
       entry.error = error;
-      // An abort is the application closing the call; anything else is a failure.
-      finish(entry, ERROR_TYPES[error] === "AbortError" ? "closed_early" : "error");
+      // An abort after the response headers is the application closing the response
+      // early; anything else is a failure. An abort before the headers is `error`, as
+      // Python records any exception raised before a response exists (`Exchange.fail`):
+      // `closed_early` says a response was received (047 G2), so the reader would report
+      // a response that never existed as `missing_object(response_not_recorded)`.
+      const aborted = ERROR_TYPES[error] === "AbortError" && (entry.flags & FLAG_HEADERS) !== 0;
+      finish(entry, aborted ? "closed_early" : "error");
     } catch {
       stats.faults++;
     }
