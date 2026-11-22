@@ -8,7 +8,15 @@
  * kept no bytes (found by the client matrix's local profile).
  */
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  linkSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -106,6 +114,42 @@ describe("FileContentClient", () => {
     expect(pythonSortedJson({ b: [1, "x"], a: null })).toBe('{"a": null, "b": [1, "x"]}');
   });
 
+  it("a temp name an interrupted write left is removed, so Python's reader accepts the object", async () => {
+    // A process killed between link() and unlink() leaves `.<id>.<uuid>.tmp` as a second
+    // link to the object; Python's reader refuses a file with more than one link. The
+    // record was not acknowledged, so the sender retries it: that retry must fix it.
+    const root = mkdtempSync(join(tmpdir(), "f055-t17-store-"));
+    const client = new FileContentClient(root, TENANT);
+    const body = Buffer.from('{"model":"m"}');
+    const d = descriptor(body);
+    const id = d.object_id as string;
+    expect(await client.send({ descriptor: d, body })).toBe("ok");
+    const evidence = join(root, TENANT, "evidence");
+    const object = join(evidence, id);
+    const meta = join(evidence, "meta", `${id}.json`);
+    linkSync(object, join(evidence, `.${id}.${randomUUID()}.tmp`));
+    linkSync(meta, join(evidence, "meta", `.${id}.json.${randomUUID()}.tmp`));
+    expect(statSync(object).nlink).toBe(2);
+    expect(await client.send({ descriptor: d, body })).toBe("ok");
+    expect([statSync(object).nlink, statSync(meta).nlink]).toEqual([1, 1]);
+    expect(readdirSync(evidence).filter((n) => n.endsWith(".tmp"))).toEqual([]);
+    const read = runPython(
+      [
+        "import json, sys",
+        "from fabric.content_store import LocalFilesystemContentStore",
+        "s = LocalFilesystemContentStore(root=sys.argv[1], tenant_id=sys.argv[2])",
+        "print(json.dumps({'hex': s.read(s.evidence_ref_for(sys.argv[3])).hex()}))",
+      ].join("\n"),
+      [root, TENANT, id],
+    ) as { hex: string };
+    expect(Buffer.from(read.hex, "hex")).toEqual(body);
+    // A second name Fabric did not make is never removed: the object is refused.
+    const foreign = join(root, "elsewhere");
+    linkSync(object, foreign);
+    expect(await client.send({ descriptor: d, body })).toBe("rejected");
+    expect(statSync(foreign).nlink).toBe(2);
+  });
+
   it("never overwrites an object stored with other bytes; a foreign tenant is rejected", async () => {
     const root = mkdtempSync(join(tmpdir(), "f055-t17-store-"));
     const client = new FileContentClient(root, TENANT);
@@ -119,4 +163,4 @@ describe("FileContentClient", () => {
     expect(await client.send({ descriptor: foreign, body: new Uint8Array() })).toBe("rejected");
     expect(await client.send({ descriptor: { object_id: "../x" }, body })).toBe("rejected");
   });
-});
+}, 60_000); // each case runs the Python store as its oracle

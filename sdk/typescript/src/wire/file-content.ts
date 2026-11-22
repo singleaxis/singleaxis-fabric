@@ -73,16 +73,42 @@ function readExisting(target: string): Buffer | undefined {
 }
 
 /**
+ * Removes the temp names this writer left for `name` (`.<name>.<uuid>.tmp`) that are
+ * still hard links to the stored object: a process that died between `link` and
+ * `unlink` leaves one, and Python's reader refuses an object file with more than one
+ * link (`_read_at`: "unsafe local content file"), so the object would never be read.
+ */
+function dropStaleNames(directory: string, name: string, target: string): void {
+  const stored = fs.lstatSync(target);
+  if (stored.nlink <= 1) return;
+  const prefix = `.${name}.`;
+  for (const entry of fs.readdirSync(directory)) {
+    if (!entry.startsWith(prefix) || !entry.endsWith(".tmp")) continue;
+    const candidate = path.join(directory, entry);
+    const info = fs.lstatSync(candidate, { throwIfNoEntry: false });
+    if (info?.isFile() && info.ino === stored.ino && info.dev === stored.dev) {
+      fs.unlinkSync(candidate);
+    }
+  }
+  // Another name Fabric did not make: the object is unsafe to read, never ours to fix.
+  if (fs.lstatSync(target).nlink !== 1) throw new Conflict("a stored object has other links");
+}
+
+/**
  * Writes `name` in `directory` once, create-only: the bytes go to a fresh temp file
  * (fsync'd), which is then hard-linked to the name, an operation that fails if the name
  * exists, so nothing is ever replaced and no check races the write. The same bytes
- * already there are fine; other bytes conflict.
+ * already there are fine; other bytes conflict. The temp name is removed before the
+ * write counts as done (a failure to remove it is a retry, never `ok`), because the
+ * reader refuses an object with a second link; a later attempt removes a temp name an
+ * earlier, interrupted one left.
  */
 function createOnce(directory: string, name: string, data: Uint8Array): void {
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   const target = path.join(directory, name);
   const temp = path.join(directory, `.${name}.${randomUUID()}.tmp`);
   const fd = fs.openSync(temp, "wx", 0o600);
+  let linked = false;
   try {
     try {
       let offset = 0;
@@ -93,20 +119,26 @@ function createOnce(directory: string, name: string, data: Uint8Array): void {
     }
     try {
       fs.linkSync(temp, target);
+      linked = true;
     } catch (error) {
       if ((error as { code?: unknown }).code !== "EEXIST") throw error;
-      const existing = readExisting(target);
-      if (existing === undefined || !existing.equals(data)) {
-        throw new Conflict("a stored object differs");
-      }
-      return;
     }
   } finally {
     try {
       fs.unlinkSync(temp);
-    } catch {
-      // best effort: a leftover temp is never read as an object
+    } catch (error) {
+      // Unlinked, an unlinked temp is never read as an object. Still linked, the object
+      // has two names and the reader refuses it: not done (`retry`).
+      if (linked) throw error;
     }
+  }
+  if (!linked) {
+    const existing = readExisting(target);
+    if (existing === undefined || !existing.equals(data)) {
+      throw new Conflict("a stored object differs");
+    }
+    dropStaleNames(directory, name, target);
+    return;
   }
   const dir = fs.openSync(directory, "r");
   try {
