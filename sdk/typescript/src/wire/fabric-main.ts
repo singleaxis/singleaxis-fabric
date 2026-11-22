@@ -228,7 +228,8 @@ export function runFabricMain(): Promise<void> | undefined {
         onUnattached: (cut) =>
           pipeline.classUncaptured(context.runtime.epoch, "node_worker_unattached", cut),
       });
-      isolates.poll();
+      // During the orderly stop, a thread still pending is counted (final manifest).
+      isolates.poll(context.runtime.stopRequested);
     } catch {
       // the next tick polls again
     }

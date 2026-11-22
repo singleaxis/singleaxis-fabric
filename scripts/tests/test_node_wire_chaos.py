@@ -370,6 +370,52 @@ def test_parent_sigkill_with_a_live_fork_child(chaos: Chaos) -> None:
     _record("fork_parent_sigkill", chaos, report)
 
 
+def test_application_worker_terminated_mid_exchange(chaos: Chaos) -> None:
+    """An application worker thread is terminated with a call open (spec 055 §4.4, §6.4,
+    unit 055-t19): its open position is a named ``shutdown`` loss, never a hole and never
+    a synthetic answer; its completed call and the main thread's are delivered; the agent
+    runs on unchanged, and its record never verifies complete."""
+    process = chaos.start(
+        CHAOS_CALLS="1",
+        CHAOS_WORKER="terminate",
+        CHAOS_HANG_BASE=f"{chaos.provider.base}/never",
+        FABRIC_WIRE_DRAIN_ON_EXIT_S="30",
+    )
+    out, err = process.communicate(timeout=180)
+    assert process.returncode == 0, err
+    chaos.provider.release.set()  # the provider's held request ends
+    lines = [json.loads(line) for line in out.splitlines() if line.strip()]
+    assert {"role": "worker", "sent": 200} in lines, lines
+    status = json.loads(
+        (chaos.root / f"p{chaos.count}" / "fabric-status.json").read_text()
+    )
+    assert status["stats"]["workers_attached"] == 1, status
+    assert status["stats"]["worker_positions_shutdown"] == 1, status
+    chaos.account()
+    chaos.drain()
+    report = chaos.read()
+    exchanges = _exchanges(report)
+    assert len({e["exchange_id"] for e in exchanges}) == 2
+    assert chaos.records() == []
+    lost = Counter(
+        r["reason"]
+        for s in report["sources"]
+        for r in s["loss_ranges"]
+        for _ in range(r["count"])
+    )
+    assert lost == Counter(shutdown=1), report["sources"]
+    # Every position of the agent's epoch is an exchange or that named loss.
+    for source in report["sources"]:
+        named = {
+            n for r in source["loss_ranges"]
+            for n in range(r["first_sequence"], r["last_sequence"] + 1)
+        }  # fmt: skip
+        missing = {n for a, b in source["missing_sequences"] for n in range(a, b + 1)}
+        assert missing <= named, source
+    assert _verdicts(report).get("complete", 0) == 0, report["runs"]
+    _record("worker_terminated", chaos, report)
+
+
 PY_AGENT = """
 import json, sys
 import httpx

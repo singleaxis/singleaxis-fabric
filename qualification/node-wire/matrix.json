@@ -94,8 +94,12 @@
       "transport": "a pinned HTTP/1 client library over core http (optional)"
     },
     {
-      "id": "worker-threads-cluster", "gate": "TS-1D", "deferred": "055-t19",
-      "transport": "worker_threads pools and cluster"
+      "id": "worker-threads-cluster", "gate": "TS-1D",
+      "transport": "global fetch from a worker_threads pool (4 file Workers, one with execArgv: []), an eval: true Worker and an env: {} Worker the NODE_OPTIONS preload does not reach (worker-reach.json), and two cluster.fork() children",
+      "script": "workers.mjs", "dialect": "openai", "profiles": ["local", "production"],
+      "test": "scripts/tests/test_node_wire_matrix.py",
+      "scenarios": ["pool", "eval", "env_empty", "cluster", "main"],
+      "expect": {"verdict": "complete_for_declared_scope", "uncaptured_paths": ["/unattached-"], "declared_class": "node_worker_unattached", "epochs": 3, "status_ids": ["FW-030"]}
     }
   ]
 }

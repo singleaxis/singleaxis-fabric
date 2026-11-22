@@ -376,8 +376,12 @@ export class IsolateWatch {
     this.#runtime.countUnattached();
   }
 
-  /** One poll: at most every tick. Never throws. */
-  poll(): IsolatePoll {
+  /**
+   * One poll: at most every tick. Never throws. `final` (the passes of the orderly stop):
+   * a created thread still not attached is counted now, whatever is left of its grace
+   * period, so the epoch's final manifest declares it.
+   */
+  poll(final = false): IsolatePoll {
     let detached = 0;
     let shutdown = 0;
     let overflow = false;
@@ -397,7 +401,7 @@ export class IsolateWatch {
           shutdown += settled;
         }
       }
-      this.#pendingScan();
+      this.#pendingScan(final);
       this.#staleLock();
       this.#stuckRings();
       if (!this.#declared && this.#runtime.stats().isolates.unattached > 0n) {
@@ -430,7 +434,7 @@ export class IsolateWatch {
   }
 
   /** Created threads that did not attach within the grace period are counted. */
-  #pendingScan(): void {
+  #pendingScan(final: boolean): void {
     const runtime = this.#runtime;
     const now = this.#now();
     for (let entry = 0; entry < MAX_PENDING_THREADS; entry++) {
@@ -447,7 +451,7 @@ export class IsolateWatch {
       if (runtime.threadAttached(id)) {
         runtime.clearPendingThread(entry, id);
         this.#pending.delete(entry);
-      } else if (now - seen.since >= this.#grace) {
+      } else if (final || now - seen.since >= this.#grace) {
         runtime.clearPendingThread(entry, id);
         this.#pending.delete(entry);
         // A thread that ran Fabric without the runtime may have said so already.

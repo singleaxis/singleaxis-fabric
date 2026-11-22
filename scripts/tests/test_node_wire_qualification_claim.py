@@ -5,8 +5,9 @@
 No Node.js needed. Checks that:
 
 - ``qualification/node-wire/matrix.json`` has every TS-1U and TS-1D row of §9.3 and its
-  negative rows, each naming a client script that exists and a test that runs it; core
-  HTTP and worker rows are deferred to their units; no row, script or test is named after
+  negative rows, each naming a client script that exists and a test that runs it (the
+  worker_threads and cluster row since unit 055-t19); core HTTP rows are deferred to
+  055-t22; no row, script or test is named after
   an agent framework, agent SDK or guardrail library;
 - every case of ``chaos/cases.json`` and every criterion of ``conformance.json``
   (C0-1..5, C0A-1..4, C1-1..5) names tests that exist;
@@ -36,13 +37,12 @@ REGISTRY = (
 REQUIRED_ROWS = {
     "fetch-esm": "TS-1U", "fetch-cjs": "TS-1U", "undici-external": "TS-1U",
     "openai": "TS-1U", "anthropic": "TS-1U", "custom-fetch": "TS-1U",
-    "tool-loop-fan-out": "TS-1D",
+    "tool-loop-fan-out": "TS-1D", "worker-threads-cluster": "TS-1D",
 }  # fmt: skip
 NEGATIVE_ROWS = {
     "node-22", "node-24.0", "missing-prebuild", "bun-deno", "unsupported-endpoints",
 }  # fmt: skip
-DEFERRED = {"core-http": "055-t22", "core-http-library": "055-t22",
-            "worker-threads-cluster": "055-t19"}  # fmt: skip
+DEFERRED = {"core-http": "055-t22", "core-http-library": "055-t22"}
 # AGENTS.md: capture never depends on, or is named after, an agent framework.
 FRAMEWORKS = re.compile(
     r"langchain|langgraph|llamaindex|llama_index|crewai|autogen|mastra|vercel[-_ ]?ai|"
@@ -107,7 +107,7 @@ def test_every_chaos_case_names_tests_that_exist() -> None:
     cases = _json(HARNESS / "chaos" / "cases.json")["cases"]
     for case in cases:
         if "deferred" in case:
-            assert case["deferred"] in {"055-t19", "055-t22"}, case
+            assert case["deferred"] == "055-t22", case
             continue
         assert case["tests"], case["id"]
         for ref in case["tests"]:

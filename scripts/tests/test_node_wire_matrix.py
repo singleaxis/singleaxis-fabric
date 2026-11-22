@@ -298,6 +298,34 @@ def _check_record(
         assert declared and all(
             expect["uncaptured_class"] in (d or []) for d in declared
         )
+    if "declared_class" in expect:
+        # A class learned after install (spec 055 §4.5: a worker thread that did not
+        # attach): manifest 0 of that process could not know it; a chained manifest of
+        # the same epoch declares it from its cut on.
+        chains: dict[Any, list[dict[str, Any]]] = {}
+        for r in rows:
+            if r.get("kind") == "span" and r.get("name") == "fabric.capture_manifest":
+                attrs = r["attributes"]
+                chains.setdefault(attrs.get("fabric.source.epoch"), []).append(attrs)
+        declaring = [
+            chain
+            for chain in chains.values()
+            if any(
+                expect["declared_class"]
+                in (a.get("fabric.manifest.uncaptured_classes") or [])
+                for a in chain
+            )
+        ]
+        assert declaring, chains
+        for chain in declaring:
+            first = min(chain, key=lambda a: a["fabric.manifest.manifest_seq"])
+            assert expect["declared_class"] not in (
+                first.get("fabric.manifest.uncaptured_classes") or []
+            )
+    if "epochs" in expect:
+        # One process, one epoch: cluster.fork() children register their own (§6.4).
+        epochs = {e.get("source_epoch") for e in exchanges}
+        assert len(epochs) == expect["epochs"], epochs
     return {
         "exchanges": len(exchanges),
         "attempts": len(attempts),
