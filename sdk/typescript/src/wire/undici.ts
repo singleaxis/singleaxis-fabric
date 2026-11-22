@@ -156,6 +156,16 @@ export interface UndiciHookOptions {
    * hook subscribes to nothing rather than record an empty body as exact.
    */
   readonly publishesBodies?: boolean;
+  /**
+   * Which undici copies may publish a captured exchange. `bundled` (what `install()`
+   * passes): only the undici inside this Node.js build, the one the qualification table
+   * names. A matched request published by any other copy (an external `undici` package)
+   * is never captured: its position is an `uninstrumented_client` loss, so the record
+   * names the gap and the run cannot verify complete (spec 055 §3.1, TS-OD-6). `any`
+   * (default) captures every publisher; tests that publish undici's messages themselves
+   * use it.
+   */
+  readonly publishers?: "bundled" | "any";
 }
 
 /** Content-free counters (spec 055 §4.7 reads them for the status document). */
@@ -175,6 +185,11 @@ export interface UndiciHookStats {
   collected: number;
   /** Failures caught inside a subscriber; never seen by the application. */
   faults: number;
+  /**
+   * Matched requests published by an undici copy that is not this Node.js build's own
+   * (an external `undici` package), recorded as `uninstrumented_client` losses (FW-035).
+   */
+  unqualifiedPublisher: number;
 }
 
 /**
@@ -327,6 +342,73 @@ export function activeSpanParent(): ParentContext | undefined {
  * Subscribes the hook. Synchronous; never throws (a failure leaves nothing subscribed and
  * is reported by the caller as a disabled point).
  */
+// ------------------------------------------------------------------- publishers
+
+/** Request prototype -> whether this Node.js build's own undici publishes it. */
+const PUBLISHERS = new WeakMap<object, boolean>();
+/** Where Node.js keeps its bundled undici (`lib/internal/deps/undici/undici.js`). */
+const BUNDLED_FILE = "node:internal/deps/undici/";
+
+/**
+ * Whether `request` (the `request` of an `undici:request:create` message) comes from the
+ * undici bundled with this Node.js build. Each undici copy has its own core `Request`
+ * class, so the answer is decided once per class, on its first matched request: the
+ * first stack frame below `diagnostics_channel`'s publish names the publishing file.
+ * Reads V8 call sites only (no file, no application code: `Error.prepareStackTrace` is
+ * swapped for the read and put back, and left alone when the application made it an
+ * accessor or read-only). A class that cannot be decided is not the bundled one.
+ */
+export function bundledPublisher(request: object): boolean {
+  const proto = Object.getPrototypeOf(request) as object | null;
+  if (proto === null) return false;
+  let known = PUBLISHERS.get(proto);
+  if (known === undefined) {
+    known = publisherFileIsBundled();
+    PUBLISHERS.set(proto, known);
+  }
+  return known;
+}
+
+function publisherFileIsBundled(): boolean {
+  const E = Error as unknown as {
+    prepareStackTrace?: unknown;
+    stackTraceLimit: number;
+    captureStackTrace(target: object): void;
+  };
+  for (const name of ["prepareStackTrace", "stackTraceLimit"]) {
+    const d = Object.getOwnPropertyDescriptor(Error, name);
+    if (d !== undefined && (d.get !== undefined || d.set !== undefined || d.writable !== true)) {
+      return false;
+    }
+  }
+  const prepare = E.prepareStackTrace;
+  const limit = E.stackTraceLimit;
+  const holder: { stack?: unknown } = {};
+  try {
+    E.prepareStackTrace = (_e: unknown, sites: unknown) => sites;
+    E.stackTraceLimit = 32;
+    E.captureStackTrace(holder);
+    const sites = holder.stack;
+    if (!Array.isArray(sites)) return false;
+    let published = false;
+    for (const site of sites as { getFileName(): unknown }[]) {
+      const file = site.getFileName();
+      if (typeof file !== "string") continue;
+      if (file === "node:diagnostics_channel") {
+        published = true;
+        continue;
+      }
+      if (published) return file.startsWith(BUNDLED_FILE);
+    }
+    return false;
+  } catch {
+    return false;
+  } finally {
+    E.prepareStackTrace = prepare;
+    E.stackTraceLimit = limit;
+  }
+}
+
 export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
   const table = options.table;
   const index = new EndpointIndex(options.endpoints);
@@ -346,7 +428,9 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
     informational: 0,
     collected: 0,
     faults: 0,
+    unqualifiedPublisher: 0,
   };
+  const bundledOnly = options.publishers === "bundled";
   const collected = new FinalizationRegistry<Entry>((entry) => {
     try {
       if (entry.done) return;
@@ -425,6 +509,14 @@ export function installUndiciHook(options: UndiciHookOptions): UndiciHook {
         // this call, so it is not captured; counted, never the agent's problem.
         stats.faults++;
         stats.notCaptured++;
+        return;
+      }
+      if (bundledOnly && !bundledPublisher(request)) {
+        // Another undici copy published this call: its bytes are never taken as
+        // qualified evidence. The position is a named gap instead of a silent miss.
+        stats.unqualifiedPublisher++;
+        stats.notCaptured++;
+        table.uninstrumented(scope?.runSlot);
         return;
       }
       let parent: ParentContext | undefined;

@@ -102,7 +102,14 @@ export type RuntimeFailureReason = (typeof FAILURE_REASONS)[number];
 
 /** Reasons an allocated position is lost in the shared runtime (Python `LossReason`). */
 /** Loss reasons the runtime carries; `disk_full` comes from the Fabric worker's spool admission. */
-export const LOSS_REASONS = ["queue_full", "internal_error", "shutdown", "disk_full"] as const;
+export const LOSS_REASONS = [
+  "queue_full",
+  "internal_error",
+  "shutdown",
+  "disk_full",
+  // A matched call published by an undici copy the table does not qualify (spec 055 §3.1).
+  "uninstrumented_client",
+] as const;
 export type RuntimeLossReason = (typeof LOSS_REASONS)[number];
 
 export type IsolateRole = "installer" | "worker" | "application";
@@ -657,6 +664,7 @@ export class WireRuntime {
         internal_error: Atomics.load(i64, C_LOSSES + 1),
         shutdown: Atomics.load(i64, C_LOSSES + 2),
         disk_full: Atomics.load(i64, C_LOSSES + 3),
+        uninstrumented_client: Atomics.load(i64, C_LOSSES + 4),
       },
       lossesUnattributed: Atomics.load(i64, C_UNATTRIBUTED),
       lockTimeouts: Atomics.load(i64, C_LOCK_TIMEOUTS),

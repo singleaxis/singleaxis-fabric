@@ -762,3 +762,12 @@ be used.
 
 Fix: set FABRIC_WIRE_SPOOL_DIR to a directory on a local disk that the agent's user owns and no
 other user can write; the status names the reason.
+
+### FW-035
+
+`node_undici_copy_unqualified`, warning: a model call was sent through an undici copy that is not
+this Node.js build's own: it was not recorded, and the record names the gap as an
+uninstrumented_client loss.
+
+Fix: send model calls through global fetch or a client that uses it (the official openai and
+@anthropic-ai/sdk clients do); calls through the undici package are not recorded by this release.

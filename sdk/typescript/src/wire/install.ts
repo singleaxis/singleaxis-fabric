@@ -521,6 +521,8 @@ function installWith(
     endpoints,
     scope: captureScope,
     providerRequestId: settings.providerRequestId,
+    // Only Node's own undici is in the table; another copy's calls are named losses.
+    publishers: "bundled",
   });
   undo.push(() => hook.uninstall());
   if (!hook.installed) throw new Error("the undici hook subscribed nothing");
@@ -528,6 +530,7 @@ function installWith(
     matched: hook.stats.matched,
     not_captured: hook.stats.notCaptured,
     unmatched_model_shaped: hook.stats.unmatchedModelShaped,
+    unqualified_publisher: hook.stats.unqualifiedPublisher,
   });
   let exitStatus: StatusDocument | undefined;
 

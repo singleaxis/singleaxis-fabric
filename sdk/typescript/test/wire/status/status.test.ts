@@ -160,6 +160,8 @@ function emittedByScenarios(): Set<string> {
   writeFileSync(join(left, ".exit-backlog"), "{}");
   add(envStatus({ ...base(dir), FABRIC_WIRE_SPOOL_DIR: left }));
   add(exitDocument({ warning_ids: [], notice_ids: [] }, false, { backlog: 3 })); // FW-033
+  // An external undici copy published matched calls (FW-035).
+  add(exitDocument({ warning_ids: [], notice_ids: [] }, true, { unqualified_publisher: 1 }));
   // The installing thread's counters: an unmatched model-shaped request (FW-006).
   const runtime = currentRuntime(n.build.target);
   add(

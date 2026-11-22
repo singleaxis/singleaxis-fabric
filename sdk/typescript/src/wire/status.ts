@@ -98,6 +98,8 @@ export interface HookCounters {
   readonly matched: number;
   readonly not_captured: number;
   readonly unmatched_model_shaped: number;
+  /** Matched calls an unqualified undici copy published (FW-026); absent: none. */
+  readonly unqualified_publisher?: number;
 }
 
 /** What decides an install-phase document. */
@@ -337,6 +339,10 @@ export function describe(facts: StatusFacts): {
     status.not_captured = facts.counters.not_captured;
     status.unmatched_model_shaped = facts.counters.unmatched_model_shaped;
     if (facts.counters.unmatched_model_shaped > 0) ids.push("FW-006");
+    if ((facts.counters.unqualified_publisher ?? 0) > 0) {
+      status.unqualified_publisher = facts.counters.unqualified_publisher;
+      ids.push("FW-035");
+    }
   }
   const rows = unmatchedRows(facts.unmatched);
   if (rows.length > 0) {
@@ -437,6 +443,9 @@ export function exitDocument(
   );
   if ((clean.backlog ?? 0) > 0) ids.add("FW-033");
   if ((clean.unmatched_model_shaped ?? 0) > 0) ids.add("FW-006");
+  // An external undici copy published matched calls: they are uninstrumented_client
+  // losses: no undici copy but Node's own is qualified (spec 055 §3.1).
+  if ((clean.unqualified_publisher ?? 0) > 0) ids.add("FW-035");
   const rows = unmatchedRows(unmatched);
   if (rows.length > 0) ids.add("FW-006");
   return {

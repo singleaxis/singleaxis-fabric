@@ -256,6 +256,28 @@ export class ExchangeTable {
   }
 
   /**
+   * A matched call no qualified point can capture (spec 055 §3.1: an undici copy the
+   * table does not list published it): a position allocated in the caller's run and
+   * recorded at once as an `uninstrumented_client` loss, so the record names the gap.
+   * Never throws.
+   */
+  uninstrumented(runSlot = -1): void {
+    try {
+      const runtime = this.runtime;
+      if (!runtime.running) {
+        runtime.countRefused();
+        return;
+      }
+      const lost = runtime.allocate(runSlot);
+      if (!lost.lost) {
+        runtime.lose("uninstrumented_client", lost.sequence, lost.segmentHi, lost.segmentLo);
+      }
+    } catch {
+      // Never the caller's problem.
+    }
+  }
+
+  /**
    * Retains one observed chunk, copying it once before returning. Returns `false` when
    * the chunk was not retained; the caller forwards the data unchanged either way.
    * A string is encoded with the same Node encoder and encoding as the original write.

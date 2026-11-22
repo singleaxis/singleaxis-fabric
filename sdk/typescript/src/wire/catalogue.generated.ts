@@ -9,10 +9,10 @@ import type { CatalogueEntry } from "./types.js";
 export const CATALOGUE_SCHEMA = "fabric.diagnostics/v1";
 
 /** Every FW- id of the catalogue. */
-export type CatalogueId = "FW-001" | "FW-002" | "FW-003" | "FW-004" | "FW-005" | "FW-006" | "FW-007" | "FW-008" | "FW-009" | "FW-010" | "FW-011" | "FW-012" | "FW-013" | "FW-014" | "FW-015" | "FW-016" | "FW-017" | "FW-018" | "FW-019" | "FW-020" | "FW-021" | "FW-022" | "FW-023" | "FW-024" | "FW-025" | "FW-026" | "FW-027" | "FW-028" | "FW-029" | "FW-030" | "FW-031" | "FW-032" | "FW-033" | "FW-034";
+export type CatalogueId = "FW-001" | "FW-002" | "FW-003" | "FW-004" | "FW-005" | "FW-006" | "FW-007" | "FW-008" | "FW-009" | "FW-010" | "FW-011" | "FW-012" | "FW-013" | "FW-014" | "FW-015" | "FW-016" | "FW-017" | "FW-018" | "FW-019" | "FW-020" | "FW-021" | "FW-022" | "FW-023" | "FW-024" | "FW-025" | "FW-026" | "FW-027" | "FW-028" | "FW-029" | "FW-030" | "FW-031" | "FW-032" | "FW-033" | "FW-034" | "FW-035";
 
 /** The ids TypeScript may emit: entries whose `sdk` list names typescript. */
-export type TypeScriptCatalogueId = "FW-002" | "FW-003" | "FW-005" | "FW-006" | "FW-007" | "FW-008" | "FW-010" | "FW-012" | "FW-013" | "FW-014" | "FW-015" | "FW-017" | "FW-018" | "FW-019" | "FW-020" | "FW-022" | "FW-023" | "FW-024" | "FW-025" | "FW-026" | "FW-027" | "FW-028" | "FW-029" | "FW-030" | "FW-031" | "FW-032" | "FW-033" | "FW-034";
+export type TypeScriptCatalogueId = "FW-002" | "FW-003" | "FW-005" | "FW-006" | "FW-007" | "FW-008" | "FW-010" | "FW-012" | "FW-013" | "FW-014" | "FW-015" | "FW-017" | "FW-018" | "FW-019" | "FW-020" | "FW-022" | "FW-023" | "FW-024" | "FW-025" | "FW-026" | "FW-027" | "FW-028" | "FW-029" | "FW-030" | "FW-031" | "FW-032" | "FW-033" | "FW-034" | "FW-035";
 
 export const TYPESCRIPT_IDS: readonly TypeScriptCatalogueId[] = [
   "FW-002",
@@ -42,7 +42,8 @@ export const TYPESCRIPT_IDS: readonly TypeScriptCatalogueId[] = [
   "FW-031",
   "FW-032",
   "FW-033",
-  "FW-034"
+  "FW-034",
+  "FW-035"
 ];
 
 export const CATALOGUE: readonly CatalogueEntry[] = [
@@ -388,5 +389,15 @@ export const CATALOGUE: readonly CatalogueEntry[] = [
     ],
     "text": "model-call capture is off: the spool directory is not set or cannot be used",
     "fix": "set FABRIC_WIRE_SPOOL_DIR to a directory on a local disk that the agent's user owns and no other user can write; the status names the reason"
+  },
+  {
+    "id": "FW-035",
+    "name": "node_undici_copy_unqualified",
+    "severity": "warning",
+    "sdk": [
+      "typescript"
+    ],
+    "text": "a model call was sent through an undici copy that is not this Node.js build's own: it was not recorded, and the record names the gap as an uninstrumented_client loss",
+    "fix": "send model calls through global fetch or a client that uses it (the official openai and @anthropic-ai/sdk clients do); calls through the undici package are not recorded by this release"
   }
 ];

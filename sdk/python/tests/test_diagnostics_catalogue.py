@@ -89,7 +89,7 @@ def test_sdk_lists_name_known_sdks_on_sdk_entries_only() -> None:
         "node_capture_not_installed", "node_runtime_unqualified", "node_platform_unsupported",
         "node_native_unusable", "node_hook_disabled", "node_worker_unattached",
         "node_autoload_off", "node_redacted_roles", "node_spool_backlog",
-        "node_spool_unusable",
+        "node_spool_unusable", "node_undici_copy_unqualified",
     }  # fmt: skip
 
 
