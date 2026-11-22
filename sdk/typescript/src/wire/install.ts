@@ -193,6 +193,12 @@ function inert(
   return handle;
 }
 
+/** Whether this is Bun or Deno running Node.js code, not Node.js itself. */
+export function nonNodeRuntime(): boolean {
+  const versions = process.versions as Record<string, string | undefined>;
+  return versions.bun !== undefined || versions.deno !== undefined || "Deno" in globalThis;
+}
+
 /** The runtime facts every document carries, before anything is loaded. */
 function runtimeFacts(table: QualificationTable, platform: string | null = nativeTarget()) {
   const runtime = currentRuntime(platform);
@@ -303,6 +309,9 @@ function installChecked(
 ): WireHandle {
   const file = settings.statusFile;
   const base = { settings, ...runtimeFacts(table) };
+  // Bun and Deno report a Node.js version for compatibility, but they are not a Node.js
+  // build in the qualification table: capture never starts there (spec 055 §9.3).
+  if (nonNodeRuntime()) return inert(Reason.unsupportedRuntime, base, file);
   if (settings.otelSdkDisabled) return inert(Reason.otelSdkDisabled, base, file);
   if (settings.spoolDir === undefined) return inert(Reason.noSpool, base, file);
   const entry = options.workerEntry ?? moduleFile();

@@ -67,6 +67,52 @@ describe("install()", { timeout: 60_000 }, () => {
     expect(existsSync(epochs) ? readdirSync(epochs) : []).toEqual([]);
   });
 
+  it("under Bun or Deno it sets nothing up and names unsupported_runtime (FW-026)", () => {
+    const dir = spoolDir();
+    const n = native();
+    const listeners = process.listenerCount("beforeExit");
+    (globalThis as Record<string, unknown>).Deno = {};
+    try {
+      const handle = install({
+        env: env(dir),
+        native: { prebuildsDir: n.build.dir, digests: { [n.build.target]: n.digest } },
+        qualification: activeHere(n.build.target),
+      });
+      expect(handle.capturing).toBe(false);
+      expect(handle.reason).toBe("unsupported_runtime");
+      expect(handle.status().warning_ids).toContain("FW-026");
+    } finally {
+      delete (globalThis as Record<string, unknown>).Deno;
+    }
+    expect(process.listenerCount("beforeExit")).toBe(listeners);
+    const epochs = join(dir, ".epochs");
+    expect(existsSync(epochs) ? readdirSync(epochs) : []).toEqual([]);
+  });
+
+  it.runIf(NODE_24)(
+    "a table whose gates have not passed activates nothing (049 TS-1, spec 055 §1)",
+    () => {
+      const dir = spoolDir();
+      const n = native();
+      const table = activeHere(n.build.target);
+      for (const gates of [
+        { "TS-1U": "not_passed", "TS-1D": "passed", "TS-1H": "passed" },
+        { "TS-1U": "passed", "TS-1D": "not_passed", "TS-1H": "passed" },
+      ]) {
+        resetInstalledForTests();
+        const handle = install({
+          env: env(dir),
+          native: { prebuildsDir: n.build.dir, digests: { [n.build.target]: n.digest } },
+          qualification: { ...table, gates },
+        });
+        expect(handle.capturing).toBe(false);
+        const points = handle.status().status?.capture_points as Record<string, string>;
+        expect(points["wire.ts.undici"]).toBe("unsupported");
+        expect(handle.status().warning_ids).toContain("FW-026");
+      }
+    },
+  );
+
   it.runIf(NODE_24)(
     "a failure that is not configuration returns an inert handle and undoes the setup",
     async () => {

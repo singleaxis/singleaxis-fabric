@@ -138,6 +138,8 @@ export const Reason = Object.freeze({
   fabricWorker: "fabric_worker",
   internalError: "internal_error",
   noActivePoint: "no_active_point",
+  /** Bun or Deno: their Node.js compatibility is not a qualified Node.js build (§9.3). */
+  unsupportedRuntime: "unsupported_runtime",
 } as const);
 
 const SEVERITY = new Map(CATALOGUE.map((entry) => [entry.id, entry]));
@@ -302,6 +304,7 @@ export function describe(facts: StatusFacts): {
   if (facts.reason === Reason.autoloadOff || facts.autoloadOff === true) ids.push("FW-031");
   if (facts.reason === Reason.otelSdkDisabled) ids.push("FW-007");
   if (facts.reason === Reason.workerThread) ids.push("FW-030");
+  if (facts.reason === Reason.unsupportedRuntime) ids.push("FW-026");
   if (facts.reason === Reason.noSpool || facts.reason === Reason.spoolUnusable) ids.push("FW-034");
   if (facts.statusFileUnwritable === true) ids.push("FW-023");
   if (settings !== undefined) {
