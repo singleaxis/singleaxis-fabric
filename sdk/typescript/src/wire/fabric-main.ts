@@ -113,6 +113,21 @@ export interface StopResult {
 
 /** Of the stop budget, kept back so the worker exits on its own before it is terminated. */
 const STOP_MARGIN = 0.1;
+/**
+ * At least this much of the stop budget is kept back (never more than half of it): after
+ * delivery the worker still writes the exit note and the exit status file and posts its
+ * result, and the installing thread terminates it when the budget ends. With the default
+ * 2 s budget, 10% (200 ms) was too little under load: the exit status was sometimes never
+ * written (found by the 055-t17 review in the packed-tarball test).
+ */
+const STOP_RESERVE_MS = 500;
+
+/** When delivery must end so the rest of the stop fits in the budget (`start` to `deadline`). */
+export function deliveryDeadline(start: number, deadline: number): number {
+  const budget = Math.max(0, deadline - start);
+  const reserve = Math.min(budget / 2, Math.max(budget * STOP_MARGIN, STOP_RESERVE_MS));
+  return start + budget - reserve;
+}
 /** How long the stop waits for a pass its closed clients cut short to end. */
 const LATE_PASS_MS = 50;
 
@@ -305,9 +320,8 @@ async function stopDelivery(
   const start = performance.now();
   const deadline = context.stop?.deadline ?? start + snapshot.shutdownTimeoutMs;
   const exiting = context.stop?.exiting === true;
-  const budget = Math.max(0, deadline - start);
   sender.start();
-  const delivered = await sender.close(start + budget * (1 - STOP_MARGIN), { exiting });
+  const delivered = await sender.close(deliveryDeadline(start, deadline), { exiting });
   let backlog = 0;
   try {
     backlog = sender.exitBacklog();
