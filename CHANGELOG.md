@@ -15,6 +15,33 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js model-call capture is qualified, undici only (spec 055, unit
+  055-t17).** The gates `TS-1U` (`wire.ts.undici`) and `TS-1D` (protection,
+  spool, sender and readback) passed, so a release may carry the
+  `@singleaxis/fabric/register` preload. Capture is active only on the exact
+  builds the compatibility table lists: Node.js 24.4.0 and 24.22.3 on Linux x64
+  with glibc, with Node's bundled undici. Every CI gate passed on each of them and
+  its report is committed under `qualification/node-wire/results/`: passivity,
+  privacy, Python/TypeScript parity, a client matrix (global `fetch` from ES module
+  and CommonJS apps, the official `openai` and `@anthropic-ai/sdk` clients, a
+  custom `fetch`, a plain tool loop with a 16-way fan-out), the negative rows
+  (Node 22, Node 24.0, Bun, Deno, unsupported endpoints), a chaos suite of real
+  processes sharing one spool, and a Node.js agent recorded through a real Fabric
+  Node and read back complete from the Node's store. Linux arm64, musl and macOS
+  are audited but not yet qualified. See
+  [Node.js wire capture](docs/node-wire-capture.md) for the exact builds and
+  limits.
+- **Calls through the `undici` npm package are named, never guessed (spec 055,
+  unit 055-t17).** Only Node's own undici is qualified. A model call that another
+  undici copy publishes (the `undici` package's `fetch`, `request`, `Client`,
+  `Pool` or HTTP/2 agent, or global `fetch` once that package made itself the
+  process-wide dispatcher) is not recorded: its position is an
+  `uninstrumented_client` loss, the run is never reported complete, and the
+  status names it with the new id `FW-035` and its fix.
+- **Bun and Deno never start Node.js capture (spec 055, unit 055-t17).** Both
+  report a Node.js version for compatibility; the preload now installs nothing
+  there and the status says `unsupported_runtime` (`FW-026`).
+
 - **Node.js capture keeps evidence of loss through a full disk and a crash
   (spec 055, unit 055-t16).** When the volume holding `FABRIC_WIRE_SPOOL_DIR`
   fills up (`ENOSPC`, `EDQUOT`), each capture that cannot be written is a
@@ -871,6 +898,12 @@ it never makes, applies, waits for or returns one.
   may prune the namespace.
 
 ### Fixed
+
+- **A Node.js agent with a local file store kept no request or response bytes
+  (spec 055, unit 055-t17).** With `FABRIC_WIRE_STORE=file:///dir` and no Fabric
+  Node, every body was counted `content_rejected` and dropped while the status
+  said content capture was on. The sender now writes each body and its
+  descriptor into the directory store exactly as the Python SDK does.
 
 - **eBPF host emitter: file access and failed execs were missing on Linux
   6.19+ kernels such as Ubuntu's 7.0.** On those kernels, an eBPF program

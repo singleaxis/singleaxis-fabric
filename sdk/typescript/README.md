@@ -6,7 +6,7 @@ retrieval, memory activity, side effects, delegation, retries and failures that
 your code reports, and exact bytes you pass to `ByteEvidenceRecorder`. It does
 not block, alter or delay the agent.
 
-**Model-call wire capture (built, not yet released).** `@singleaxis/fabric/register`
+**Model-call wire capture (qualified, undici only).** `@singleaxis/fabric/register`
 records the model calls an unmodified Node.js agent makes through global `fetch`,
 including the official `openai` and `@anthropic-ai/sdk` clients, with no code
 change:
@@ -16,8 +16,10 @@ FABRIC_WIRE_AUTOLOAD=1 NODE_OPTIONS="--import=@singleaxis/fabric/register" node 
 node -p "require('@singleaxis/fabric/wire').envStatus()"   # why nothing is recorded
 ```
 
-It is active only on the exact Node.js 24 builds the package's compatibility table
-lists, and the release workflow publishes it only once its qualification gates pass.
+It is active only on the exact builds the package's compatibility table lists as
+qualified (Node.js 24.4.0 and 24.22.3 on Linux x64 with glibc, Node's bundled undici);
+everywhere else it installs nothing and says why. Calls sent through the `undici` npm
+package or `node:http` are not recorded by this release.
 Importing the package root installs nothing. See
 [Node.js wire capture](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/node-wire-capture.md)
 and [limitations](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/limitations-and-roadmap.md).

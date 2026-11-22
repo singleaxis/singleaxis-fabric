@@ -1,9 +1,9 @@
 # Model-call capture for Node.js agents
 
-> **Status:** built, not yet released. The package that carries it exports the
-> preload, and the release workflow refuses to publish such a package until the
-> qualification gates `TS-1U` and `TS-1D` pass (spec 055 unit 055-t17). Until
-> then this page describes what the source tree builds and tests.
+> **Status:** qualified, undici only (spec 055 unit 055-t17). The gates `TS-1U`
+> (`wire.ts.undici`) and `TS-1D` (protection, spool, sender and readback) passed
+> on the builds listed below, so a release may carry the preload with this claim.
+> Core HTTP (`node:http`, `TS-1H`) and worker threads are not part of it yet.
 
 Fabric records the model calls a Node.js agent makes, as observed on the wire,
 without changing the agent: the request and response bytes, timing,
@@ -25,16 +25,49 @@ CAPTURE -> PROTECT -> DELIVER
 | The official `openai` client | yes (it sends through global `fetch`) |
 | The official `@anthropic-ai/sdk` client | yes (it sends through global `fetch`) |
 | A custom `fetch` that calls global `fetch` | yes, once |
+| A custom `fetch` over `node:http` | no (declared uncaptured, class `node_http`) |
 | `node:http` / `node:https` and libraries built on them | not yet (declared uncaptured, class `node_http`) |
+| The `undici` npm package (`fetch`, `request`, `Client`, `Pool`, its HTTP/2 agent) | no: each matched call is a named `uninstrumented_client` loss (`FW-035`) |
 | Worker threads | not yet (declared, `FW-030`) |
-| WebSocket and realtime APIs | no |
+| Gemini, Bedrock, gRPC, WebSocket and realtime APIs | no |
+| Bun and Deno | no (`unsupported_runtime`, `FW-026`) |
+
+### Qualified builds
 
 Capture is on only on the exact Node.js builds listed as `active` in the
-package's compatibility table, `@singleaxis/fabric/wire-qualification.json`
-(today: Node.js 24.4.0 and 24.22.3 on Linux x64 with glibc). On any other build,
-Node.js 22 included, nothing is installed and the status says why (`FW-026`);
-the agent runs unchanged. Linux and macOS on x64 and arm64 have the native lock
-module the spool needs; other platforms report `FW-027`.
+package's compatibility table, `@singleaxis/fabric/wire-qualification.json`.
+For each of them every CI gate of spec 055 §9.2 passed and its report is
+committed under `qualification/node-wire/results/` (passivity, privacy,
+Python/TypeScript parity, the client matrix, the negative rows, the chaos suite,
+and the production profile through a real Fabric Node):
+
+<!-- qualified-tuples:begin -->
+| Node.js | Bundled undici | Platform |
+|---|---|---|
+| `24.4.0` | `7.11.0` | `linux-x64-glibc` |
+| `24.22.3` | `7.30.2` | `linux-x64-glibc` |
+<!-- qualified-tuples:end -->
+
+This is not a claim for "Node.js 24 or later". On any other build (other Node.js
+24 patches, Node.js 22, Node.js 24.0 to 24.3, whose undici publishes no body
+chunks, Linux arm64, musl and macOS, which are audited but not yet qualified),
+nothing is installed and the status says why (`FW-026`); the agent runs
+unchanged. Linux and macOS on x64 and arm64 have the native lock module the
+spool needs; other platforms report `FW-027`.
+
+Limits of the claim:
+
+- Only the undici inside Node.js is qualified. Loading the `undici` npm package
+  also makes it the process-wide dispatcher, so global `fetch` then sends
+  through that copy too: those calls are recorded as `uninstrumented_client`
+  losses, and the run cannot verify complete (`FW-035`). Do not load the
+  `undici` package in an agent you want recorded.
+- A request whose response is cut short (an abort, a closed connection) is
+  recorded as far as it went, marked truncated.
+- `process.exit()` and `SIGKILL` cannot wait for delivery: what was spooled is
+  delivered by the next process on the spool; a position allocated but never
+  written makes that process's record incomplete, never falsely complete.
+- The record is a passive copy: nothing here changes, blocks or delays a call.
 
 ## Turn it on: no code change
 
@@ -108,7 +141,7 @@ unless `FABRIC_WIRE_DIAGNOSTICS=stderr`.
 |---|---|---|
 | `FW-006` | a model-looking request went to a host no endpoint covers | `status.unmatched_model_hosts` lists each host with the exact `FABRIC_WIRE_ENDPOINTS` value that records it |
 | `FW-025` | the configuration is invalid; `reason_id` names the setting | the status names the variable and its fix |
-| `FW-026` | this Node.js or undici build is not in the compatibility table | run a listed Node.js 24 build |
+| `FW-026` | this Node.js or undici build is not in the compatibility table (or the runtime is Bun or Deno) | run the agent on a listed Node.js build |
 | `FW-027` | no native lock module for this operating system or CPU | Linux or macOS, x64 or arm64 |
 | `FW-028` | the native lock module could not be used (`native_missing`, ...) | reinstall the package with its `prebuilds/` directory; keep the spool on a local disk |
 | `FW-029` | a capture point is switched off (`FABRIC_WIRE_UNDICI=0`) | set it to `1` |
@@ -117,6 +150,7 @@ unless `FABRIC_WIRE_DIAGNOSTICS=stderr`.
 | `FW-032` | the policy masks content and no redaction service is configured | set `FABRIC_REDACTION_ENDPOINT` or change the role's mode |
 | `FW-033` | records wait in the spool with no process draining it | start the agent again, or set `FABRIC_WIRE_DRAIN_ON_EXIT_S` |
 | `FW-034` | the spool directory is not set or cannot be used | set `FABRIC_WIRE_SPOOL_DIR` to a local directory the agent's user owns |
+| `FW-035` | a model call went through an undici copy that is not Node's own; it was not recorded | send model calls through global `fetch` or a client that uses it; do not load the `undici` package |
 
 Every id, with its exact text, is in [diagnostics](diagnostics.md).
 
