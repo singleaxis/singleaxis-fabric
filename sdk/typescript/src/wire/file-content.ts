@@ -109,6 +109,7 @@ function createOnce(directory: string, name: string, data: Uint8Array): void {
   const temp = path.join(directory, `.${name}.${randomUUID()}.tmp`);
   const fd = fs.openSync(temp, "wx", 0o600);
   let linked = false;
+  let failure: { error: unknown } | undefined;
   try {
     try {
       let offset = 0;
@@ -123,15 +124,17 @@ function createOnce(directory: string, name: string, data: Uint8Array): void {
     } catch (error) {
       if ((error as { code?: unknown }).code !== "EEXIST") throw error;
     }
-  } finally {
-    try {
-      fs.unlinkSync(temp);
-    } catch (error) {
-      // Unlinked, an unlinked temp is never read as an object. Still linked, the object
-      // has two names and the reader refuses it: not done (`retry`).
-      if (linked) throw error;
-    }
+  } catch (error) {
+    failure = { error };
   }
+  try {
+    fs.unlinkSync(temp);
+  } catch (error) {
+    // Unlinked, an unlinked temp is never read as an object. Still linked, the object
+    // has two names and the reader refuses it: not done (`retry`).
+    if (linked) failure ??= { error };
+  }
+  if (failure !== undefined) throw failure.error;
   if (!linked) {
     const existing = readExisting(target);
     if (existing === undefined || !existing.equals(data)) {
