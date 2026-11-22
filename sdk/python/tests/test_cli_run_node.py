@@ -522,9 +522,65 @@ def test_doctor_names_the_reason_and_fix_of_the_last_node_run(
         node_ok=lambda *_: True,
         which=lambda name, path=None: None,
     )
+    # Said once: the check of the project as it is now (its fix), not again for the run.
     (finding,) = [f for f in report.findings if f.id == "FC-098"]
-    assert "last run n-2" in (finding.detail or "") and "npm i @singleaxis/fabric" in (
-        finding.detail or ""
-    )
+    assert (finding.detail or "").startswith("now: ")
+    assert "npm i @singleaxis/fabric" in (finding.detail or "")
     assert "npm i @singleaxis/fabric" in finding.entry["fix"]
     assert any("last run: n-2 (node, node), capture off" in line for line in lines)
+    assert any("zero-code capture off" in line for line in lines)
+
+
+def test_doctor_checks_a_node_project_with_the_rule_of_run_not_the_python_sdk(
+    tmp_path: Path, env: dict[str, str]
+) -> None:
+    """A Node.js agent's SDK is ``@singleaxis/fabric``: doctor decides it as ``fabric run``
+    does and never asks a Python interpreter for the Python SDK, whose install line would
+    not help (spec 055 §13.1). A reason the last run had and the project no longer has is
+    still repeated as the last run's."""
+    project = make_project(tmp_path, env)
+    _launch(project, env, ["node", "a.js"], "--run", "n-3")  # FC-098: no package yet
+    install_package(project, table())
+    probe = NodeProbe()
+    report, lines = _doctor.run(
+        parse(["doctor"]),
+        env,
+        project,
+        runner=probe,
+        node_ok=lambda *_: True,
+        which=lambda name, path=None: None,
+    )
+    assert all(Path(argv[0]).name == "node" for argv in probe.calls), probe.calls
+    assert not {f.id for f in report.findings} & {"FC-050", "FC-091"}  # the Python SDK checks
+    assert any("qualifies Node 24.22.3 on linux-x64-glibc" in line for line in lines)
+    (stale,) = [f for f in report.findings if f.id == "FC-098"]
+    assert (stale.detail or "").startswith("last run n-3")
+    # The same project with an unqualified Node: the current reason, with its fix.
+    _touch(tmp_path / "node-bin" / "node")
+    report, _ = _doctor.run(
+        parse(["doctor"]),
+        env,
+        project,
+        runner=NodeProbe({**BUILD, "node": "24.0.0"}),
+        node_ok=lambda *_: True,
+        which=lambda name, path=None: None,
+    )
+    (now,) = [f for f in report.findings if f.id == "FC-100"]
+    assert (now.detail or "").startswith("now: Node 24.0.0 on linux-x64-glibc")
+
+
+def test_verify_offers_no_python_only_fix_for_a_node_run() -> None:
+    """``fabric init --exec`` and ``--http-host`` turn on Python hooks; for a Node.js run
+    they change nothing, so those rows are ``invisible`` with the reason, and the run API
+    named is the Node.js one."""
+    rows = {r.question: r for r in _read.coverage(_RESOLVED, _record("node", "on"), [_RUN], None)}
+    for question in ("commands the agent ran", "network contacts (non-model HTTP)"):
+        assert rows[question].state == "invisible"
+        assert rows[question].note.startswith("unsupported_runtime:")
+        assert "fabric init" not in rows[question].note
+    assert "@singleaxis/fabric/wire" in rows["end user and session"].note
+    python = {
+        r.question: r for r in _read.coverage(_RESOLVED, _record("python", "on"), [_RUN], None)
+    }
+    assert python["commands the agent ran"].note == "fabric init --exec"
+    assert "fabric.wire.run" in python["end user and session"].note

@@ -289,6 +289,14 @@ def _chain(runs: Sequence[Mapping[str, Any]], name: str) -> str | None:
     return None
 
 
+#: A Node.js run's rows that Python's hooks fill: ``fabric init --exec`` or ``--http-host``
+#: would change nothing for it, so they are never offered as its fix.
+_NODE_ONLY_MODEL_CALLS = (
+    "unsupported_runtime: the Node.js SDK records model calls only in this release; "
+    "fabric up with the host sensor observes the agent's processes"
+)
+
+
 def _node_model_calls(record: _runstate.RunRecord) -> Row:
     """Spec 055 §13.1: a Node.js run whose zero-code capture ``fabric run`` could not turn
     on. ``fix`` when the package is absent or too old, ``invisible`` (with the qualified
@@ -308,6 +316,33 @@ def _node_model_calls(record: _runstate.RunRecord) -> Row:
         "invisible",
         "capture was off for this run; the explicit API's records are reported, not verified",
     )
+
+
+def _hook_rows(
+    resolved: Any, runs: Sequence[Mapping[str, Any]], http: int | None, *, node: bool
+) -> list[Row]:
+    """The rows of the Python SDK's exec and non-model HTTP hooks. A Node.js run has
+    neither (spec 055: model calls only), so those rows are ``invisible`` with the reason,
+    never a ``fabric init`` line that would change nothing for it."""
+    commands, network = "commands the agent ran", "network contacts (non-model HTTP)"
+    if node:
+        return [
+            Row(commands, "invisible", _NODE_ONLY_MODEL_CALLS),
+            Row(network, "invisible", _NODE_ONLY_MODEL_CALLS),
+        ]
+    rows: list[Row] = []
+    if not resolved["capture.exec"]:
+        rows.append(Row(commands, "fix", "fabric init --exec"))
+    else:
+        rows.append(Row(commands, _state(_chain(runs, "effects")), "exec hook"))
+    watched = ", ".join(resolved["capture.http_hosts"] or [])
+    if not watched:
+        rows.append(Row(network, "fix", "fabric init --http-host HOST"))
+    elif http:
+        rows.append(Row(network, "recorded", f"{http} request(s); {watched}"))
+    else:  # configured, but this run shows none: say so, never assume it was recorded
+        rows.append(Row(network, "not observed", f"no request to {watched}"))
+    return rows
 
 
 def coverage(
@@ -360,21 +395,8 @@ def coverage(
             "parsed from the model bodies" if decisions else "no model call",
         )
     )
-    if not resolved["capture.exec"]:
-        rows.append(Row("commands the agent ran", "fix", "fabric init --exec"))
-    else:
-        rows.append(Row("commands the agent ran", _state(_chain(runs, "effects")), "exec hook"))
-    watched = ", ".join(resolved["capture.http_hosts"] or [])
-    if not watched:
-        rows.append(Row("network contacts (non-model HTTP)", "fix", "fabric init --http-host HOST"))
-    elif http:
-        rows.append(
-            Row("network contacts (non-model HTTP)", "recorded", f"{http} request(s); {watched}")
-        )
-    else:  # configured, but this run shows none: say so, never assume it was recorded
-        rows.append(
-            Row("network contacts (non-model HTTP)", "not observed", f"no request to {watched}")
-        )
+    node = record.runtime == "node"
+    rows += _hook_rows(resolved, runs, http, node=node)
     if record.sensor == "scoped":
         rows.append(
             Row(
@@ -399,7 +421,9 @@ def coverage(
         Row(
             "end user and session",
             "needs code",
-            "with fabric.wire.run(session_id=..., user_id=...)",
+            "with run({ sessionId, userId }, fn) from @singleaxis/fabric/wire"
+            if node
+            else "with fabric.wire.run(session_id=..., user_id=...)",
         )
     )
     return rows

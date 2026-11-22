@@ -6,7 +6,9 @@ including one made by hand without the CLI (it reads the same environment variab
 In order: which ``fabric`` is on PATH (OQ-1); the configuration (``fabric.yaml``, the
 compiled environment, shell variables that override the file, by name only, and the
 secrets); the SDK in the agent's interpreter (``python -I -m fabric.wire status`` with the
-project's environment); the last run's record and status file; the Node; the host sensor.
+project's environment), or for a Node.js agent the rule of ``fabric run`` (spec 055
+§13.1: the installed ``@singleaxis/fabric`` and this Node build); the last run's record
+and status file; the Node; the host sensor.
 Each problem is printed with its catalogue id and its fix. It never changes anything and
 contacts nothing but the project's Node and the local Docker daemon (I4)."""
 
@@ -23,11 +25,13 @@ from pathlib import Path
 from typing import Any
 
 from .. import _catalogue
-from . import _config, _project, _run, _runstate, _templates, _up, _verify
+from . import _config, _node, _project, _run, _runstate, _templates, _up, _verify
 from ._docker import Docker
 from ._report import EXIT_FINDINGS, EXIT_OK, CliError, Finding, Report
 
 STATUS_TIMEOUT_S = 30.0
+#: The reasons ``fabric run`` records when it cannot turn Node.js capture on (055 §13.1).
+_NODE_REASONS = frozenset({"FC-098", "FC-099", "FC-100", "FC-101"})
 
 
 def _ours(path: str) -> bool:
@@ -131,6 +135,9 @@ def _sdk(
     findings: list[Finding],
     lines: list[str],
 ) -> None:
+    if project is not None and _node_project(project):
+        _node_sdk(project, environ, runner, which, findings, lines)
+        return
     interpreter = interpreter_for(project, environ, which)
     env, _ = _run.child_environment(environ, _run.Plan(added=dict(compiled)))
     status = sdk_status(interpreter, env, runner)
@@ -152,6 +159,48 @@ def _sdk(
         findings.append(Finding("FC-091", str(interpreter)))
 
 
+def _node_project(project: _project.Project) -> bool:
+    """A Node.js agent's project: its last run was a Node.js one, or it has no run yet and
+    ``@singleaxis/fabric`` resolves from it without a ``.venv``."""
+    record, _ = _runstate.find_run(project.state_dir, None)
+    if record is not None:
+        return record.runtime == "node"
+    return (
+        _node.find_package(project.directory) is not None
+        and not (project.directory / ".venv").exists()
+    )
+
+
+def _node_sdk(
+    project: _project.Project,
+    environ: Mapping[str, str],
+    runner: Callable[..., Any],
+    which: Callable[..., str | None],
+    findings: list[Finding],
+    lines: list[str],
+) -> None:
+    """Spec 055 §13.1 as ``fabric run`` decides it now: the package that resolves from the
+    project and the Node build the last run started (else ``node`` on PATH). Never asks a
+    Python interpreter for the Python SDK, whose fix would not help a Node.js agent."""
+    record, _ = _runstate.find_run(project.state_dir, None)
+    node: Path | None = None
+    if record is not None and record.interpreter and Path(record.interpreter).exists():
+        node = Path(record.interpreter)
+    else:
+        found = which("node", path=environ.get("PATH", os.defpath))
+        node = Path(found) if found else None
+    decision = _node.decide(node, project.directory, project.state_dir, runner)
+    if decision.finding is not None:
+        findings.append(Finding(decision.finding.id, f"now: {decision.finding.detail}"))
+        lines.append(f"sdk: Node.js {node or 'not found'}: zero-code capture off")
+        return
+    build = decision.build or {}
+    lines.append(
+        f"sdk: {_node.PACKAGE} qualifies Node {build.get('node')} on {build.get('platform')} "
+        f"({node}): `fabric run` turns zero-code capture on"
+    )
+
+
 def _last_run(project: _project.Project, findings: list[Finding], lines: list[str]) -> None:
     record, _ = _runstate.find_run(project.state_dir, None)
     if record is None:
@@ -159,8 +208,11 @@ def _last_run(project: _project.Project, findings: list[Finding], lines: list[st
     lines.append(
         f"last run: {record.label} ({record.command}, {record.runtime}), capture {record.capture}"
     )
+    current = {f.id for f in findings}
     for stored in record.findings:
         entry = _catalogue.messages().get(stored["id"])
+        if stored["id"] in _NODE_REASONS and stored["id"] in current:
+            continue  # the check of this Node.js build above says it now, with its fix
         if entry is not None and entry["severity"] in ("error", "warning"):
             detail = f"last run {record.label}" + (
                 f": {stored['detail']}" if stored.get("detail") else ""
