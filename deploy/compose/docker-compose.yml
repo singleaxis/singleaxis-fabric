@@ -20,7 +20,7 @@ services:
     # Pinned by digest so the local harness is reproducible. Resolve a
     # newer digest with:
     #   docker buildx imagetools inspect python:3.12-alpine
-    image: python:3.12-alpine@sha256:b64631e04e4920160c50fbe8d8df828f7f35f06f425cb44aa09bca53e708a35a
+    image: python:3.15-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
     command: ["python", "/app/otlp_sink.py"]
     environment:
       SINK_DATA_DIR: /var/lib/fabric-test-sink
